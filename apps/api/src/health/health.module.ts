@@ -8,8 +8,8 @@ import { HealthService } from "./health.service.js";
  *
  * `buildDatabaseModule()` is imported so that the mongoose connection token
  * exists in the injector when `HealthService` is instantiated:
- * - `MONGODB_URI` set  → `MongooseModule` provides a real connection.
- * - `MONGODB_URI` absent → no provider; the service's `@Optional()`
+ * - `MONGODB_URL` set  → `MongooseModule` provides a real connection.
+ * - `MONGODB_URL` absent → no provider; the service's `@Optional()`
  *   injection yields `null` and readiness reports `not-configured`.
  */
 @Module({

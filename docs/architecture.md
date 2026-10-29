@@ -100,7 +100,7 @@ src/
 ├── app.module.ts
 ├── config/          # env validation (thiếu biến → báo lỗi rõ, không crash im)
 ├── health/         # GET /health (liveness), GET /health/ready (ping Mongo)
-└── (mongosh)       # module DB: connect, graceful-degrade khi thiếu MONGODB_URI
+└── (mongosh)       # module DB: connect, graceful-degrade khi thiếu MONGODB_URL
 ```
 
 ### 4.3 Error handling & logging
@@ -111,7 +111,7 @@ src/
 
 ### 4.4 MongoDB — chiến lược graceful-degrade
 
-- Có `MONGODB_URI` → connect; thiếu → log WARNING + `/health/ready` trả degraded
+- Có `MONGODB_URL` → connect; thiếu → log WARNING + `/health/ready` trả degraded
   (API vẫn chạy được ở bootstrap, đúng local không có mongod).
 - **Không** tự tạo DB/cloud; không migration phá hủy dữ liệu.
 

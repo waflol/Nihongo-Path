@@ -11,7 +11,7 @@ import { HealthModule } from "./health/health.module.js";
  * NOTE: the very first import (`./bootstrap/env.js`) loads `.env` /
  * `.env.local` into `process.env` before anything else in this module
  * evaluates. That matters because `buildDatabaseModule()` below reads
- * `process.env.MONGODB_URI` at module-evaluation time (ESM evaluates
+ * `process.env.MONGODB_URL` at module-evaluation time (ESM evaluates
  * statically-imported modules before the importing module's body).
  */
 @Module({

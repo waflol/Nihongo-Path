@@ -6,7 +6,7 @@ import type { Connection } from "mongoose";
  * Database states reported by the health endpoints.
  * - `connected`        — a configured connection successfully pinged.
  * - `unreachable`      — a configured connection failed to ping.
- * - `not-configured`   — no `MONGODB_URI` in the environment.
+ * - `not-configured`   — no `MONGODB_URL` in the environment.
  * - `not-checked`      — no database probe performed (liveness).
  */
 export type DatabaseStatus =
