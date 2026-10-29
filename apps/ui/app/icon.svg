@@ -1,0 +1,18 @@
+<svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Nihongo Path">
+  <!--
+    App icon placeholder (spec §17.2): open book + progress path.
+    Square, legible at 16x16. Replace with approved brand asset.
+    "currentColor" is not available here, so a neutral ink color is used.
+  -->
+  <rect width="64" height="64" rx="14" fill="#4f46e5"/>
+  <g stroke="#ffffff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <path d="M10 46 C20 40, 27 40, 32 43 C37 40, 44 40, 54 46 L54 20 C44 14, 37 14, 32 17 C27 14, 20 14, 10 20 Z" fill="#ffffff" fill-opacity="0.15"/>
+    <path d="M32 17 L32 43"/>
+  </g>
+  <g stroke="#ffffff" stroke-width="3" stroke-linecap="round" fill="none" opacity="0.95">
+    <path d="M14 24 H24"/>
+    <path d="M14 30 H26"/>
+    <path d="M40 24 H50"/>
+    <path d="M40 30 H48"/>
+  </g>
+</svg>

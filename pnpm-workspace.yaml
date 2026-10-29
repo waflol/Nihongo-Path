@@ -1,0 +1,9 @@
+packages:
+  - 'apps/*'
+
+# pnpm 12: allow native build scripts for these dependencies (kept explicit
+# so installs are non-interactive and reproducible).
+allowBuilds:
+  '@scarf/scarf': true
+  sharp: true
+  unrs-resolver: true

@@ -1,0 +1,358 @@
+/*
+ * Nihongo Path — Preline design tokens (raw CSS variables).
+ *
+ * Preline's theme.css (node_modules/preline/theme.css) maps these raw vars to
+ * Tailwind utilities via `@theme inline`. This file is the single place to
+ * swap the brand palette: change the hex values below, not the utilities.
+ *
+ * NOTE: palette is a PLACEHOLDER (spec §17.2 — colors are a proposal, not
+ * approved). Kept intentionally neutral so it can be replaced with the
+ * approved brand without touching component markup.
+ */
+
+/* ---------------------------- Light ---------------------------- */
+:root {
+  /* Brand (indigo placeholder) */
+  --primary-50:  #eef2ff;
+  --primary-100: #e0e7ff;
+  --primary-200: #c7d2fe;
+  --primary-300: #a5b4fc;
+  --primary-400: #818cf8;
+  --primary-500: #6366f1;
+  --primary-600: #4f46e5;
+  --primary-700: #4338ca;
+  --primary-800: #3730a3;
+  --primary-900: #312e81;
+  --primary-950: #1e1b4b;
+
+  --primary: var(--primary-600);
+  --primary-line: transparent;
+  --primary-foreground: #ffffff;
+  --primary-hover: var(--primary-700);
+  --primary-focus: var(--primary-700);
+  --primary-active: var(--primary-700);
+  --primary-checked: var(--primary-600);
+
+  /* Surfaces + text */
+  --background: #ffffff;
+  --background-1: #f9fafb;
+  --background-2: #f3f4f6;
+  --background-plain: #ffffff;
+
+  --foreground: #1f2937;
+  --foreground-inverse: #ffffff;
+  --inverse: #111827;
+
+  /* Borders */
+  --border: #e5e7eb;
+  --border-line-inverse: #ffffff;
+  --border-line-1: #f3f4f6;
+  --border-line-2: #e5e7eb;
+  --border-line-3: #d1d5db;
+  --border-line-4: #9ca3af;
+  --border-line-5: #6b7280;
+  --border-line-6: #4b5563;
+  --border-line-7: #374151;
+  --border-line-8: #1f2937;
+
+  /* Layer / Surface */
+  --layer: #ffffff;
+  --layer-line: #e5e7eb;
+  --layer-foreground: #1f2937;
+  --layer-hover: #f9fafb;
+  --layer-focus: #f9fafb;
+  --layer-active: #f3f4f6;
+
+  --surface: #f9fafb;
+  --surface-1: #f3f4f6;
+  --surface-2: #e5e7eb;
+  --surface-line: transparent;
+  --surface-foreground: #1f2937;
+
+  /* Muted */
+  --muted: #f9fafb;
+  --muted-foreground: #6b7280;
+  --muted-foreground-1: #4b5563;
+  --muted-foreground-2: #374151;
+
+  /* Secondary / Destructive */
+  --secondary: #111827;
+  --secondary-line: transparent;
+  --secondary-foreground: #ffffff;
+  --secondary-hover: #1f2937;
+
+  --destructive: #ef4444;
+  --destructive-foreground: #ffffff;
+  --destructive-hover: #dc2626;
+
+  /* Component containers */
+  --card: #ffffff;
+  --card-line: #e5e7eb;
+  --card-header: #ffffff;
+  --card-footer: #f9fafb;
+  --card-divider: #f3f4f6;
+
+  --navbar: #ffffff;
+  --navbar-line: #e5e7eb;
+  --navbar-divider: #e5e7eb;
+  --navbar-nav-foreground: #374151;
+  --navbar-nav-hover: #f3f4f6;
+  --navbar-nav-focus: #f3f4f6;
+  --navbar-nav-active: #eef2ff;
+  --navbar-inverse: var(--primary-950);
+
+  --dropdown: #ffffff;
+  --dropdown-line: #e5e7eb;
+  --dropdown-divider: #f3f4f6;
+  --dropdown-item-hover: #f9fafb;
+  --dropdown-item-active: #eef2ff;
+  --dropdown-item-foreground: #374151;
+
+  --overlay: #ffffff;
+  --overlay-line: #e5e7eb;
+  --overlay-header: #f9fafb;
+  --overlay-footer: #f9fafb;
+
+  --popover: #ffffff;
+  --popover-line: #e5e7eb;
+
+  --tooltip: #111827;
+  --tooltip-foreground: #ffffff;
+  --tooltip-line: #1f2937;
+
+  --footer: #111827;
+  --footer-inverse: #ffffff;
+  --footer-line: #1f2937;
+
+  --table-line: #f3f4f6;
+  --switch: var(--primary-600);
+
+  --card-inverse: var(--primary-950);
+
+  --dropdown-1: #f9fafb;
+  --dropdown-header: #f9fafb;
+  --dropdown-footer: #f3f4f6;
+  --dropdown-inverse: var(--primary-950);
+  --dropdown-item-focus: #eef2ff;
+
+  --select: #ffffff;
+  --select-1: #f9fafb;
+  --select-line: #e5e7eb;
+  --select-item-hover: #f9fafb;
+  --select-item-active: #eef2ff;
+  --select-item-focus: #eef2ff;
+  --select-item-foreground: #374151;
+  --select-inverse: var(--primary-950);
+
+  --overlay-divider: #f3f4f6;
+  --overlay-inverse: var(--primary-950);
+
+  --secondary-focus: #1f2937;
+  --secondary-active: #1f2937;
+
+  --destructive-focus: #b91c1c;
+
+  --muted-hover: #f3f4f6;
+  --muted-focus: #f3f4f6;
+  --muted-active: #e5e7eb;
+
+  --surface-3: #d1d5db;
+  --surface-4: #9ca3af;
+  --surface-5: #6b7280;
+  --surface-hover: #f3f4f6;
+  --surface-focus: #f3f4f6;
+  --surface-active: #e5e7eb;
+
+  /* Navbar presets 1/2 + sidebar (mirror of base preset, used by Preline layout blocks) */
+  --navbar-1: #f9fafb;
+  --navbar-1-line: #e5e7eb;
+  --navbar-1-divider: #e5e7eb;
+  --navbar-1-nav-foreground: #374151;
+  --navbar-1-nav-hover: #f3f4f6;
+  --navbar-1-nav-focus: #f3f4f6;
+  --navbar-1-nav-active: #eef2ff;
+  --navbar-1-nav-list-divider: #e5e7eb;
+
+  --navbar-2: #f3f4f6;
+  --navbar-2-line: transparent;
+  --navbar-2-divider: #d1d5db;
+  --navbar-2-nav-foreground: #374151;
+  --navbar-2-nav-hover: #e5e7eb;
+  --navbar-2-nav-focus: #e5e7eb;
+  --navbar-2-nav-active: #e5e7eb;
+  --navbar-2-nav-list-divider: #e5e7eb;
+  --navbar-nav-list-divider: #e5e7eb;
+
+  --sidebar: #ffffff;
+  --sidebar-line: #e5e7eb;
+  --sidebar-divider: #f3f4f6;
+  --sidebar-inverse: var(--primary-950);
+  --sidebar-nav-foreground: #374151;
+  --sidebar-nav-hover: #f9fafb;
+  --sidebar-nav-focus: #f9fafb;
+  --sidebar-nav-active: #eef2ff;
+  --sidebar-nav-list-divider: #e5e7eb;
+
+  --sidebar-1: #f9fafb;
+  --sidebar-1-line: #e5e7eb;
+  --sidebar-1-divider: #e5e7eb;
+  --sidebar-1-nav-foreground: #374151;
+  --sidebar-1-nav-hover: #f3f4f6;
+  --sidebar-1-nav-focus: #f3f4f6;
+  --sidebar-1-nav-active: #eef2ff;
+  --sidebar-1-nav-list-divider: #e5e7eb;
+
+  --sidebar-2: #f3f4f6;
+  --sidebar-2-line: transparent;
+  --sidebar-2-divider: #d1d5db;
+  --sidebar-2-nav-foreground: #374151;
+  --sidebar-2-nav-hover: #e5e7eb;
+  --sidebar-2-nav-focus: #e5e7eb;
+  --sidebar-2-nav-active: #e5e7eb;
+  --sidebar-2-nav-list-divider: #e5e7eb;
+
+  /* Chart palette (Apexcharts) — placeholders, replace with brand palette */
+  --chart-primary: var(--primary-500);
+  --chart-1: var(--primary-500);
+  --chart-2: #f59e0b;
+  --chart-3: #10b981;
+  --chart-4: #3b82f6;
+  --chart-5: #8b5cf6;
+  --chart-6: #ec4899;
+  --chart-7: #14b8a6;
+  --chart-8: #f97316;
+  --chart-9: #6366f1;
+  --chart-10: #64748b;
+
+  --scrollbar-track: #f3f4f6;
+  --scrollbar-thumb: #d1d5db;
+  --scrollbar-track-inverse: #1f2937;
+  --scrollbar-thumb-inverse: #4b5563;
+}
+
+/* ---------------------------- Dark ---------------------------- */
+:root[data-theme="dark"] {
+  --background: #0b0d12;
+  --background-1: #11141b;
+  --background-2: #171a23;
+  --background-plain: #0b0d12;
+
+  --foreground: #e5e7eb;
+  --foreground-inverse: #0b0d12;
+  --inverse: #0b0d12;
+
+  --border: #262b36;
+  --border-line-1: #171a23;
+  --border-line-2: #262b36;
+  --border-line-3: #3a4150;
+  --border-line-4: #4b5563;
+
+  --primary: var(--primary-400);
+  --primary-foreground: #0b0d12;
+  --primary-hover: var(--primary-500);
+  --primary-focus: var(--primary-500);
+  --primary-active: var(--primary-500);
+  --primary-checked: var(--primary-400);
+
+  --layer: #171a23;
+  --layer-line: #262b36;
+  --layer-foreground: #e5e7eb;
+  --layer-hover: #11141b;
+
+  --surface: #11141b;
+  --surface-1: #171a23;
+  --surface-foreground: #e5e7eb;
+
+  --muted: #171a23;
+  --muted-foreground: #9ca3af;
+
+  --card: #11141b;
+  --card-line: #262b36;
+  --navbar: #0b0d12;
+  --navbar-line: #262b36;
+  --navbar-nav-foreground: #d1d5db;
+  --navbar-nav-hover: #171a23;
+  --navbar-nav-active: #1e1b4b;
+
+  --dropdown: #171a23;
+  --dropdown-line: #262b36;
+  --dropdown-item-foreground: #e5e7eb;
+  --dropdown-item-focus: #1e1b4b;
+  --select: #171a23;
+  --select-line: #262b36;
+  --select-item-hover: #171a23;
+  --select-item-foreground: #e5e7eb;
+  --overlay: #11141b;
+  --overlay-divider: #1f2937;
+  --popover: #171a23;
+  --popover-line: #262b36;
+  --card: #11141b;
+  --card-line: #262b36;
+  --footer: #0b0d12;
+  --table-line: #262b36;
+  --switch: var(--primary-400);
+
+  --muted-hover: #171a23;
+  --muted-focus: #171a23;
+  --muted-active: #171a23;
+  --surface-hover: #171a23;
+  --surface-focus: #171a23;
+  --surface-active: #171a23;
+  --surface-3: #262b36;
+  --surface-4: #3a4150;
+  --surface-5: #4b5563;
+
+  --navbar-1: #11141b;
+  --navbar-1-line: #262b36;
+  --navbar-1-divider: #262b36;
+  --navbar-1-nav-foreground: #d1d5db;
+  --navbar-1-nav-hover: #171a23;
+  --navbar-1-nav-focus: #171a23;
+  --navbar-1-nav-active: #1e1b4b;
+  --navbar-1-nav-list-divider: #262b36;
+
+  --navbar-2: #171a23;
+  --navbar-2-line: transparent;
+  --navbar-2-divider: #3a4150;
+  --navbar-2-nav-foreground: #d1d5db;
+  --navbar-2-nav-hover: #171a23;
+  --navbar-2-nav-focus: #171a23;
+  --navbar-2-nav-active: #171a23;
+  --navbar-2-nav-list-divider: #3a4150;
+  --navbar-nav-list-divider: #262b36;
+
+  --sidebar: #0b0d12;
+  --sidebar-line: #262b36;
+  --sidebar-divider: #1f2937;
+  --sidebar-nav-foreground: #d1d5db;
+  --sidebar-nav-hover: #171a23;
+  --sidebar-nav-focus: #171a23;
+  --sidebar-nav-active: #1e1b4b;
+  --sidebar-nav-list-divider: #262b36;
+
+  --sidebar-1: #11141b;
+  --sidebar-1-line: #262b36;
+  --sidebar-1-divider: #262b36;
+  --sidebar-1-nav-foreground: #d1d5db;
+  --sidebar-1-nav-hover: #171a23;
+  --sidebar-1-nav-focus: #171a23;
+  --sidebar-1-nav-active: #1e1b4b;
+  --sidebar-1-nav-list-divider: #262b36;
+
+  --sidebar-2: #171a23;
+  --sidebar-2-line: transparent;
+  --sidebar-2-divider: #3a4150;
+  --sidebar-2-nav-foreground: #d1d5db;
+  --sidebar-2-nav-hover: #171a23;
+  --sidebar-2-nav-focus: #171a23;
+  --sidebar-2-nav-active: #171a23;
+  --sidebar-2-nav-list-divider: #3a4150;
+}
+
+/* Base element defaults (kept in line with Preline theme base layer). */
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-custom-default, system-ui, sans-serif);
+  -webkit-font-smoothing: antialiased;
+}

@@ -1,0 +1,20 @@
+{
+  "name": "nihongo-path",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Nihongo Path — nền tảng học tiếng Nhật (monorepo pnpm)",
+  "scripts": {
+    "dev": "pnpm -r --parallel run dev",
+    "dev:ui": "pnpm --filter @nihongo/ui run dev",
+    "dev:api": "pnpm --filter @nihongo/api run dev",
+    "build": "pnpm -r run build",
+    "lint": "pnpm -r run lint",
+    "typecheck": "pnpm -r run typecheck",
+    "test": "pnpm -r run test"
+  },
+  "packageManager": "pnpm@12.11.2",
+  "engines": {
+    "node": ">=22.22.0",
+    "pnpm": ">=12"
+  }
+}

@@ -1,0 +1,18 @@
+@import "tailwindcss";
+
+/* Preline UI — per official v5 setup (Tailwind CSS 4 CSS-first).
+   @source points at Preline's compiled JS so its data-state utilities
+   (e.g. "hs-dropdown-open:opacity-100") are generated. Relative path
+   because @source globs resolve from the importing CSS file and pnpm
+   hoists packages to app-level node_modules. */
+@source "../node_modules/preline/dist/index.js";
+@import "preline/variants.css";
+@import "preline/theme.css";
+
+/* Nihongo Path brand tokens (placeholder palette — replace on brand approval). */
+@import "./themes/theme.css";
+
+@theme inline {
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}

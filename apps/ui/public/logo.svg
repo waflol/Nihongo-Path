@@ -1,0 +1,13 @@
+<svg width="224" height="56" viewBox="0 0 224 56" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Nihongo Path">
+  <!-- Placeholder logo: open book + progress path. Replace with approved brand (spec §17.2). -->
+  <g>
+    <!-- open book -->
+    <path d="M10 44 C24 36, 34 36, 40 40 C46 36, 56 36, 70 44 L70 14 C56 6, 46 6, 40 10 C34 6, 24 6, 10 14 Z" fill="currentColor" fill-opacity="0.12" stroke="currentColor" stroke-width="3" stroke-linejoin="round"/>
+    <path d="M40 10 L40 40" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+    <!-- progress path -->
+    <path d="M84 40 L100 40 M108 40 L124 32 M132 30 L148 24" stroke="currentColor" stroke-width="3" stroke-linecap="round" opacity="0.9"/>
+    <circle cx="108" cy="40" r="4" fill="currentColor"/>
+    <circle cx="152" cy="22" r="5" fill="currentColor"/>
+  </g>
+  <text x="176" y="34" font-family="ui-sans-serif, system-ui, sans-serif" font-size="22" font-weight="700" fill="currentColor">Nihongo Path</text>
+</svg>
