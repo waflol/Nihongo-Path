@@ -3,9 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "dotenv run -f .env -- next dev",
-    "build": "dotenv run -f .env -- next build",
-    "start": "dotenv run -f .env -- next start",
+    "dev": "dotenv run -q -- next dev",
+    "build": "dotenv run -q -- next build",
+    "start": "dotenv run -q -- next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit"
   },

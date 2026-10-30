@@ -16,11 +16,16 @@ describe('AppController (e2e)', () => {
     await app.init();
   });
 
-  it('/ (GET)', () => {
+  it('GET / returns API metadata', () => {
     return request(app.getHttpServer())
       .get('/')
       .expect(200)
-      .expect('Hello World!');
+      .expect(({ body }) => {
+        expect(body).toMatchObject({
+          name: 'Nihongo Path API',
+          docs: 'api/docs',
+        });
+      });
   });
 
   afterEach(async () => {

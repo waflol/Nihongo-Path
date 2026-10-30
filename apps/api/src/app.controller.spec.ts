@@ -1,8 +1,8 @@
-import { Test, TestingModule } from '@nestjs/testing';
-import { AppController } from './app.controller.js';
-import { AppService } from './app.service.js';
+import { Test, TestingModule } from "@nestjs/testing";
+import { AppController } from "./app.controller.js";
+import { AppService } from "./app.service.js";
 
-describe('AppController', () => {
+describe("AppController", () => {
   let appController: AppController;
 
   beforeEach(async () => {
@@ -14,9 +14,12 @@ describe('AppController', () => {
     appController = app.get<AppController>(AppController);
   });
 
-  describe('root', () => {
-    it('should return "Hello World!"', () => {
-      expect(appController.getHello()).toBe('Hello World!');
+  describe("meta", () => {
+    it("should return service metadata", () => {
+      expect(appController.meta()).toMatchObject({
+        name: "Nihongo Path API",
+        docs: "api/docs",
+      });
     });
   });
 });
