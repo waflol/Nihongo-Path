@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { siteConfig } from "@/app/site";
+import { AccountMenu } from "@/components/auth/account-menu";
 
 const navLinks = [
   { href: "/", label: "Trang chủ" },
@@ -51,29 +52,9 @@ export function SiteHeader() {
         </nav>
 
         <div className="flex items-center gap-2">
-          {/* Desktop: Preline dropdown for account actions (placeholder). */}
-          <div className="hs-dropdown relative hidden md:inline-flex">
-            <button
-              type="button"
-              className="hs-dropdown-toggle rounded-lg border border-[var(--border)] px-3 py-1.5 text-sm font-medium text-[var(--foreground)] hover:bg-[var(--layer-hover)]"
-              aria-expanded="false"
-              aria-haspopup="true"
-            >
-              Tài khoản
-            </button>
-            <div
-              className="hs-dropdown-menu hs-dropdown-open:opacity-100 hs-dropdown-open:mt-2 mt-1.5 hidden w-40 rounded-xl border border-[var(--border)] bg-[var(--layer)] p-1 opacity-0 shadow-lg transition duration-150"
-              role="menu"
-            >
-              <Link
-                href="/login"
-                className="block rounded-lg px-3 py-2 text-sm text-[var(--layer-foreground)] hover:bg-[var(--layer-hover)]"
-                role="menuitem"
-              >
-                Đăng nhập
-              </Link>
-            </div>
-          </div>
+          {/* Real account state: "Đăng nhập" when signed out, user + menu
+              (with logout / admin link) when signed in. */}
+          <AccountMenu />
 
           {/* Mobile: trigger for Preline overlay off-canvas menu */}
           <button
@@ -148,8 +129,12 @@ export function SiteHeader() {
               {link.label}
             </Link>
           ))}
+          {/* Account area (login / user + logout) on mobile too */}
+          <div className="mt-2 flex items-center">
+            <AccountMenu className="inline-flex" />
+          </div>
           <Link
-            href="/login"
+            href="/learn"
             className="mt-2 rounded-lg bg-[var(--primary)] px-4 py-2 text-center text-sm font-semibold text-[var(--primary-foreground)] hover:bg-[var(--primary-hover)]"
           >
             Bắt đầu học

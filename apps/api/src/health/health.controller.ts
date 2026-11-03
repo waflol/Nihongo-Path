@@ -1,7 +1,13 @@
 import { Controller, Get, ServiceUnavailableException } from "@nestjs/common";
 import { ApiOperation, ApiResponse, ApiTags } from "@nestjs/swagger";
+import { IsPublic } from "../auth/decorators/is-public.decorator.js";
 import { HealthService } from "./health.service.js";
 
+/**
+ * Probes are infrastructure endpoints, not product routes — they must stay
+ * reachable without a token even when the global `AuthGuard` is active.
+ * Marked `@IsPublic()` so readiness monitoring is never blocked by auth.
+ */
 @ApiTags("health")
 @Controller("health")
 export class HealthController {
@@ -12,6 +18,7 @@ export class HealthController {
    * server can respond; it does NOT probe the database.
    */
   @Get()
+  @IsPublic()
   @ApiOperation({ summary: "Liveness probe (no database ping)" })
   @ApiResponse({ status: 200, description: "Process is up" })
   liveness() {
@@ -24,6 +31,7 @@ export class HealthController {
    * unreachable.
    */
   @Get("ready")
+  @IsPublic()
   @ApiOperation({ summary: "Readiness probe (includes MongoDB ping)" })
   @ApiResponse({ status: 200, description: "Ready (or DB not configured)" })
   @ApiResponse({ status: 503, description: "Configured database unreachable" })

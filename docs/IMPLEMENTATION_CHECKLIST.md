@@ -148,46 +148,81 @@ Test case sinh ra: `T-P1-01` … `T-P1-06` (xem backlog).
 
 | ID | Task | Phụ thuộc | File/module | Hoàn thành khi | Kiểm thử | TT |
 |---|---|---|---|---|---|---|
-| P2-AUTH-01 | Chốt provider auth + viết ADR | P1-ENV-17 | `docs/adr/ADR-auth-provider.md` | Tôi duyệt; ADR `Accepted` | người dùng xác nhận | `⏸` |
-| P2-AUTH-02 | Schema `users` (role, lang, trạng thái, index) | P2-AUTH-01 | `src/users/schemas/user.schema.ts` | Index theo truy vấn thực; role tách khỏi plan | xem `database.md` §3 | `[ ]` |
-| P2-AUTH-03 | Schema `auth_accounts` + session/refresh token | P2-AUTH-02 | `src/auth/schemas/*` | Unique `(provider, providerAccountId)` | kiểm tra index | `[ ]` |
-| P2-AUTH-04 | Endpoint đăng ký/đăng nhập theo provider đã chốt | P2-AUTH-03 | `src/auth/auth.controller.ts`, `auth.service.ts` | Trả access + refresh token; lỗi sai mật khẩu là 401 chung chung | gọi API bằng `curl` | `[ ]` |
-| P2-AUTH-05 | JWT access/refresh (TTL theo `.env.example`) | P2-AUTH-04 | `src/auth/token.service.ts` | Token hết hạn bị từ chối | gọi API với token hết hạn | `[ ]` |
-| P2-AUTH-06 | `AuthGuard` + `RolesGuard` | P2-AUTH-05 | `src/auth/guards/*` | Thiếu token → 401; sai role → 403 | `curl` không/không đủ quyền | `[ ]` |
-| P2-AUTH-07 | Decorator `@CurrentUser()`, `@Roles()` | P2-AUTH-06 | `src/auth/decorators/*` | Dùng được trong controller | `tsc --noEmit` | `[ ]` |
-| P2-AUTH-08 | Rate limit cho endpoint đăng nhập | P2-AUTH-04 | `src/auth/*` | Vượt ngưỡng → 429 | gọi lặp nhanh | `[ ]` |
-| P2-USER-01 | Hồ sơ: xem/sửa thông tin của chính mình | P2-AUTH-06 | `src/users/users.controller.ts` | Không sửa được user khác | gọi API với id khác | `[ ]` |
-| P2-USER-02 | Cơ chế tạo admin đầu tiên (thủ công, không auto-seed) | P2-AUTH-02 | `scripts/` hoặc tài liệu | Có quy trình rõ, không tự tạo tài khoản | làm theo tài liệu | `[ ]` |
+| P2-AUTH-01 | Chốt provider auth + viết ADR | P1-ENV-17 | `docs/adr/ADR-auth-provider.md` | Tôi duyệt; ADR `Accepted` | người dùng xác nhận | `[x]` |
+| P2-AUTH-02 | Schema `users` (role, lang, trạng thái, index) | P2-AUTH-01 | `src/users/schemas/user.schema.ts` | Index theo truy vấn thực; role tách khỏi plan | xem `database.md` §3 | `[x]` |
+| P2-AUTH-03 | Schema `auth_accounts` + session/refresh token | P2-AUTH-02 | `src/auth/schemas/*` | Unique `(provider, providerAccountId)` | kiểm tra index | `[x]` |
+| P2-AUTH-04 | Endpoint đăng ký/đăng nhập theo provider đã chốt | P2-AUTH-03 | `src/auth/auth.controller.ts`, `auth.service.ts` | Trả access + refresh token; lỗi sai mật khẩu là 401 chung chung | gọi API bằng `curl` | `[x]` |
+| P2-AUTH-05 | JWT access/refresh (TTL theo `.env.example`) | P2-AUTH-04 | `src/auth/token.service.ts` | Token hết hạn bị từ chối | gọi API với token hết hạn | `[x]` |
+| P2-AUTH-06 | `AuthGuard` + `RolesGuard` | P2-AUTH-05 | `src/auth/guards/*` | Thiếu token → 401; sai role → 403 | `curl` không/không đủ quyền | `[x]` |
+| P2-AUTH-07 | Decorator `@CurrentUser()`, `@Roles()` | P2-AUTH-06 | `src/auth/decorators/*` | Dùng được trong controller | `tsc --noEmit` | `[x]` |
+| P2-AUTH-08 | Rate limit cho endpoint đăng nhập | P2-AUTH-04 | `src/auth/*` | Vượt ngưỡng → 429 | gọi lặp nhanh | `[x]` |
+| P2-USER-01 | Hồ sơ: xem/sửa thông tin của chính mình | P2-AUTH-06 | `src/users/users.controller.ts` | Không sửa được user khác | gọi API với id khác | `[x]` |
+| P2-USER-02 | Cơ chế tạo admin đầu tiên (thủ công, không auto-seed) | P2-AUTH-02 | `scripts/` hoặc tài liệu | Có quy trình rõ, không tự tạo tài khoản | làm theo tài liệu | `[x]` |
 
 ### 2.2. Nội dung học
 
 | ID | Task | Phụ thuộc | File/module | Hoàn thành khi | Kiểm thử | TT |
 |---|---|---|---|---|---|---|
-| P2-CONTENT-01 | Schema + CRUD `textbooks`, `units` (admin only) | P2-AUTH-06 | `src/content/schemas/*`, `content.controller.ts` | Chỉ admin ghi; public đọc được | `curl` với/không token | `[ ]` |
-| P2-CONTENT-02 | Schema + CRUD `vocabulary` (furigana, POS, nghĩa VN, ví dụ, nguồn, tags) | P2-CONTENT-01 | `src/content/schemas/vocabulary.schema.ts` | Đủ trường theo spec §4.2 | xem schema | `[ ]` |
-| P2-CONTENT-03 | Schema + CRUD `grammar_points` (1 điểm ↔ N ví dụ/bài tập) | P2-CONTENT-01 | `src/content/schemas/grammar-point.schema.ts` | Quan hệ nhiều-ví-dụ đúng | xem schema | `[ ]` |
-| P2-CONTENT-04 | API đọc công khai có phân trang + filter theo giáo trình/cấp độ | P2-CONTENT-02, P2-CONTENT-03 | `content.controller.ts` | Phân trang ổn định, không lộ dữ liệu riêng tư | `curl` với `page`/`limit` | `[ ]` |
-| P2-CONTENT-05 | Trường `lang` trên nội dung (không hard-code tiếng Việt) | P2-CONTENT-02 | schema nội dung | Có `lang`, mặc định `vi` | xem schema | `[ ]` |
+| P2-CONTENT-01 | Schema + CRUD `textbooks`, `units` (admin only) | P2-AUTH-06 | `src/content/schemas/*`, `content.controller.ts` | Chỉ admin ghi; public đọc được | `curl` với/không token | `[x]` |
+| P2-CONTENT-02 | Schema + CRUD `vocabulary` (furigana, POS, nghĩa VN, ví dụ, nguồn, tags) | P2-CONTENT-01 | `src/content/schemas/vocabulary.schema.ts` | Đủ trường theo spec §4.2 | xem schema | `[x]` |
+| P2-CONTENT-03 | Schema + CRUD `grammar_points` (1 điểm ↔ N ví dụ/bài tập) | P2-CONTENT-01 | `src/content/schemas/grammar-point.schema.ts` | Quan hệ nhiều-ví-dụ đúng | xem schema | `[x]` |
+| P2-CONTENT-04 | API đọc công khai có phân trang + filter theo giáo trình/cấp độ | P2-CONTENT-02, P2-CONTENT-03 | `content.controller.ts` | Phân trang ổn định, không lộ dữ liệu riêng tư | `curl` với `page`/`limit` | `[x]` |
+| P2-CONTENT-05 | Trường `lang` trên nội dung (không hard-code tiếng Việt) | P2-CONTENT-02 | schema nội dung | Có `lang`, mặc định `vi` | xem schema | `[x]` |
 
 ### 2.3. Giao diện
 
 | ID | Task | Phụ thuộc | File/module | Hoàn thành khi | Kiểm thử | TT |
 |---|---|---|---|---|---|---|
-| P2-UI-01 | Trang `/login` nối API thật (Preline form, trạng thái loading/error) | P2-AUTH-04 | `app/login/page.tsx`, `components/auth/*` | Đăng nhập thành công → chuyển trang; lỗi hiển thị rõ | thao tác trình duyệt | `[ ]` |
+| P2-UI-01 | Trang `/login` nối API thật (Preline form, trạng thái loading/error) | P2-AUTH-04 | `app/login/page.tsx`, `components/auth/*` | Đăng nhập thành công → chuyển trang; lỗi hiển thị rõ | thao tác trình duyệt | `[x]` |
 | P2-UI-02 | Trang đăng ký (nếu provider hỗ trợ) | P2-UI-01 | `app/register/page.tsx` | Tạo được tài khoản | thao tác trình duyệt | `[ ]` |
-| P2-UI-03 | Bảo vệ route riêng tư (`/learn`, `/admin`) ở tầng server | P2-AUTH-05 | `middleware.ts`, layout | Chưa đăng nhập → redirect `/login` | mở URL khi chưa auth | `[ ]` |
+| P2-UI-03 | Bảo vệ route riêng tư (`/learn`, `/admin`) ở tầng server | P2-AUTH-05 | `proxy.ts` (thay `middleware.ts`), `gate.tsx` | Chưa đăng nhập → redirect `/login` | mở URL khi chưa auth | `[x]` |
 | P2-UI-04 | Màn hình admin CRUD nội dung (Preline table + form + confirm xoá) | P2-CONTENT-04 | `app/admin/content/*` | Tạo/sửa/xoá hoạt động; có empty/error state | thao tác trình duyệt | `[ ]` |
-| P2-UI-05 | Chiến lược lưu token (httpOnly cookie vs memory) + refresh | P2-AUTH-05 | `lib/api-client.ts` | Không lưu refresh token ở nơi script đọc được | review code | `[ ]` |
+| P2-UI-05 | Chiến lược lưu token (httpOnly cookie vs memory) + refresh | P2-AUTH-05 | `lib/session.ts`, `app/api/auth/*` (thay `lib/api-client.ts`) | Không lưu refresh token ở nơi script đọc được | review code | `[x]` |
 | P2-UI-06 | Header hiển thị trạng thái đăng nhập + menu tài khoản | P2-UI-01 | `components/site-header.tsx` | Đổi trạng thái đúng sau login/logout | thao tác trình duyệt | `[ ]` |
 
 ### 2.4. Tài liệu
 
 | ID | Task | Phụ thuộc | File/module | Hoàn thành khi | Kiểm thử | TT |
 |---|---|---|---|---|---|---|
-| P2-DOC-01 | Cập nhật `database.md` với schema/index thực tế của P2 | P2-CONTENT-03 | `docs/database.md` | Khớp code | đối chiếu | `[ ]` |
+| P2-DOC-01 | Cập nhật `database.md` với schema/index thực tế của P2 | P2-CONTENT-03 | `docs/database.md` | Khớp code | đối chiếu | `[x]` |
 
 **Checkpoint P2:** `typecheck` + `lint` + `build` exit 0; kiểm thử tay: đăng nhập,
 chặn route, CRUD nội dung. Test case: `T-P2-01` … `T-P2-10`.
+
+> **Bằng chứng tĩnh (30/10/2026):** `tsc --noEmit` (api + ui) 0 lỗi; `lint` api sạch,
+> ui 1 warning có sẵn từ P1 (`<img>` ở `site-header.tsx`, không thuộc P2);
+> `nest build` + `next build` thành công (`/admin/content` = `◐` PPR Next 16).
+> Boot API không DB: `/health` → `not-configured`, route content → 404.
+>
+> **Bằng chứng LIVE (03/11/2026, chạy thật trên MongoDB Atlas qua
+> `apps/api/.env`):**
+> - T-P2-01 register → `201` + token; duplicate → `409`.
+> - T-P2-02 sai mật khẩu → `401` chung chung.
+> - T-P2-03 `/users/me` không token → `401`, có token → `200`.
+> - T-P2-04 USER token gọi `/admin/content/*` → `403 "Insufficient role"`.
+> - T-P2-05 role `USER` không cấp plan (plan: none).
+> - T-P2-08 refresh rotation: token mới hoạt động, token cũ bị từ chối `401`;
+>   refresh rác → `401`.
+> - T-P2-09 phân trang công khai ổn định; **draft không lộ** (public list chỉ
+>   `PUBLISHED`).
+> - T-P2-10 logout → `204`, refresh cũ sau logout → `401`.
+> - Rate limit (P2-AUTH-08 / T-P2-07): chuỗi login cùng IP vượt ngưỡng →
+>   `429` + `retryAfterSeconds`.
+> - Admin CRUD (P2-CONTENT-01/04): create/patch/delete textbook·unit·vocab·grammar
+>   hoạt động; delete không token → `401`.
+>
+> **2 bug phát hiện & sửa qua test live:**
+> 1. `RegisterEmailDto.displayName` thiếu `@IsOptional()` → register không gửi
+>    `displayName` bị `400` (UI luôn gửi nên không lộ). Đã thêm.
+> 2. `PATCH /admin/content/*` dùng chung DTO create (bắt buộc `title`/`term`…)
+>    nên không cập nhật từng phần được; service còn overwrite mảng liên kết khi
+>    omitted. Đã tách `PartialType` DTO update + `omitUndefined`, giữ nguyên field
+>    không gửi, `[]` mới xoá link.
+>
+> **Còn mở (chưa tick, trung thực):** P2-UI-02 (trang register chưa thao tác
+> trình duyệt), P2-UI-04 (màn hình admin CRUD trong trình duyệt chưa verify),
+> P2-UI-06 (menu tài khoản Preline vừa viết lại — cần bấm thử lại trong trình
+> duyệt). `T-P2-01…10` đã có bằng chứng live ở trên.
 
 ---
 

@@ -1,15 +1,19 @@
 import type { Metadata } from "next";
+import Link from "next/link";
+import { AuthForm } from "@/components/auth/auth-form";
+import { GoogleSignIn } from "@/components/auth/google-sign-in";
 
 export const metadata: Metadata = {
   title: "Đăng nhập",
-  description: "Đăng nhập hoặc đăng ký tài khoản để tiếp tục lộ trình học tiếng Nhật.",
+  description: "Đăng nhập hoặc tạo tài khoản để tiếp tục lộ trình học tiếng Nhật.",
   // Login page is not crawlable content (spec §17.3 — keep private pages out of SEO).
   robots: { index: false, follow: true },
 };
 
 /**
- * Login placeholder — no real auth yet (auth provider is not approved,
- * spec §4.1). Keep the layout/UX shell; wire the real flow in Sprint 2.
+ * Login page — wires to the real email/password + Google flow (P2-AUTH-04).
+ * The form is a client component that POSTs to the `/api/auth/*` route
+ * handlers, which own the httpOnly session cookie (P2-UI-05).
  */
 export default function LoginPage() {
   return (
@@ -18,55 +22,30 @@ export default function LoginPage() {
         Đăng nhập
       </h1>
       <p className="mt-2 text-sm text-[var(--muted-foreground)]">
-        Tính năng xác thực đang được triển khai theo kế hoạch. Trang này là
-        placeholder và chưa kết nối hệ thống đăng nhập.
+        Chào mừng trở lại. Tạo tài khoản bằng email để bắt đầu.
       </p>
 
-      {/*
-        Placeholder form: static inputs, no handler. This is a Server
-        Component. The real auth flow (Sprint 2) will use a client form or a
-        Server Action.
-      */}
-      <form className="mt-8 space-y-4">
-        <div>
-          <label
-            htmlFor="email"
-            className="block text-sm font-medium text-[var(--foreground)]"
-          >
-            Email
-          </label>
-          <input
-            id="email"
-            type="email"
-            autoComplete="email"
-            placeholder="ban@email.com"
-            className="mt-1.5 block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:border-[var(--primary-focus)] focus:outline-none focus:ring-1 focus:ring-[var(--primary-focus)]"
-          />
-        </div>
-        <div>
-          <label
-            htmlFor="password"
-            className="block text-sm font-medium text-[var(--foreground)]"
-          >
-            Mật khẩu
-          </label>
-          <input
-            id="password"
-            type="password"
-            autoComplete="current-password"
-            placeholder="••••••••"
-            className="mt-1.5 block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:border-[var(--primary-focus)] focus:outline-none focus:ring-1 focus:ring-[var(--primary-focus)]"
-          />
-        </div>
-        <button
-          type="submit"
-          disabled
-          title="Chưa có xác thực"
-          className="w-full rounded-lg bg-[var(--secondary)] px-4 py-2.5 text-sm font-semibold text-[var(--secondary-foreground)] disabled:cursor-not-allowed disabled:opacity-50"
+      <AuthForm mode="login" />
+
+      <div className="mt-6 flex items-center gap-3">
+        <span className="h-px flex-1 bg-[var(--border)]" />
+        <span className="text-xs uppercase tracking-wide text-[var(--muted-foreground)]">
+          hoặc
+        </span>
+        <span className="h-px flex-1 bg-[var(--border)]" />
+      </div>
+
+      <GoogleSignIn />
+
+      <p className="mt-6 text-center text-sm text-[var(--muted-foreground)]">
+        Chưa có tài khoản?{" "}
+        <Link
+          href="/register"
+          className="font-medium text-[var(--primary)] hover:text-[var(--primary-hover)]"
         >
-          Đăng nhập (chưa khả dụng)
-        </button>
-      </form>
+          Tạo tài khoản
+        </Link>
+      </p>
     </div>
   );
 }

@@ -14,12 +14,13 @@
 
 | Nhóm | Số câu | Chặn gì |
 |---|---|---|
-| Chặn thiết kế | 8 | P2, P3, P6, P7, P8, P9, P10 |
+| Chặn thiết kế | 6 | P3, P6, P7, P8, P9, P10 |
 | Chặn phát hành | 4 | P10, P11 |
 | Mâu thuẫn tài liệu | 5 | P1 |
 | Mơ hồ | 5 | Nhiều phase |
 
-**Trạng thái:** mọi câu dưới đây đang `⏸ Chờ Tôi`. Không câu nào được tự trả lời.
+**Trạng thái:** Q-01, Q-02 đã `✅ Chốt` (30/10/2026) — mở khoá P2. Các câu còn
+lại đang `⏸ Chờ Tôi`. Không câu nào được tự trả lời.
 
 ---
 
@@ -34,8 +35,12 @@
 - **Phương án:** (a) Google OAuth; (b) GitHub OAuth; (c) email + mật khẩu;
   (d) kết hợp (a)+(c).
 - **Đề xuất:** (a)+(c) — Google phổ biến với người học Việt Nam, email làm
-  phương án dự phòng. Nhưng đây chỉ là đề xuất.
-- **Owner:** Tôi. **Phase:** P2. **Trạng thái:** `⏸`
+  phương án dự phòng.
+- **Owner:** Tôi. **Phase:** P2.
+- **Trạng thái:** `✅ Đã chốt` (30/10/2026): **(a)+(c) — Google OAuth +
+  email/password.** Impl: `auth_accounts.provider ∈ {google, email}`;
+  endpoint `/auth/google` (verify ID-token) + `/auth/email` (scrypt); JWT
+  access/refresh theo `.env.example`. Schema `auth-account` đã provider-agnostic.
 
 ### Q-02 — MongoDB thật cho môi trường dev
 
@@ -46,7 +51,10 @@
 - **Phương án:** (a) Community local; (b) Atlas free; (c) graceful-degrade tiếp.
 - **Đề xuất:** (b) — không cần cài đặt, có backup, miễn phí ở mức MVP.
 - **Lưu ý:** Tạo tài khoản Atlas là việc của **Tôi**, [CC] không tự đăng ký.
-- **Owner:** Tôi. **Phase:** P2. **Trạng thái:** `⏸`
+- **Owner:** Tôi. **Phase:** P2.
+- **Trạng thái:** `✅ Đã chốt` (30/10/2026): **(b) MongoDB Atlas free tier.**
+  Tôi tạo tài khoản Atlas + DB, điền `MONGODB_URL` vào `apps/api/.env`, bật
+  `MONGODB_URL_REQUIRED=true` ở dev. [CC] không đăng ký.
 
 ### Q-03 — Thuật toán lặp lại ngắt quãng
 

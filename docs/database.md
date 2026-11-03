@@ -16,16 +16,18 @@
 ### Identity
 | Collection | Trạng thái | Ghi chú |
 |---|---|---|
-| `users` | Tạo khi Sprint 2 (Identity) | `role`, `lang`, progress index |
-| `auth_accounts`, sessions | Khi chọn phương án auth (Google/GitHub/email) | Cần Tôi duyệt provider |
+| `users` | **Tạo Sprint 2 ✅** | `role` (USER/ADMIN/SUPER_ADMIN), `lang`, `status` (ACTIVE/SUSPENDED), `passwordHash` (scrypt `salt$hash`), `authAccounts[]`. Owner: admin. Index: `{email: 1}` sparse. |
+| `auth_accounts` | **Tạo Sprint 2 ✅** | Liện kết 1:1 giữa user và provider (google/email; `provider: "github"` đã có trong enum nhưng chưa bật). `providerAccountId` = Google `sub` / email. Index: `{provider: 1, providerAccountId: 1}` **unique**. |
+| `auth_sessions` | **Tạo Sprint 2 ✅** | Refresh token opaque (128-bit, unique) + `expiresAt` (TTL theo `JWT_REFRESH_EXPIRES_IN`), `revokedAt` khi rotation/logout. Index: `{token: 1}` unique, `{user: 1, expiresAt: 1}`, `{expiresAt: 1}` TTL (xoá session hết hạn). |
 
 ### Learning content
-| Collection | Ghi chú |
-|---|---|
-| `textbooks`, `units` | Giáo trình/unit; owner admin |
-| `vocabulary` (flashcard từ vựng) | Từ/cụm từ, furigana, nghĩa VN, POS, ví dụ, nguồn, tags |
-| `grammar_points` | Ý nghĩa VN, cấu trúc, cách dùng, ví dụ (1 điểm ↔ N ví dụ/bài tập) |
-| `flashcard_decks`, `flashcards` | Bộ thẻ (chia sẻ + cá nhân); cá nhân gắn userId |
+| Collection | Trạng thái | Ghi chú |
+|---|---|---|
+| `textbooks` | **Tạo Sprint 2 ✅** | `title`, `level`, `status` (DRAFT/PUBLISHED), `lang`. Owner: admin (viết), công khai (đọc PUBLISHED). Index: `{status: 1, level: 1}`. |
+| `units` | **Tạo Sprint 2 ✅** | Tham chiếu `textbook`, `sortOrder` là thứ tự canon. Index: `{textbook: 1, sortOrder: 1}`. |
+| `vocabulary` | **Tạo Sprint 2 ✅** | `term`, `reading`, `meaning`, `pos`, `example`/`exampleTranslation`, `source`, `tags[]`, `textbooks[]`/`units[]` (liên kết N:1 denormalized), `status`, `lang`. Index: `{status: 1, term: 1}`, `{status: 1, textbooks: 1}`. |
+| `grammar_points` | **Tạo Sprint 2 ✅** | `label`, `meaning`, `structure`, `usage`, `examples[]` (sub-document `{sentence, translation, note}` — quan hệ 1 điểm ↔ N ví dụ, **không** collection riêng), `level`, `tags[]`, `sortOrder`, `status`, `lang`. Index: `{status: 1, label: 1}`. |
+| `flashcard_decks`, `flashcards` | Tạo Sprint 3 | Deck chia sẻ + cá nhân; cá nhân gắn userId |
 
 ### Progress
 | Collection | Ghi chú |
@@ -65,6 +67,24 @@
 
 Nguyên tắc: index theo truy vấn thực (userId, deckId, dueDate, status). Ghi rõ index
 bắt buộc + unique (vd `user_subscriptions(userId, status)` unique một gói đang hiệu lực).
+
+### 3.1. Đã tạo (Sprint 2 / P2)
+
+| Collection | Index | Loại | Mục đích |
+|---|---|---|---|
+| `users` | `{ email: 1 }` | sparse | Tra cứu tài khoản email (OAuth-only có email null) |
+| `auth_accounts` | `{ provider: 1, providerAccountId: 1 }` | **unique** | Một external identity không link 2 lần |
+| `auth_sessions` | `{ token: 1 }` | **unique** | Tra cứu + revocation theo token |
+| `auth_sessions` | `{ user: 1, expiresAt: 1 }` | — | Liệt kê session theo user (debug/audit) |
+| `auth_sessions` | `{ expiresAt: 1 }` | TTL (`expireAfterSeconds: 0`) | MongoDB tự xoá session hết hạn |
+| `textbooks` | `{ status: 1, level: 1 }` | — | Lọc công khai + theo cấp độ |
+| `units` | `{ textbook: 1, sortOrder: 1 }` | — | TOC của giáo trình theo thứ tự |
+| `vocabulary` | `{ status: 1, term: 1 }` | — | Lọc công khai + hiển thị theo từ |
+| `vocabulary` | `{ status: 1, textbooks: 1 }` | — | Lọc theo giáo trình |
+| `grammar_points` | `{ status: 1, label: 1 }` | — | Lọc công khai + hiển thị theo nhãn |
+
+Tài khoản admin đầu tiên: **không auto-seed** (spec §4.1) — chạy
+`node apps/api/scripts/bootstrap-admin.mjs <email> [password]` (P2-USER-02).
 
 ## 4. Điều chưa quyết định (owner: Tôi/Cả hai)
 

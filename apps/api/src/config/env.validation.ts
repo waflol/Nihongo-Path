@@ -72,5 +72,14 @@ export function validateEnv(config: Record<string, unknown>): Env {
     WEB_ORIGIN: toOptionalString(config.WEB_ORIGIN),
     MONGODB_URL: mongodbUrl,
     MONGODB_URL_REQUIRED: mongodbUrlRequired,
+    // Auth (P2) — optional; the auth module refuses to serve when the
+    // required subset is missing, so no fail-fast here.
+    JWT_ACCESS_SECRET: toOptionalString(config.JWT_ACCESS_SECRET),
+    JWT_ACCESS_EXPIRES_IN: toOptionalString(config.JWT_ACCESS_EXPIRES_IN),
+    JWT_REFRESH_SECRET: toOptionalString(config.JWT_REFRESH_SECRET),
+    JWT_REFRESH_EXPIRES_IN: toOptionalString(config.JWT_REFRESH_EXPIRES_IN),
+    GOOGLE_CLIENT_ID: toOptionalString(config.GOOGLE_CLIENT_ID),
+    GOOGLE_CLIENT_SECRET: toOptionalString(config.GOOGLE_CLIENT_SECRET),
+    GOOGLE_CALLBACK_URL: toOptionalString(config.GOOGLE_CALLBACK_URL),
   };
 }

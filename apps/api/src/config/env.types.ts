@@ -17,4 +17,23 @@ export interface Env {
   MONGODB_URL?: string;
   /** When true, a missing MONGODB_URL fails startup with a clear error. */
   MONGODB_URL_REQUIRED: boolean;
+
+  // --- Auth (Phase P2). All optional: the API boots without them; the auth
+  // endpoints simply refuse to run until the required subset is present. ---
+  /** HMAC secret for access tokens (never logged). */
+  JWT_ACCESS_SECRET?: string;
+  /** Access-token TTL, e.g. `15m`. */
+  JWT_ACCESS_EXPIRES_IN?: string;
+  /** HMAC secret for refresh tokens (distinct from access, never logged). */
+  JWT_REFRESH_SECRET?: string;
+  /** Refresh-token TTL, e.g. `7d`. */
+  JWT_REFRESH_EXPIRES_IN?: string;
+
+  // --- Google sign-in (ID-token verification). Optional. ---
+  /** Google OAuth client ID (`...apps.googleusercontent.com`). */
+  GOOGLE_CLIENT_ID?: string;
+  /** Google OAuth client secret (never logged). */
+  GOOGLE_CLIENT_SECRET?: string;
+  /** Callback/redirect URI the client was registered with. */
+  GOOGLE_CALLBACK_URL?: string;
 }
