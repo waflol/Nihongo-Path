@@ -25,6 +25,12 @@ export class UpdateProfileDto {
   @IsString()
   @MaxLength(10)
   lang?: string;
+
+  /** IANA time zone id, e.g. `Asia/Ho_Chi_Minh` (P3-SRS-05). */
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  timezone?: string;
 }
 
 @ApiTags("users")

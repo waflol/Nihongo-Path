@@ -253,6 +253,14 @@ thử thủ công có ghi bằng chứng.
 - Không viết file test trong P1–P10.
 - P11 chạy toàn bộ backlog; chỉ khi đó mới tick `[x]` cho các mục test.
 
+**Cập nhật 03/11/2026 (Tôi):** giữ nguyên hướng trên — **không viết test
+file ở P1–P10, toàn bộ test làm sau cùng ở P11.** Trong các phase giữa,
+việc kiểm chứng chỉ dùng:
+- `typecheck` + `lint` + `build` (bắt buộc exit 0),
+- kiểm thử thủ công bằng `curl`/script đối với API, **ghi bằng chứng thật**
+  vào mục *Bằng chứng* của checklist (không tick `[x]` cho các mục test
+  backlog — những mục đó để P11).
+
 **Ngoại lệ bắt buộc:** spec §16 yêu cầu test cho quota, quyền truy cập và dữ
 liệu trùng lặp. Các nhóm này **phải** có test case trong backlog ngay từ P5,
 không được để trống.

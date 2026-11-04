@@ -31,6 +31,15 @@ export class User {
   @Prop({ type: String, default: "vi", lowercase: true })
   lang: string;
 
+  /**
+   * IANA time zone for SRS day boundaries / due dates (P3-SRS-05, spec §4.4
+   * "xử lý timezone, ngày ôn"). The SM-2 scheduler anchors intervals to the
+   * user's *local day* in this zone; a profile tz change re-anchors future
+   * scheduling (T-P3-05/T-P3-12).
+   */
+  @Prop({ type: String, default: "Asia/Ho_Chi_Minh" })
+  timezone: string;
+
   @Prop({ type: String, default: "ACTIVE", enum: USER_STATUSES })
   status: UserStatus;
 

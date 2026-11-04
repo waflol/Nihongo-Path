@@ -228,32 +228,80 @@ chặn route, CRUD nội dung. Test case: `T-P2-01` … `T-P2-10`.
 
 ## P3 — Sprint 3: Flashcards & SRS
 
-> **Gate ⏸:** thuật toán SRS (Q-03) và quyền nội dung nhập vào (Q-12).
+> **Gate:** Q-03 (thuật toán SRS) **✅ đã chốt 03/11/2026** — SM-2 + state
+> versioned dự phòng FSRS (ADR-srs, `Accepted`). Q-12 (quyền nội dung)
+> **vẫn ⏸** → P3-IMPORT-05 (PDF) hoãn `[—]`; CSV/XLSX đầy đủ.
 
 | ID | Task | Phụ thuộc | File/module | Hoàn thành khi | Kiểm thử | TT |
 |---|---|---|---|---|---|---|
-| P3-CARD-01 | Schema `flashcard_decks` (chia sẻ + cá nhân) | P2-CONTENT-02 | `src/flashcards/schemas/deck.schema.ts` | Deck cá nhân gắn `userId`; deck chia sẻ không | xem schema | `[ ]` |
-| P3-CARD-02 | Schema `flashcards` (tham chiếu deck, vocabulary/grammar) | P3-CARD-01 | `src/flashcards/schemas/card.schema.ts` | Index theo `deckId` | xem schema | `[ ]` |
-| P3-CARD-03 | CRUD bộ thẻ cá nhân (chỉ chủ sở hữu) | P3-CARD-02, P2-AUTH-06 | `flashcards.controller.ts` | Không sửa được deck người khác | gọi API với id khác | `[ ]` |
-| P3-CARD-04 | Đọc bộ thẻ chia sẻ + lưu từ trong lúc học | P3-CARD-03 | `flashcards.service.ts` | Lưu từ tạo card trong deck cá nhân | thao tác UI | `[ ]` |
-| P3-IMPORT-01 | Parser CSV/XLSX | P3-CARD-02 | `src/import/parsers/*` | Đọc được file mẫu; báo lỗi rõ khi sai định dạng | upload file mẫu | `[ ]` |
-| P3-IMPORT-02 | Ánh xạ cột + preview (không ghi DB) | P3-IMPORT-01 | `src/import/import.service.ts` | Trả về bản xem trước + danh sách lỗi từng dòng | gọi API preview | `[ ]` |
-| P3-IMPORT-03 | Phát hiện trùng lặp trước khi nhập | P3-IMPORT-02 | `import.service.ts` | Đánh dấu dòng trùng, cho phép bỏ qua/ghi đè | gọi API với file có trùng | `[ ]` |
-| P3-IMPORT-04 | Xác nhận và ghi hàng loạt (idempotent) | P3-IMPORT-03 | `import.service.ts` | Gửi lại cùng request không tạo bản ghi đôi | gọi 2 lần | `[ ]` |
-| P3-IMPORT-05 | Hỗ trợ PDF (nếu được duyệt — Q-12) | P3-IMPORT-01 | `src/import/parsers/pdf.ts` | Chỉ làm khi Tôi duyệt; nếu không → `[—]` | — | `⏸` |
-| P3-SRS-01 | ADR thuật toán SRS (so sánh, chọn, mô tả dữ liệu cần lưu) | P3-CARD-02 | `docs/adr/ADR-srs.md` | Tôi duyệt; ADR `Accepted` | người dùng xác nhận | `⏸` |
-| P3-SRS-02 | Schema `user_card_progress` + index `(userId, dueDate)` | P3-SRS-01 | `src/srs/schemas/progress.schema.ts` | Index tồn tại | xem index | `[ ]` |
-| P3-SRS-03 | Tính lịch ôn từ phản hồi người học | P3-SRS-02 | `src/srs/srs.service.ts` | Cùng chuỗi phản hồi → cùng `dueDate` | gọi hàm thuần | `[ ]` |
-| P3-SRS-04 | API phiên ôn: thẻ mới / đến hạn / khó nhớ / đã thuộc | P3-SRS-03 | `src/srs/srs.controller.ts` | Trả đúng nhóm, không lẫn user khác | gọi API 2 user | `[ ]` |
-| P3-SRS-05 | Xử lý timezone và ngày reset | P3-SRS-03 | `srs.service.ts` | Cùng thời điểm, 2 timezone → kết quả đúng theo tz người dùng | đổi tz hồ sơ | `[ ]` |
-| P3-SRS-06 | Học trên nhiều thiết bị (ghi đồng thời) | P3-SRS-04 | `srs.service.ts` | Không mất tiến độ; ghi sau thắng theo quy tắc rõ | gửi 2 request song song | `[ ]` |
-| P3-UI-01 | Màn hình học flashcard (Preline card, phím tắt, a11y) | P3-SRS-04 | `app/learn/flashcards/*` | Lật thẻ, đánh giá, chuyển thẻ mượt | thao tác trình duyệt | `[ ]` |
-| P3-UI-02 | Wizard nhập hàng loạt (upload → map cột → preview → xác nhận) | P3-IMPORT-04 | `app/admin/import/*` | 4 bước rõ ràng, có huỷ giữa chừng | thao tác trình duyệt | `[ ]` |
-| P3-UI-03 | Danh sách bộ thẻ + tiến độ | P3-CARD-03 | `app/learn/decks/*` | Hiển thị số thẻ mới/đến hạn | thao tác trình duyệt | `[ ]` |
-| P3-DOC-01 | Cập nhật `database.md` cho deck/card/progress + SRS state | P3-SRS-02 | `docs/database.md` | Khớp code | đối chiếu | `[ ]` |
+| P3-CARD-01 | Schema `flashcard_decks` (chia sẻ + cá nhân) | P2-CONTENT-02 | `src/flashcards/schemas/deck.schema.ts` | Deck cá nhân gắn `userId`; deck chia sẻ không | xem schema | `[x]` |
+| P3-CARD-02 | Schema `flashcards` (tham chiếu deck, vocabulary/grammar) | P3-CARD-01 | `src/flashcards/schemas/card.schema.ts` | Index theo `deckId` | xem schema | `[x]` |
+| P3-CARD-03 | CRUD bộ thẻ cá nhân (chỉ chủ sở hữu) | P3-CARD-02, P2-AUTH-06 | `flashcards.controller.ts` | Không sửa được deck người khác | gọi API với id khác | `[x]` |
+| P3-CARD-04 | Đọc bộ thẻ chia sẻ + lưu từ trong lúc học | P3-CARD-03 | `flashcards.service.ts` | Lưu từ tạo card trong deck cá nhân | gọi API save-vocab/grammar | `[x]` |
+| P3-IMPORT-01 | Parser CSV/XLSX | P3-CARD-02 | `src/import/parsers/*` | Đọc được file mẫu; báo lỗi rõ khi sai định dạng | upload file mẫu | `[x]` |
+| P3-IMPORT-02 | Ánh xạ cột + preview (không ghi DB) | P3-IMPORT-01 | `src/import/import.service.ts` | Trả về bản xem trước + danh sách lỗi từng dòng | gọi API preview | `[x]` |
+| P3-IMPORT-03 | Phát hiện trùng lặp trước khi nhập | P3-IMPORT-02 | `import.service.ts` | Đánh dấu dòng trùng, cho phép bỏ qua/ghi đè | gọi API với file có trùng | `[x]` |
+| P3-IMPORT-04 | Xác nhận và ghi hàng loạt (idempotent) | P3-IMPORT-03 | `import.service.ts` | Gửi lại cùng request không tạo bản ghi đôi | gọi 2 lần | `[x]` |
+| P3-IMPORT-05 | Hỗ trợ PDF (nếu được duyệt — Q-12) | P3-IMPORT-01 | `src/import/parsers/pdf.ts` | Chỉ làm khi Tôi duyệt; nếu không → `[—]` | — | `[—]` (hoãn — Q-12 chưa chốt; xem OPEN_QUESTIONS Q-12, ghi nhận 03/11) |
+| P3-SRS-01 | ADR thuật toán SRS (so sánh, chọn, mô tả dữ liệu cần lưu) | P3-CARD-02 | `docs/adr/ADR-srs.md` | Tôi duyệt; ADR `Accepted` | người dùng xác nhận | `[x]` |
+| P3-SRS-02 | Schema `user_card_progress` + index `(userId, dueDate)` | P3-SRS-01 | `src/srs/schemas/progress.schema.ts` | Index tồn tại | xem index (live: `usercardprogresses`) | `[x]` |
+| P3-SRS-03 | Tính lịch ôn từ phản hồi người học | P3-SRS-02 | `src/srs/srs.algorithm.ts` (pure) + `srs.service.ts` | Cùng chuỗi phản hồi → cùng `dueDate` | gọi hàm thuần | `[x]` |
+| P3-SRS-04 | API phiên ôn: thẻ mới / đến hạn / khó nhớ / đã thuộc | P3-SRS-03 | `src/srs/srs.controller.ts` | Trả đúng nhóm, không lẫn user khác | gọi API 2 user | `[x]` |
+| P3-SRS-05 | Xử lý timezone và ngày reset | P3-SRS-03 | `src/srs/srs.days.ts` + `srs.service.ts` | Cùng thời điểm, 2 timezone → kết quả đúng theo tz người dùng | đổi tz hồ sơ | `[x]` |
+| P3-SRS-06 | Học trên nhiều thiết bị (ghi đồng thời) | P3-SRS-04 | `srs.service.ts` (upsert unique) | Không mất tiến độ; ghi sau thắng theo quy tắc rõ | gửi 2 request song song | `[x]` |
+| P3-UI-01 | Màn hình học flashcard (card flip, phím tắt, a11y) | P3-SRS-04 | `app/learn/study/*`, `components/learn/study-session.tsx` | Lật thẻ, đánh giá, chuyển thẻ | build + smoke (chưa bấm trình duyệt) | `[~]` |
+| P3-UI-02 | Wizard nhập hàng loạt (upload → map cột → preview → xác nhận) | P3-IMPORT-04 | `app/admin/import/*`, `components/admin/import-wizard.tsx` | 4 bước rõ ràng, huỷ giữa chừng | build + API đã verify (chưa bấm trình duyệt) | `[~]` |
+| P3-UI-03 | Danh sách bộ thẻ + tiến độ | P3-CARD-03 | `app/learn/decks/*`, `components/learn/decks-console.tsx` | Hiển thị số thẻ mới/đến hạn | build + API đã verify (chưa bấm trình duyệt) | `[~]` |
+| P3-DOC-01 | Cập nhật `database.md` cho deck/card/progress + SRS state | P3-SRS-02 | `docs/database.md` | Khớp code | đối chiếu | `[x]` |
 
 **Checkpoint P3:** build/lint/typecheck; import mẫu chạy end-to-end; thẻ đến hạn
-đúng. Test case: `T-P3-01` … `T-P3-12`.
+đúng. Test case: `T-P3-01` … `T-P3-12` (đã có ở backlog §"Test backlog").
+
+> **Bằng chứng tĩnh (03/11/2026):** `tsc --noEmit` api + ui exit 0; `oxlint`
+> api exit 0 (0 lỗi); `next build` ui exit 0 (route `/admin/import` = `◐`,
+> `/learn/decks` + `/learn/study` = `◐`, các gateway `ƒ`).
+>
+> **Bằng chứng LIVE (03/11/2026, MongoDB Atlas qua `apps/api/.env`):**
+> - P3-CARD-03: userA tạo deck; userB đọc deck của A → `403`; A đọc deck
+>   của A → `200`. B thêm card vào deck của A → `403`.
+> - P3-CARD-04: `POST /flashcards/save-vocabulary/:id` lần 1 →
+>   `created: true` (card `kind: VOCABULARY`, `origin: saved` trong default
+>   deck cá nhân); lần 2 → `created: false`, cùng card id (idempotent,
+>   T-P3-09). `save-grammar` tương tự. Vocab id không tồn tại → `404`.
+> - P3-IMPORT-01: CSV + XLSX (tự sinh) parse đúng; file rỗng → `422`;
+>   định dạng lạ → preview trả lỗi từng dòng thay vì crash.
+> - P3-IMPORT-02: preview không mapping → trả `columns` để wizard bước map;
+>   preview có mapping → từng dòng `ok`/`error`/`duplicate`, **deck vẫn 0
+>   card** (không ghi DB).
+> - P3-IMPORT-03: file có dòng trùng + dòng thiếu front → preview đánh dấu
+>   đúng (`(2 ok, 3 duplicate, 4 error "missing front value")`).
+> - P3-IMPORT-04: confirm lần 1 `imported 3`; lần 2 `imported 0, skipped 3`;
+>   deck giữ đúng 3 card (T-P3-03).
+> - P3-IMPORT-05-adjacent (shared deck): learner import vào deck chung →
+>   `409`; admin confirm → `imported 2`, re-confirm → `skipped 2`.
+> - T-P3-11: file ~11 MB → `413` ngay tại boundary (multer), server không
+>   treo; >5000 dòng (file nhỏ) → `422` (giới hạn dòng).
+> - P3-SRS-03: chuỗi `GOOD,GOOD,EASY` lặp 2 lần → state **giống hệt**
+>   (deterministic, T-P3-04). `AGAIN` → `lapses+1`, relearn 10 phút.
+> - P3-SRS-05: cùng review, `tz=Asia/Ho_Chi_Minh` → dueDay
+>   `2026-11-05`, `tz=America/New_York` → `2026-11-09`, `tz=UTC` →
+>   `2026-11-15` (khác nhau đúng số giờ lệch, tháng không lệch). tz rác
+>   → `400`. `PATCH /users/me {timezone}` đổi hồ sơ được (T-P3-12).
+> - P3-SRS-04: userA gọi queue/review trên deck cá nhân của B → `403`
+>   (cả 2 hướng).
+> - P3-SRS-06: 2 review song song cùng card → chỉ **1** doc
+>   `usercardprogresses` (unique index `(user, card)`), `seenCount` cộng
+>   dồn (đã thấy 1 doc có `seenCount: 5`), không fork.
+> - `studysessions`: 5 phiên, grades histogram + tz + device ghi đúng.
+>
+> **Chưa làm (còn mở):** P3-IMPORT-05 (parser PDF) — hoãn do Q-12.
+> Thao tác tay trong trình duyệt cho P3-UI-01/02/03 (build xanh + API đã
+> verify live, nhưng chưa bấm chuột) — sẽ bổ sung khi có môi trường
+> duyệt; **không tick `[x]` cho tới khi đó**.
+>
+> **Ghi chú chiến lược test (03/11/2026):** theo quyết định mới, **không
+> viết test file ở P1–P10**; toàn bộ test dồn về P11. Các mục
+> `T-P3-01…12` trong backlog chỉ được tick `[x]` khi P11 chạy thật.
 
 ---
 

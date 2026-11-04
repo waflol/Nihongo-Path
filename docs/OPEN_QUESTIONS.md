@@ -14,13 +14,15 @@
 
 | Nhóm | Số câu | Chặn gì |
 |---|---|---|
-| Chặn thiết kế | 6 | P3, P6, P7, P8, P9, P10 |
+| Chặn thiết kế | 5 | P6, P7, P8, P9, P10 |
 | Chặn phát hành | 4 | P10, P11 |
 | Mâu thuẫn tài liệu | 5 | P1 |
 | Mơ hồ | 5 | Nhiều phase |
 
-**Trạng thái:** Q-01, Q-02 đã `✅ Chốt` (30/10/2026) — mở khoá P2. Các câu còn
-lại đang `⏸ Chờ Tôi`. Không câu nào được tự trả lời.
+**Trạng thái:** Q-01, Q-02 đã `✅ Chốt` (30/10/2026) — mở khoá P2. Q-03
+(SRS) đã `✅ Chốt` (03/11/2026) — SM-2 + state versioned, mở khoá P3-SRS.
+Các câu còn lại đang `⏸ Chờ Tôi` (Q-12 vẫn mở → P3-IMPORT-05 PDF hoãn).
+Không câu nào được tự trả lời.
 
 ---
 
@@ -65,7 +67,13 @@ lại đang `⏸ Chờ Tôi`. Không câu nào được tự trả lời.
   (chính xác hơn, cần tham số, phức tạp hơn); (c) tự thiết kế.
 - **Đề xuất:** (a) SM-2 cho MVP — dễ kiểm chứng, dễ thay thế nhờ tách module
   `srs`. So sánh chi tiết trước khi chốt (ADR-002 ở plan §9).
-- **Owner:** Cả hai. **Phase:** P3. **Trạng thái:** `⏸`
+- **Owner:** Cả hai. **Phase:** P3.
+- **Trạng thái:** `✅ Đã chốt` (03/11/2026): **(a) SM-2 cho MVP, state
+  versioned để dự phòng FSRS.** Impl: `srs.algorithm.ts` (pure,
+  deterministic) + `srs.days.ts` (timezone-aware day boundaries);
+  `user_card_progress.state` embed `{ schemaVersion: 1, algorithm: "sm2",
+  ease, repetitions, intervalDays, lapses }` — FSRS sau này thêm
+  `schemaVersion: 2` mà không phá state cũ. ADR-002 đã `Accepted`.
 
 ### Q-04 — Provider AI / STT / đánh giá phát âm
 
@@ -174,6 +182,9 @@ lại đang `⏸ Chờ Tôi`. Không câu nào được tự trả lời.
 - **Đề xuất:** Không import PDF có bản quyền; ưu tiên nội dung tự soạn hoặc có
   giấy phép mở.
 - **Owner:** Tôi. **Phase:** P3, P4. **Trạng thái:** `⏸`
+- **Hệ quả đã ghi nhận (03/11/2026):** P3-IMPORT-05 (parser PDF) được **hoãn**
+  (checklist `[—]`) cho tới khi Q-12 được Tôi chốt — CSV/XLSX vẫn chạy đầy
+  đủ ở P3 (P3-IMPORT-01..04). Import đề thi ở P4 cũng chờ câu trả lời này.
 
 ---
 

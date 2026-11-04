@@ -22,6 +22,8 @@ export interface SessionUser {
   displayName: string | null;
   role: string;
   lang: string;
+  /** IANA time zone (P3-SRS-05) — the SRS scheduler's day boundary. */
+  timezone: string;
 }
 
 export interface SessionState {

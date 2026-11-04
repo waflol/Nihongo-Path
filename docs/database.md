@@ -27,14 +27,15 @@
 | `units` | **Tạo Sprint 2 ✅** | Tham chiếu `textbook`, `sortOrder` là thứ tự canon. Index: `{textbook: 1, sortOrder: 1}`. |
 | `vocabulary` | **Tạo Sprint 2 ✅** | `term`, `reading`, `meaning`, `pos`, `example`/`exampleTranslation`, `source`, `tags[]`, `textbooks[]`/`units[]` (liên kết N:1 denormalized), `status`, `lang`. Index: `{status: 1, term: 1}`, `{status: 1, textbooks: 1}`. |
 | `grammar_points` | **Tạo Sprint 2 ✅** | `label`, `meaning`, `structure`, `usage`, `examples[]` (sub-document `{sentence, translation, note}` — quan hệ 1 điểm ↔ N ví dụ, **không** collection riêng), `level`, `tags[]`, `sortOrder`, `status`, `lang`. Index: `{status: 1, label: 1}`. |
-| `flashcard_decks`, `flashcards` | Tạo Sprint 3 | Deck chia sẻ + cá nhân; cá nhân gắn userId |
+| `flashcard_decks` | **Tạo Sprint 3 ✅** | `title`, `summary`, `user` (ObjectId, **null cho deck chia sẻ**), `shared` (bool — admin viết, mọi user đã auth đọc), `level`, `lang`, `status` (DRAFT/PUBLISHED). Index: `{user: 1, shared: 1, status: 1}`. |
+| `flashcards` | **Tạo Sprint 3 ✅** | `deck` (ref), `kind` (VOCABULARY/GRAMMAR/CUSTOM), `vocabulary`/`grammar` (ref, provenance khi wrap content — front/back được snapshot lên card để engine học tự chứa), `front`, `back`, `tags[]`, `origin` (manual/import/saved), `dedupeKey` (sha256 của (front,back) chuẩn hoá, **máy tính server-side**). Index: `{deck: 1}`, `{deck: 1, dedupeKey: 1}` **unique** (idempotent save/import, trùng lặp preview). |
 
 ### Progress
 | Collection | Ghi chú |
 |---|---|
-| `user_card_progress` | Tiến độ từng người dùng, SRS state (thuật toán chưa chốt) |
-| `study_sessions` | Phiên học, timezone, thiết bị |
-| `exercise_attempts`, `exam_attempts` | Câu trả lời, điểm, thời gian, giải thích |
+| `user_card_progress` | **Tạo Sprint 3 ✅** — 1 doc duy nhất mỗi `(user, card)` (unique). `state` embed SRS payload **versioned** (`schemaVersion: 1, algorithm: "sm2"`, `ease`, `repetitions`, `intervalDays`, `lapses` — ADR-srs, Q-03 chốt SM-2 + dự phòng FSRS), `dueAt` (instant UTC), `dueDay` (`YYYY-MM-DD` theo tz user — P3-SRS-05), `seenCount`, `lastReviewedAtMs` (thứ tự ghi đa thiết bị: last-write-wins, T-P3-06). Index: `{user: 1, card: 1}` **unique**, `{user: 1, dueDay: 1}` (hàng đợi ôn). |
+| `study_sessions` | **Tạo Sprint 3 ✅** — phiên học append-only: `user`, `deck` (null = cross-deck), `day` (local tz), `timezone` (ghi nhận, không giả định), `device` (web/mobile/unknown), `cardsReviewed`, `grades` (histogram theo AGAIN/HARD/GOOD/EASY), `startedAtMs`/`endedAtMs`. Index: `{user: 1, day: -1}`. |
+| `exercise_attempts`, `exam_attempts` | Câu trả lời, điểm, thời gian, giải thích (Sprint 4) |
 
 ### Media
 | Collection | Ghi chú |
@@ -83,12 +84,27 @@ bắt buộc + unique (vd `user_subscriptions(userId, status)` unique một gói
 | `vocabulary` | `{ status: 1, textbooks: 1 }` | — | Lọc theo giáo trình |
 | `grammar_points` | `{ status: 1, label: 1 }` | — | Lọc công khai + hiển thị theo nhãn |
 
+> Ghi chú: tên collection thực là do mongoose **tự pluralise** model name
+> (ví dụ model `FlashcardDeck` → collection `flashcarddecks`). Tên ở §2 là
+> "gợi ý logic" theo quy ước; khi viết query/đọc code, dùng tên pluralised.
+
+### 3.2. Đã tạo (Sprint 3 / P3)
+
+| Collection (actual) | Model | Index | Loại | Mục đích |
+|---|---|---|---|---|
+| `flashcarddecks` | `FlashcardDeck` | `{ user: 1, shared: 1, status: 1 }` | — | Liệt kê deck cá nhân (user) + deck chung (shared, PUBLISHED) |
+| `flashcards` | `Flashcard` | `{ deck: 1 }` | — | Liệt kê card trong 1 deck (P3-CARD-02) |
+| `flashcards` | `Flashcard` | `{ deck: 1, dedupeKey: 1 }` | **unique** | Idempotent save/import + phát hiện trùng (T-P3-01/03) |
+| `usercardprogresses` | `UserCardProgress` | `{ user: 1, card: 1 }` | **unique** | 1 progress record mỗi (user, card) — last-write-wins đa thiết bị (T-P3-06) |
+| `usercardprogresses` | `UserCardProgress` | `{ user: 1, dueDay: 1 }` | — | Hàng đợi ôn theo ngày (P3-SRS-02 / T-P3-05) |
+| `studysessions` | `StudySession` | `{ user: 1, day: -1 }` | — | Thống kê phiên học theo ngày (P3-UI-03) |
+
 Tài khoản admin đầu tiên: **không auto-seed** (spec §4.1) — chạy
 `node apps/api/scripts/bootstrap-admin.mjs <email> [password]` (P2-USER-02).
 
 ## 4. Điều chưa quyết định (owner: Tôi/Cả hai)
 
 - Provider thanh toán, tiền tệ, chính sách refund (spec §6.1).
-- Thuật toán SRS (spec §4.4).
 - Giới hạn media (500MB/60min/1080p/30 ngày là **giá trị thử nghiệm**, chưa chốt).
 - RPO/RTO (gợi ý 24h/8h, chưa cam kết).
+- ~~Thuật toán SRS~~ → **Đã chốt SM-2 + state versioned (03/11/2026, ADR-srs, Q-03).**

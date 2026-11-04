@@ -18,6 +18,8 @@ export interface PublicUser {
   displayName: string | null;
   role: Role;
   lang: string;
+  /** IANA time zone (P3-SRS-05); the SRS scheduler's day boundary. */
+  timezone: string;
   status: string;
   createdAt: string;
 }

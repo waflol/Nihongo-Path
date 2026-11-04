@@ -9,6 +9,9 @@ import { HealthModule } from "./health/health.module.js";
 import { buildAuthModule } from "./auth/auth.module.js";
 import { buildUsersModule } from "./users/users.module.js";
 import { buildContentModule } from "./content/content.module.js";
+import { buildFlashcardsModule } from "./flashcards/flashcards.module.js";
+import { buildSrsModule } from "./srs/srs.module.js";
+import { buildImportModule } from "./import/import.module.js";
 
 /**
  * NOTE: the very first import (`./bootstrap/env.js`) loads `.env` /
@@ -38,6 +41,12 @@ import { buildContentModule } from "./content/content.module.js";
     buildAuthModule(),
     buildUsersModule(),
     buildContentModule(),
+    // Phase P3 (Flashcards & SRS). Each builder degrades to an empty module
+    // when `MONGODB_URL` is unset, matching the P1/P2 contract: the routes
+    // are simply absent without a database, with no DI error.
+    buildFlashcardsModule(),
+    buildSrsModule(),
+    buildImportModule(),
   ],
   controllers: [AppController],
   providers: [AppService],

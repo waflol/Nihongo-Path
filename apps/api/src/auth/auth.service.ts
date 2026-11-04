@@ -252,6 +252,7 @@ export class AuthService {
         displayName: doc.displayName ?? null,
         role: doc.role,
         lang: doc.lang,
+        timezone: doc.timezone ?? "Asia/Ho_Chi_Minh",
         status: doc.status,
         createdAt: doc.createdAt.toISOString(),
       },
@@ -346,6 +347,7 @@ export class AuthService {
       displayName: doc.displayName ?? null,
       role: doc.role,
       lang: doc.lang,
+      timezone: doc.timezone ?? "Asia/Ho_Chi_Minh",
       status: doc.status,
       createdAt: doc.createdAt.toISOString(),
     };

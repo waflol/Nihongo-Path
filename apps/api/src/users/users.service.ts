@@ -1,4 +1,9 @@
-import { ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
 import { InjectModel } from "@nestjs/mongoose";
 import { Types, type Model } from "mongoose";
 import { CONTENT_ADMIN } from "../common/roles.js";
@@ -9,6 +14,8 @@ import { USER_STATUSES, User, UserDocument } from "./schemas/user.schema.js";
 export interface UpdateProfileInput {
   displayName?: string;
   lang?: string;
+  /** IANA time zone, validated against the built-in DB (P3-SRS-05). */
+  timezone?: string;
 }
 
 /**
@@ -31,6 +38,7 @@ export class UsersService {
       displayName: doc.displayName ?? null,
       role: doc.role,
       lang: doc.lang,
+      timezone: doc.timezone,
       status: doc.status,
       createdAt: doc.createdAt.toISOString(),
     };
@@ -60,9 +68,29 @@ export class UsersService {
     if (input.lang !== undefined) {
       doc.lang = input.lang.trim().toLowerCase();
     }
+    if (input.timezone !== undefined) {
+      doc.timezone = this.assertValidTimezone(input.timezone);
+    }
 
     await doc.save();
     return this.toPublic(doc);
+  }
+
+  /**
+   * Validate an IANA time zone id against Node's built-in database
+   * (P3-SRS-05 — SRS day boundaries run in the profile's zone). A zone
+   * missing from the runtime DB would silently fall back to UTC, so reject
+   * it with a clear 400 instead.
+   */
+  private assertValidTimezone(value: string): string {
+    const zone = value.trim();
+    try {
+      // Throws RangeError for unknown zones.
+      new Intl.DateTimeFormat("en-US", { timeZone: zone });
+    } catch {
+      throw new BadRequestException(`Unknown time zone: ${zone}`);
+    }
+    return zone;
   }
 
   /**
