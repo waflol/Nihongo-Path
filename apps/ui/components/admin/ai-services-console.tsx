@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { TASK_LABELS, type BenchTask } from "@/lib/ai-benchmark-score";
 import { ConfirmDialog } from "@/components/learn/confirm-dialog";
+import { AiTaskTabs } from "@/components/admin/ai-task-tabs";
 import { AiBenchmarkPanel, type Bench, type HistoryEntry } from "@/components/admin/ai-benchmark-panel";
 
 interface Provider {
@@ -487,20 +488,7 @@ export function AiServicesConsole() {
       />
 
       {/* Priority list — one order per task */}
-      <div role="tablist" aria-label="Thứ tự ưu tiên theo việc" className="mt-6 flex flex-wrap gap-2">
-        {(["translate", "write", "grammar"] as const).map((k) => (
-          <button
-            key={k}
-            type="button"
-            role="tab"
-            aria-selected={task === k}
-            onClick={() => setTask(k)}
-            className={`inline-flex h-9 items-center rounded-lg border border-[var(--border)] px-4 text-sm font-medium text-[var(--foreground)] hover:bg-[var(--layer-hover)] ${task === k ? "bg-[var(--layer-hover)]" : ""}`}
-          >
-            {TASK_LABELS[k]}
-          </button>
-        ))}
-      </div>
+      <AiTaskTabs className="mt-6" label="Thứ tự ưu tiên theo việc" value={task} onChange={setTask} />
       <p className="mt-2 text-xs text-[var(--muted-foreground)]">
         Thứ tự ưu tiên của “{TASK_LABELS[task]}” — dùng mũi tên để đổi, hoặc chấm điểm rồi bấm “Sắp xếp” ở phần Chấm điểm bên dưới.
         {hiddenCount > 0 && ` ${hiddenCount} dịch vụ chỉ dịch được nên không nằm trong danh sách này.`}

@@ -1,5 +1,6 @@
 "use client";
 
+import { AiTaskTabs } from "@/components/admin/ai-task-tabs";
 import { Fragment, useMemo, useState } from "react";
 import { Icon } from "@/components/learn/icons";
 import { bestOf, DEFAULT_SPEED_WEIGHT, MIN_ACCURACY, rankServices, speedScore, TASK_LABELS, type BenchTask, type Ranked } from "@/lib/ai-benchmark-score";
@@ -242,24 +243,16 @@ export function AiBenchmarkPanel({
       <h2 id="bench-title" className="text-sm font-semibold text-[var(--foreground)]">
         Chấm điểm & so sánh dịch vụ
       </h2>
-      <div role="tablist" aria-label="Loại việc" className="mt-3 flex flex-wrap gap-2">
-        {(["translate", "write", "grammar"] as const).map((k) => (
-          <button
-            key={k}
-            type="button"
-            role="tab"
-            aria-selected={task === k}
-            onClick={() => {
-              setTask(k);
-              setPicked(new Set());
-              setOpenId(null);
-            }}
-            className={`${btn} ${task === k ? "bg-[var(--layer-hover)]" : ""}`}
-          >
-            {TASK_LABELS[k]}
-          </button>
-        ))}
-      </div>
+      <AiTaskTabs
+        className="mt-3"
+        label="Loại việc"
+        value={task}
+        onChange={(k) => {
+          setTask(k);
+          setPicked(new Set());
+          setOpenId(null);
+        }}
+      />
       <p className="mt-3 text-xs text-[var(--muted-foreground)]">
         <b>Cách chấm “{TASK_LABELS[task]}”:</b> {HOW[task]} <b>Tốc độ</b> = độ trễ trung vị của lượt gọi, quy ra điểm trên thang log cố định (≤ 2s = 100, ≥ 30s = 0)
         nên điểm không đổi khi thêm bớt dịch vụ khác. <b>Tổng hợp</b> = ((1 − tỉ trọng) × chính xác + tỉ trọng × tốc độ) × tỉ lệ chạy thành công; dịch vụ dưới ngưỡng
