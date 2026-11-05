@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -14,7 +15,7 @@ import {
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { ContentAdmin } from "../auth/decorators/roles.decorator.js";
 import { AiCallLogService } from "./ai-call-log.service.js";
-import { AiExampleService } from "./ai-example.service.js";
+import { AiExampleService, type AiTask } from "./ai-example.service.js";
 import { AiServicesService } from "./ai-services.service.js";
 
 /**
@@ -129,6 +130,42 @@ export class AiServicesController {
   @ApiOperation({ summary: "Send one tiny request to check the key and model" })
   async test(@Param("id") id: string) {
     return this.examples.probe(await this.services.runtimeOf(id));
+  }
+
+  @Post("services/:id/try")
+  @HttpCode(HttpStatus.OK)
+  @ContentAdmin()
+  @ApiOperation({ summary: "Sandbox: write (or translate) one example sentence on one service — nothing is saved" })
+  async try(
+    @Param("id") id: string,
+    @Body() body: { mode?: string; term?: string; reading?: string; meaning?: string; pos?: string; ja?: string },
+  ) {
+    const term = String(body?.term ?? "").trim().slice(0, 60);
+    const meaning = String(body?.meaning ?? "").trim().slice(0, 200);
+    if (!term) throw new BadRequestException("Nhập từ cần tạo câu");
+    const task: AiTask =
+      body?.mode === "translate"
+        ? { kind: "translate", ja: String(body?.ja ?? "").trim().slice(0, 120), term, meaning }
+        : {
+            kind: "write",
+            term,
+            reading: String(body?.reading ?? "").trim().slice(0, 60),
+            meaning,
+            pos: String(body?.pos ?? "").trim().slice(0, 40),
+          };
+    if (task.kind === "translate" && !task.ja) throw new BadRequestException("Nhập câu tiếng Nhật cần dịch");
+    return this.examples.trial(await this.services.runtimeOf(id), task);
+  }
+
+  @Post("services/:id/play")
+  @HttpCode(HttpStatus.OK)
+  @ContentAdmin()
+  @ApiOperation({ summary: "Playground: translate or analyse the grammar of one text on one service — nothing is saved" })
+  async play(@Param("id") id: string, @Body() body: { mode?: string; text?: string }) {
+    const text = String(body?.text ?? "").trim().slice(0, 500);
+    if (!text) throw new BadRequestException("Nhập nội dung cần xử lý");
+    const mode = body?.mode === "grammar" ? "grammar" : "translate";
+    return this.examples.play(await this.services.runtimeOf(id), mode, text);
   }
 
   // ── Live activity ───────────────────────────────────────────────────

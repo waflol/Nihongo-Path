@@ -65,6 +65,16 @@ const NAV: NavItem[] = [
     ),
   },
   {
+    href: "/admin/ai-playground",
+    label: "Sân chơi AI",
+    desc: "Tạo câu, dịch, phân tích ngữ pháp",
+    icon: (
+      <svg {...iconProps}>
+        <path d="M4 5h16v11H9l-5 4zM8 9h8M8 12h5" />
+      </svg>
+    ),
+  },
+  {
     href: "/admin/content",
     label: "Nội dung học",
     desc: "Giáo trình, từ vựng, ngữ pháp",
@@ -120,7 +130,7 @@ const NAV: NavItem[] = [
 ];
 
 function isActive(pathname: string, href: string) {
-  return href === "/admin" ? pathname === "/admin" : pathname.startsWith(href);
+  return href === "/admin" ? pathname === "/admin" : pathname === href || pathname.startsWith(`${href}/`);
 }
 
 /**
