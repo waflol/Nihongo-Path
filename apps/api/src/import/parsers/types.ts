@@ -11,6 +11,17 @@ export interface Table {
   rows: Record<string, string>[];
   /** Which parser produced this (`csv` | `xlsx` | `pdf`). */
   format: "csv" | "xlsx" | "pdf";
+  /** PDF read by OCR: what each page yielded (`null` = the page could not be read). */
+  ocr?: { pages: (OcrRow[] | null)[] };
+}
+
+/** One vocabulary entry read off a scanned page. */
+export interface OcrRow {
+  no: string;
+  word: string;
+  reading: string;
+  hanViet?: string;
+  meaning: string;
 }
 
 /** A file the import surface cannot parse — mapped to a clean 415/422. */

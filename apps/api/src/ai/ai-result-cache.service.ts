@@ -17,10 +17,12 @@ export function taskTerm(task: AiTask): { term: string; kind: AiTask["kind"] } {
 
 export function taskKey(task: AiTask): string {
   const n = (s: string) => s.normalize("NFKC").trim().toLowerCase();
+  // An answer asked of "the next service" (earlier ones rejected) is a different task.
+  const skip = task.skip?.length ? ["skip", ...[...task.skip].sort()] : [];
   const raw =
     task.kind === "translate"
-      ? ["t", n(task.ja), n(task.term), n(task.meaning)]
-      : ["w", n(task.term), n(task.reading), n(task.meaning), n(task.pos)];
+      ? ["t", n(task.ja), n(task.term), n(task.meaning), ...skip]
+      : ["w", n(task.term), n(task.reading), n(task.meaning), n(task.pos), ...skip];
   return createHash("sha1").update(raw.join("\u0001")).digest("hex");
 }
 
@@ -66,6 +68,48 @@ export class AiResultCacheService {
     }
   }
 
+  /** Record which word an old saved answer was about (only when it has none yet). */
+  async backfillTerm(key: string, about: { term: string; kind: string }): Promise<void> {
+    if (!this.model) return;
+    try {
+      await this.model
+        .updateOne({ key, term: { $in: [null, ""] } }, { $set: { term: about.term, kind: about.kind } })
+        .exec();
+    } catch {
+      /* cosmetic only */
+    }
+  }
+
+  /**
+   * Saved answers about any of these words (admin listing). Only the fields
+   * shown to the admin are read — never anything secret.
+   */
+  async findByTerms(terms: string[]): Promise<
+    { term: string; kind: string; ja?: string; vi: string; matches?: boolean; service: string; model?: string; createdAt: Date }[]
+  > {
+    if (!this.model || terms.length === 0) return [];
+    try {
+      const docs = await this.model
+        .find({ term: { $in: terms } })
+        .select("term kind ja vi matches serviceLabel modelName createdAt")
+        .sort({ createdAt: -1 })
+        .lean()
+        .exec();
+      return docs.map((d) => ({
+        term: d.term ?? "",
+        kind: d.kind ?? "",
+        ja: d.ja,
+        vi: d.vi,
+        matches: d.matches,
+        service: d.serviceLabel,
+        model: d.modelName,
+        createdAt: d.createdAt,
+      }));
+    } catch {
+      return [];
+    }
+  }
+
   private putHot(
     key: string,
     v: AiResult & { term?: string; kind?: string; service?: string; model?: string },
@@ -81,7 +125,15 @@ export class AiResultCacheService {
     if (!this.model) return;
     try {
       await this.model
-        .updateOne({ key }, { $setOnInsert: { key, ja: r.ja, vi: r.vi, matches: r.matches, serviceLabel: r.service || serviceLabel, modelName: r.model, term: about?.term, kind: about?.kind } }, { upsert: true })
+        .updateOne(
+          { key },
+          {
+            $setOnInsert: { key, ja: r.ja, vi: r.vi, matches: r.matches, serviceLabel: r.service || serviceLabel, modelName: r.model },
+            // `term`/`kind` are also filled in on an answer saved before they existed.
+            ...(about ? { $set: { term: about.term, kind: about.kind } } : {}),
+          },
+          { upsert: true },
+        )
         .exec();
     } catch {
       /* a lost cache write only means one repeated call */

@@ -16,6 +16,7 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { ContentAdmin } from "../auth/decorators/roles.decorator.js";
 import type { BenchTask } from "./ai-benchmark.js";
 import { AiCallLogService } from "./ai-call-log.service.js";
+import { AI_LOG_PURPOSES, type AiLogPurpose } from "./ai-call-log.schema.js";
 import { AiExampleService, type AiTask } from "./ai-example.service.js";
 import { AiServicesService } from "./ai-services.service.js";
 
@@ -244,7 +245,7 @@ export class AiServicesController {
       pageSize: Math.min(100, Math.max(1, Number(pageSize) || 25)),
       serviceId: serviceId || undefined,
       ok: ok === "1" ? true : ok === "0" ? false : undefined,
-      purpose: purpose === "example" || purpose === "test" || purpose === "vocab" ? purpose : undefined,
+      purpose: AI_LOG_PURPOSES.includes(purpose as AiLogPurpose) ? purpose : undefined,
       q,
     });
   }

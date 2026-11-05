@@ -231,7 +231,9 @@ chặn route, CRUD nội dung. Test case: `T-P2-01` … `T-P2-10`.
 > **Gate:** Q-03 (thuật toán SRS) **✅ đã chốt 03/11/2026** — SM-2 + state
 > versioned dự phòng FSRS (ADR-srs, `Accepted`). Q-12 (quyền nội dung)
 > đã duyệt 05/11 (chỉ PDF tự soạn/có quyền) → P3-IMPORT-05 (PDF) đã làm `[~]`;
-> CSV/XLSX ≤ 10 MB, PDF ≤ 50 MB (06/11/2026).
+> CSV/XLSX ≤ 10 MB, PDF ≤ 50 MB (06/11/2026). PDF scan đọc bằng OCR (AI hỗ trợ
+> ảnh) chạy nền dạng job — P3-IMPORT-05b `[~]`; tạo ví dụ do admin bấm nút
+> (P3-CARD-08 `[x]`).
 
 | ID | Task | Phụ thuộc | File/module | Hoàn thành khi | Kiểm thử | TT |
 |---|---|---|---|---|---|---|
@@ -244,6 +246,8 @@ chặn route, CRUD nội dung. Test case: `T-P2-01` … `T-P2-10`.
 | P3-IMPORT-03 | Phát hiện trùng lặp trước khi nhập | P3-IMPORT-02 | `import.service.ts` | Đánh dấu dòng trùng; trùng = giống cả kanji + hiragana + nghĩa; luôn bỏ qua (giữ thẻ cũ), không ghi đè | gọi API với file có trùng | `[x]` |
 | P3-IMPORT-04 | Xác nhận và ghi hàng loạt (idempotent) | P3-IMPORT-03 | `import.service.ts` | Gửi lại cùng request không tạo bản ghi đôi | gọi 2 lần | `[x]` |
 | P3-IMPORT-05 | Hỗ trợ PDF bảng từ vựng (Q-12 đã duyệt 05/11: chỉ PDF tự soạn/có quyền) + đánh số thứ tự (STT) | P3-IMPORT-01 | `src/import/parsers/pdf.ts` (pdfjs-dist, ghép cột theo toạ độ), `import.service.ts`, `import-wizard.tsx` | Nhận cột theo tên (STT, Chữ Hán/Từ vựng, Âm Hán, Cách đọc, Nghĩa); giữ STT, Âm Hán Việt; PDF scan → lỗi rõ | parser chạy file thật `語彙 徹底トレーニング.pdf` (5134/5135 dòng, 2,6 s) và `2500TANGO N2` (1914 dòng); wizard tự nhận cột trên trình duyệt 05/11/2026; chưa bấm Xác nhận | `[~]` |
+| P3-IMPORT-05b | PDF scan: OCR bằng dịch vụ AI có hỗ trợ ảnh, chạy nền dạng job (tiến trình, xem/đọc lại từng trang, cache theo hash file); text layer rác bị phát hiện và bỏ | P3-IMPORT-05 | `src/import/parsers/pdf.ts` (`ocrTable`, `ocrWithRetry`, `renderPdfPage`, `isGarbageText`), `ai/ai-example.service.ts` (`ocrVocabPage`), `import.service.ts` (job PDF), `import-job-tracker.tsx`, `pdf-page-review.tsx` | PDF scan đọc được ra bảng từ vựng; job báo tiến trình; đọc lại được trang lỗi | test `parsers/pdf.spec.ts` (render, OCR, phát hiện rác); chưa chạy trên file scan thật | `[~]` |
+| P3-CARD-08 | Tạo ví dụ thủ công (nút "✨ Tạo ví dụ" chạy nền trên server) + xem ví dụ AI đã sinh nhưng chưa gắn vào thẻ | P3-IMPORT-04 | `flashcards.service.ts` (`aiUnusedExamples`, tự gợi ý khi thêm thẻ), `flashcards.controller.ts` (`decks/:id/ai-unused`), `ai-unused-examples.tsx`, `example-starter.tsx` | Bấm nút là deck có ví dụ; admin xem được câu AI bị bỏ | test `reading-variants.spec.ts`, `example-suggest.reading.spec.ts` | `[x]` |
 | P3-SRS-01 | ADR thuật toán SRS (so sánh, chọn, mô tả dữ liệu cần lưu) | P3-CARD-02 | `docs/adr/ADR-srs.md` | Tôi duyệt; ADR `Accepted` | người dùng xác nhận | `[x]` |
 | P3-SRS-02 | Schema `user_card_progress` + index `(userId, dueDate)` | P3-SRS-01 | `src/srs/schemas/progress.schema.ts` | Index tồn tại | xem index (live: `usercardprogresses`) | `[x]` |
 | P3-SRS-03 | Tính lịch ôn từ phản hồi người học | P3-SRS-02 | `src/srs/srs.algorithm.ts` (pure) + `srs.service.ts` | Cùng chuỗi phản hồi → cùng `dueDate` | gọi hàm thuần | `[x]` |
@@ -301,7 +305,8 @@ chặn route, CRUD nội dung. Test case: `T-P2-01` … `T-P2-10`.
 >   dồn (đã thấy 1 doc có `seenCount: 5`), không fork.
 > - `studysessions`: 5 phiên, grades histogram + tz + device ghi đúng.
 >
-> **Chưa làm (còn mở):** P3-IMPORT-05 còn `[~]` (chưa bấm Xác nhận trên PDF thật).
+> **Chưa làm (còn mở):** P3-IMPORT-05 còn `[~]` (chưa bấm Xác nhận trên PDF thật);
+> P3-IMPORT-05b (PDF scan qua OCR) chưa chạy trên file scan thật.
 > **Bổ sung sau Sprint 3 (ngoài checklist gốc, 05–06/11/2026):** nhật ký/chặn IP,
 > dịch vụ AI do admin quản lý + benchmark + nhật ký gọi, cache kết quả AI, Redis console,
 > chỉ mục Tatoeba cục bộ, quản lý thẻ trong deck, giới hạn thẻ mới/ngày, thống kê

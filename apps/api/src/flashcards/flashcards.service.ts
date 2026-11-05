@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  Optional,
   type OnModuleInit,
 } from "@nestjs/common";
 import { InjectModel } from "@nestjs/mongoose";
@@ -22,6 +23,7 @@ import { CONTENT_ADMIN } from "../common/roles.js";
 import type { AuthUser } from "../auth/auth.types.js";
 import { cardDedupeKey, cardDedupeKeyForCopy } from "./dedupe.js";
 import { ExampleSuggestService } from "./example-suggest.service.js";
+import { AiResultCacheService } from "../ai/ai-result-cache.service.js";
 import type { VocabularyDocument } from "../content/schemas/vocabulary.schema.js";
 import type { GrammarPointDocument } from "../content/schemas/grammar-point.schema.js";
 import type { UserCardProgressDocument } from "../srs/schemas/progress.schema.js";
@@ -120,6 +122,7 @@ export class FlashcardsService implements OnModuleInit {
     @InjectModel("GrammarPoint")
     private readonly grammar: Model<GrammarPointDocument>,
     private readonly exampleSuggest: ExampleSuggestService,
+    @Optional() private readonly aiCache?: AiResultCacheService,
   ) {}
 
   /**
@@ -411,6 +414,71 @@ export class FlashcardsService implements OnModuleInit {
   }
 
   /**
+   * Words of a deck whose card still has NO example although the AI already
+   * answered for that word (the answer is saved, but it was not accepted onto
+   * the card — e.g. the sentence failed the "really uses this word" check, or
+   * the card was cleared afterwards). Lets an admin see what the AI produced
+   * and add it by hand.
+   */
+  async aiUnusedExamples(
+    caller: AuthUser,
+    deckId: string,
+    limit = 500,
+  ): Promise<{
+    total: number;
+    items: {
+      cardId: string;
+      front: string;
+      reading: string;
+      back: string;
+      kind: string;
+      ja: string;
+      vi: string;
+      matches?: boolean;
+      service: string;
+      model: string;
+      createdAt: Date;
+    }[];
+  }> {
+    await this.getDeck(caller, deckId);
+    const empty = await this.card
+      .find({ deck: new Types.ObjectId(deckId), examples: { $size: 0 } })
+      .select("front back reading")
+      .sort({ order: 1, _id: 1 })
+      .lean()
+      .exec();
+    // The AI is asked about the word without its parenthesised note.
+    const termOf = (front: string) => front.replace(/[（(][^）)]*[）)]/g, "").trim();
+    const byTerm = new Map<string, typeof empty>();
+    for (const c of empty) {
+      const t = termOf(c.front);
+      byTerm.set(t, [...(byTerm.get(t) ?? []), c]);
+    }
+    const answers = (await this.aiCache?.findByTerms([...byTerm.keys()])) ?? [];
+    const items = [];
+    for (const a of answers) {
+      // Only an answer that carries a usable sentence: a written one (`ja`) or a translation.
+      if (!a.vi?.trim()) continue;
+      for (const c of byTerm.get(a.term) ?? []) {
+        items.push({
+          cardId: String(c._id),
+          front: c.front,
+          reading: c.reading ?? "",
+          back: c.back,
+          kind: a.kind,
+          ja: a.ja ?? "",
+          vi: a.vi,
+          matches: a.matches,
+          service: a.service,
+          model: a.model ?? "",
+          createdAt: a.createdAt,
+        });
+      }
+    }
+    return { total: items.length, items: items.slice(0, limit) };
+  }
+
+  /**
    * Add and/or remove tags on many cards at once — either an explicit id list
    * or everything matching a filter (so "select all 4861" needs no id list).
    */
@@ -498,7 +566,7 @@ export class FlashcardsService implements OnModuleInit {
         ];
       }
     }
-    return this.card.create({
+    const created = await this.card.create({
       deck: doc._id,
       front: input.front,
       back: input.back,
@@ -511,6 +579,39 @@ export class FlashcardsService implements OnModuleInit {
       origin: input.origin ?? "manual",
       dedupeKey: key,
     });
+    // Not found on Tatoeba → let the AI write/translate one in the background
+    // (the add is not held up). Only fills a card that is still empty.
+    if (examples.length === 0) {
+      void this.exampleSuggest
+        .suggestFull({
+          term: input.front,
+          meaning: input.back,
+          reading: input.reading,
+          partOfSpeech: input.partOfSpeech,
+        })
+        .then((hit) =>
+          hit
+            ? this.card
+                .updateOne(
+                  { _id: created._id, examples: { $size: 0 } },
+                  {
+                    $set: {
+                      examples: [
+                        {
+                          sentence: hit.sentence,
+                          translation: hit.translation,
+                          ...(hit.source ? { source: hit.source } : {}),
+                        },
+                      ],
+                    },
+                  },
+                )
+                .exec()
+            : undefined,
+        )
+        .catch(() => undefined);
+    }
+    return created;
   }
 
   /**

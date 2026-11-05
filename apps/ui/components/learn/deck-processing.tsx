@@ -149,7 +149,7 @@ export function RetryExamplesButton({
     }).catch(() => null);
     setBusy(false);
     if (!res?.ok) {
-      setNote("Không chạy lại được — thử lại sau");
+      setNote("Không tạo được ví dụ — thử lại sau");
       return;
     }
     const body = (await res.json().catch(() => null)) as { remaining?: number } | null;
@@ -163,8 +163,8 @@ export function RetryExamplesButton({
         type="button"
         disabled={busy}
         onClick={() => void run()}
-        title="Tạo lại ví dụ cho những thẻ còn thiếu"
-        aria-label="Tạo lại ví dụ"
+        title="Tạo ví dụ cho những thẻ chưa có"
+        aria-label="Tạo ví dụ"
         className={className}
       >
         {iconOnly ? (
@@ -172,7 +172,7 @@ export function RetryExamplesButton({
         ) : busy ? (
           "Đang chạy…"
         ) : (
-          "↻ Tạo lại ví dụ"
+          "✨ Tạo ví dụ"
         )}
       </button>
       {note && (

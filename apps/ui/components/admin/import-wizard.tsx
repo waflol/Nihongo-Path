@@ -4,6 +4,9 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { DuplicatesPanel, type DuplicateInfo } from "@/components/admin/duplicates-panel";
+import { ExampleStarter } from "@/components/admin/example-starter";
+import { PdfPageReview } from "@/components/admin/pdf-page-review";
+import { JOB_STARTED_EVENT, type PdfJob } from "@/components/admin/import-job-tracker";
 
 /**
  * Bulk-import wizard (P3-UI-02, spec §4.2 "preview, ánh xạ cột, kiểm tra
@@ -52,10 +55,12 @@ interface Preview {
 }
 
 interface ConfirmResult {
+  deckId: string;
   imported: number;
   skipped: number;
   overwritten: number;
   examplesQueued?: number;
+  examplesDeferred?: number;
   duplicates?: DuplicateInfo[];
   errors: { rowNumber: number; error: string }[];
 }
@@ -135,6 +140,47 @@ export function ImportWizard({ learner = false }: { learner?: boolean }) {
 
   const search = useSearchParams();
   const wantedDeck = search.get("deck");
+  const wantedJob = search.get("job");
+
+  // A PDF is read in the background (OCR can take minutes): the job survives
+  // leaving this page, and the global tracker notifies when it is done.
+  const [jobId, setJobId] = useState<string | null>(null);
+  const [job, setJob] = useState<PdfJob | null>(null);
+  const autoPreviewed = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!jobId || job?.status !== "running") return;
+    const t = setInterval(async () => {
+      const r = await fetch(`/api/import?job=${encodeURIComponent(jobId)}`, { cache: "no-store" }).catch(() => null);
+      if (r?.ok) setJob((await r.json().catch(() => null)) as PdfJob | null);
+    }, 2000);
+    return () => clearInterval(t);
+  }, [jobId, job?.status]);
+
+  useEffect(() => {
+    if (!job || job.id !== jobId) return;
+    if (job.status === "done" && autoPreviewed.current !== job.id) {
+      autoPreviewed.current = job.id;
+      void runPreview(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [job?.status, job?.id, jobId]);
+
+  // Coming back from the "đã đọc xong" notification: resume that job.
+  useEffect(() => {
+    if (!wantedJob) return;
+    void (async () => {
+      const r = await fetch(`/api/import?job=${encodeURIComponent(wantedJob)}`, { cache: "no-store" }).catch(() => null);
+      if (!r?.ok) {
+        setError("Tác vụ đọc PDF không còn (đã hết hạn hoặc server khởi động lại) — hãy chọn lại file");
+        return;
+      }
+      const j = (await r.json()) as PdfJob;
+      setDeckId(j.deckId);
+      setJobId(j.id);
+      setJob(j);
+    })();
+  }, [wantedJob]);
 
   // Shared decks (any status) — what an admin imports into. Falls back to the
   // caller's own list when the admin endpoint is not available to them.
@@ -207,7 +253,7 @@ export function ImportWizard({ learner = false }: { learner?: boolean }) {
   // Step 2: fetch the columns for the chosen mapping (no mapping sent yet →
   // the API returns just the header row's names).
   async function runPreview(revealed: boolean) {
-    if (!file || !deckId) {
+    if ((!file && !jobId) || !deckId) {
       setError("Chọn file và bộ thẻ đích trước");
       return;
     }
@@ -215,8 +261,30 @@ export function ImportWizard({ learner = false }: { learner?: boolean }) {
     setError(null);
     setPreview(null);
 
+    // PDF → start the background read first; the preview follows when it is done.
+    if (file && !jobId && file.name.toLowerCase().endsWith(".pdf")) {
+      const start = new FormData();
+      start.append("file", file);
+      start.append("deckId", deckId);
+      const r = await fetch("/api/import?action=job", { method: "POST", body: start }).catch(() => null);
+      setRunning(null);
+      const started = (await r?.json().catch(() => null)) as (PdfJob & { message?: string }) | null;
+      if (!r?.ok || !started) {
+        setError(started?.message ?? "Không bắt đầu đọc được PDF");
+        return;
+      }
+      if (typeof Notification !== "undefined" && Notification.permission === "default") {
+        void Notification.requestPermission();
+      }
+      setJobId(started.id);
+      setJob(started);
+      window.dispatchEvent(new Event(JOB_STARTED_EVENT));
+      return;
+    }
+
     const form = new FormData();
-    form.append("file", file);
+    if (jobId) form.append("jobId", jobId);
+    else if (file) form.append("file", file);
     form.append("deckId", deckId);
     if (revealed && mapping.front && mapping.back) {
       form.append(
@@ -272,7 +340,7 @@ export function ImportWizard({ learner = false }: { learner?: boolean }) {
   }
 
   async function runConfirm() {
-    if (!file || !deckId || !mapping.front || !mapping.back) {
+    if ((!file && !jobId) || !deckId || !mapping.front || !mapping.back) {
       setError("Chưa ánh xạ đủ cột (câu hỏi + đáp án)");
       return;
     }
@@ -280,7 +348,8 @@ export function ImportWizard({ learner = false }: { learner?: boolean }) {
     setError(null);
 
     const form = new FormData();
-    form.append("file", file);
+    if (jobId) form.append("jobId", jobId);
+    else if (file) form.append("file", file);
     form.append("deckId", deckId);
     form.append(
       "mapping",
@@ -312,7 +381,7 @@ export function ImportWizard({ learner = false }: { learner?: boolean }) {
   const steps: string[] = ["1. Chọn file + bộ thẻ", "2. Ánh xạ cột", "3. Xác nhận"];
 
   return (
-    <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6">
+    <div className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-semibold tracking-tight text-[var(--foreground)]">
           Nhập flashcard hàng loạt
@@ -325,7 +394,7 @@ export function ImportWizard({ learner = false }: { learner?: boolean }) {
         </Link>
       </div>
       <p className="mt-1 text-sm text-[var(--muted-foreground)]">
-        CSV, XLSX hoặc PDF (bảng có cột STT), ≤ 10 MB. Nhập chỉ ghi vào bộ thẻ khi bạn bấm{" "}
+        CSV / XLSX (≤ 10 MB) hoặc PDF có bảng STT (≤ 50 MB). Nhập chỉ ghi vào bộ thẻ khi bạn bấm{" "}
         <strong>Xác nhận</strong> — xem trước không chạm database.
       </p>
 
@@ -352,12 +421,12 @@ export function ImportWizard({ learner = false }: { learner?: boolean }) {
         })}
       </ol>
 
-      {error && (
+      {(error || (job?.status === "error" && job.id === jobId)) && (
         <p
           role="alert"
           className="mt-4 rounded-lg bg-[#fef2f2] px-4 py-3 text-sm text-[#b91c1c] dark:bg-[#2a1215] dark:text-[#fca5a5]"
         >
-          {error}
+          {error ?? job?.error ?? "Đọc PDF thất bại"}
         </p>
       )}
 
@@ -383,6 +452,8 @@ export function ImportWizard({ learner = false }: { learner?: boolean }) {
               accept=".csv,.xlsx,.pdf,text/csv,application/pdf"
               onChange={(e) => {
                 setFile(e.target.files?.[0] ?? null);
+                setJobId(null);
+                setJob(null);
                 setPreview(null);
                 setResult(null);
                 setMapping({});
@@ -392,8 +463,10 @@ export function ImportWizard({ learner = false }: { learner?: boolean }) {
             {file && (
               <p className="mt-1 text-xs text-[var(--muted-foreground)]">
                 {file.name} · {(file.size / 1024 / 1024).toFixed(2)} MB
-                {file.size > 10 * 1024 * 1024 && (
-                  <span className="ml-2 text-[#b91c1c]">— vượt 10 MB, sẽ bị từ chối</span>
+                {file.size > (file.name.toLowerCase().endsWith(".pdf") ? 50 : 10) * 1024 * 1024 && (
+                  <span className="ml-2 text-[#b91c1c]">
+                    — vượt {file.name.toLowerCase().endsWith(".pdf") ? 50 : 10} MB, sẽ bị từ chối
+                  </span>
                 )}
               </p>
             )}
@@ -459,23 +532,57 @@ export function ImportWizard({ learner = false }: { learner?: boolean }) {
         <div className="mt-4">
           <button
             type="button"
-            disabled={!file || !deckId || running !== null}
+            disabled={(!file && !jobId) || !deckId || running !== null || job?.status === "running"}
             onClick={() => void runPreview(false)}
             className="rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-semibold text-[var(--primary-foreground)] hover:bg-[var(--primary-hover)] disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {running === "preview"
+            {running === "preview" || job?.status === "running"
               ? "Đang đọc file…"
               : "Đọc file (nháp, chưa nhập)"}
           </button>
         </div>
+
+        {job && job.status === "running" && (
+          <div className="mt-4" aria-live="polite">
+            <div
+              role="progressbar"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={job.total > 0 ? Math.round((job.done / job.total) * 100) : 0}
+              className="h-2.5 overflow-hidden rounded-full bg-[var(--layer)]"
+            >
+              <div
+                className="h-full bg-[var(--primary)] transition-all"
+                style={{ width: `${Math.max(job.total > 0 ? (job.done / job.total) * 100 : 0, 3)}%` }}
+              />
+            </div>
+            <p className="mt-1 text-xs text-[var(--muted-foreground)]">
+              {job.total > 0
+                ? `Đang đọc trang ${job.done}/${job.total} (${Math.round((job.done / job.total) * 100)}%)`
+                : "Đang chuẩn bị…"}{" "}
+              — bạn có thể chuyển sang trang khác, hệ thống sẽ báo khi đọc xong.
+            </p>
+          </div>
+        )}
       </section>
 
       {file?.name.toLowerCase().endsWith(".pdf") && (
         <p className="mt-4 rounded-lg bg-[#fef9c3] px-4 py-3 text-sm text-[#a16207] dark:bg-[#3a3210] dark:text-[#fde047]">
           Chỉ nhập PDF do bạn tự soạn hoặc có quyền sử dụng — không nhập giáo
-          trình có bản quyền. PDF phải có lớp văn bản (không phải ảnh scan) và
-          bảng có cột STT.
+          trình có bản quyền. PDF có lớp văn bản sạch và bảng STT được đọc
+          trực tiếp; PDF scan hoặc có lớp OCR lỗi sẽ được đọc lại bằng AI có hỗ
+          trợ ảnh (Gemini / Claude / GPT-4o) — có thể mất vài phút.
         </p>
+      )}
+
+      {job?.status === "done" && job.id === jobId && (
+        <PdfPageReview
+          job={job}
+          onChanged={(j) => {
+            setJob(j);
+            void runPreview(false);
+          }}
+        />
       )}
 
       {/* ── Step 2: column mapping ─────────────────────────────────── */}
@@ -661,15 +768,6 @@ export function ImportWizard({ learner = false }: { learner?: boolean }) {
                 </dd>
               </div>
             )}
-            {(result.examplesQueued ?? 0) > 0 && (
-              <div>
-                <dt className="inline">Câu ví dụ: </dt>
-                <dd className="inline font-medium text-[var(--foreground)]">
-                  đang tự tạo cho {result.examplesQueued} thẻ chưa có ví dụ (chạy
-                  nền — bộ thẻ mới ở trạng thái bản nháp và tự công khai khi xong; xem tiến độ ở danh sách bộ thẻ)
-                </dd>
-              </div>
-            )}
             {result.errors.length > 0 && (
               <div>
                 <dt className="inline">Dòng lỗi: </dt>
@@ -683,6 +781,15 @@ export function ImportWizard({ learner = false }: { learner?: boolean }) {
               </div>
             )}
           </dl>
+          {(result.examplesDeferred ?? 0) > 0 && (
+            <ExampleStarter
+              key={result.deckId}
+              deckId={result.deckId}
+              count={result.examplesDeferred ?? 0}
+              learner={learner}
+              decksHref={backHref}
+            />
+          )}
           <DuplicatesPanel duplicates={result.duplicates ?? []} total={result.skipped} />
           <div className="mt-4 flex gap-2">
             <button

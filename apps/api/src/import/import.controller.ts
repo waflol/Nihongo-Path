@@ -3,7 +3,10 @@ import {
   Controller,
   HttpCode,
   HttpStatus,
+  PayloadTooLargeException,
   Param,
+  Get,
+  StreamableFile,
   Post,
   UnprocessableEntityException,
   UploadedFile,
@@ -19,7 +22,7 @@ import { ImportService, type ColumnMapping } from "./import.service.js";
 /**
  * Bulk import surface (P3-IMPORT-02/03/04). Multipart uploads:
  *
- * - `file`            the CSV/XLSX (≤ 10 MB, enforced at the boundary → 413,
+ * - `file`            the CSV/XLSX (≤ 10 MB) or PDF (≤ 50 MB), enforced at the boundary → 413,
  *                     T-P3-11 — an oversized body can never hang the server).
  * - `deckId`          target deck id (form field).
  * - `mapping`         a JSON-encoded `ColumnMapping` (form field).
@@ -28,7 +31,9 @@ import { ImportService, type ColumnMapping } from "./import.service.js";
  * `POST .../preview` returns the per-row preview without writing anything;
  * `POST .../confirm` writes it idempotently (P3-IMPORT-04, T-P3-03).
  */
+/** CSV / XLSX stay at 10 MB; a PDF vocabulary book may be up to 50 MB. */
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+const MAX_PDF_BYTES = 50 * 1024 * 1024;
 
 interface MultipartImportBody {
   deckId: string;
@@ -38,6 +43,8 @@ interface MultipartImportBody {
    */
   mapping?: string;
   duplicatePolicy?: "skip" | "overwrite";
+  /** A finished PDF job whose file is reused instead of re-uploading. */
+  jobId?: string;
   /** `"true"` when the wizard created the target deck for this import. */
   newDeck?: string;
 }
@@ -68,7 +75,8 @@ interface UploadFile {
 function withUploadLimits() {
   return FileInterceptor("file", {
     storage: multer.memoryStorage(),
-    limits: { fileSize: MAX_UPLOAD_BYTES },
+    // The largest allowed (PDF); asUploaded() enforces 10 MB for the other formats.
+    limits: { fileSize: MAX_PDF_BYTES },
   });
 }
 
@@ -94,6 +102,61 @@ export class ImportController {
     return this.imports.controlExamples(caller, deckId, action);
   }
 
+  @Post("jobs")
+  @ApiConsumes("multipart/form-data")
+  @ApiOperation({ summary: "Start reading a PDF in the background (OCR for scans); returns the job" })
+  @UseInterceptors(withUploadLimits())
+  async startJob(
+    @CurrentUser() caller: AuthUser,
+    @UploadedFile("file") file: UploadFile | null,
+    @Body() body: MultipartImportBody,
+  ) {
+    if (!file) {
+      throw new UnprocessableEntityException("A `file` part is required");
+    }
+    const up = this.asUploaded(file);
+    if (up.buffer.subarray(0, 5).toString("latin1") !== "%PDF-") {
+      throw new UnprocessableEntityException("Chỉ PDF mới đọc nền");
+    }
+    return this.imports.startPdfJob(caller, up, body.deckId);
+  }
+
+  @Get("jobs")
+  @ApiOperation({ summary: "The caller's recent PDF reading jobs (progress)" })
+  listJobs(@CurrentUser() caller: AuthUser) {
+    return this.imports.listPdfJobs(caller);
+  }
+
+  @Get("jobs/:id")
+  @ApiOperation({ summary: "One PDF reading job" })
+  getJob(@CurrentUser() caller: AuthUser, @Param("id") id: string) {
+    return this.imports.getPdfJob(caller, id);
+  }
+
+  @Get("jobs/:id/pages/:n/image")
+  @ApiOperation({ summary: "A page of the job's PDF as a PNG (for checking the OCR)" })
+  async jobPageImage(
+    @CurrentUser() caller: AuthUser,
+    @Param("id") id: string,
+    @Param("n") n: string,
+  ) {
+    const png = await this.imports.pdfJobPageImage(caller, id, Number(n));
+    return new StreamableFile(png, { type: "image/png" });
+  }
+
+  @Get("jobs/:id/pages/:n")
+  @ApiOperation({ summary: "What was read from one page of the job's PDF" })
+  jobPageRows(@CurrentUser() caller: AuthUser, @Param("id") id: string, @Param("n") n: string) {
+    return this.imports.pdfJobPageRows(caller, id, Number(n));
+  }
+
+  @Post("jobs/:id/pages/:n/retry")
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: "Read one page of the job's PDF again" })
+  retryJobPage(@CurrentUser() caller: AuthUser, @Param("id") id: string, @Param("n") n: string) {
+    return this.imports.retryPdfJobPage(caller, id, Number(n));
+  }
+
   @Post("preview")
   @ApiConsumes("multipart/form-data")
   @ApiOperation({
@@ -106,13 +169,13 @@ export class ImportController {
     @UploadedFile("file") file: UploadFile | null,
     @Body() body: MultipartImportBody,
   ) {
-    if (!file) {
+    if (!file && !body.jobId) {
       throw new UnprocessableEntityException("A `file` part is required");
     }
     const mapping = this.parseMapping(body.mapping);
     return this.imports.preview(
       caller,
-      this.asUploaded(file),
+      file ? this.asUploaded(file) : this.imports.pdfJobFile(caller, body.jobId!),
       body.deckId,
       mapping,
     );
@@ -129,7 +192,7 @@ export class ImportController {
     @UploadedFile("file") file: UploadFile | null,
     @Body() body: MultipartImportBody,
   ) {
-    if (!file) {
+    if (!file && !body.jobId) {
       throw new UnprocessableEntityException("A `file` part is required");
     }
     const mapping = this.parseMapping(body.mapping);
@@ -144,7 +207,7 @@ export class ImportController {
     const policy: "skip" | "overwrite" = "skip";
     return this.imports.confirm(
       caller,
-      this.asUploaded(file),
+      file ? this.asUploaded(file) : this.imports.pdfJobFile(caller, body.jobId!),
       body.deckId,
       mapping,
       policy,
@@ -166,6 +229,14 @@ export class ImportController {
 
   /** Map multer's File object to the service's `UploadedImportFile` shape. */
   private asUploaded(file: UploadFile) {
+    const isPdf =
+      file.buffer.subarray(0, 5).toString("latin1") === "%PDF-" ||
+      file.originalname.toLowerCase().endsWith(".pdf");
+    if (!isPdf && file.buffer.length > MAX_UPLOAD_BYTES) {
+      throw new PayloadTooLargeException(
+        `File exceeds ${MAX_UPLOAD_BYTES / 1024 / 1024} MB (only PDF may be up to ${MAX_PDF_BYTES / 1024 / 1024} MB)`,
+      );
+    }
     return {
       buffer: file.buffer,
       originalname: file.originalname,

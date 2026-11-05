@@ -170,6 +170,16 @@ export class FlashcardsController {
     });
   }
 
+  @Get("decks/:id/ai-unused")
+  @ContentAdmin()
+  @ApiOperation({
+    summary:
+      "Words with a saved AI example that is not on their (still empty) card — for the admin to review",
+  })
+  aiUnused(@CurrentUser() caller: AuthUser, @Param("id") id: string) {
+    return this.flashcards.aiUnusedExamples(caller, id);
+  }
+
   @Post("decks/:id/cards/tags")
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: "Add / remove tags on many cards (ids or a filter)" })

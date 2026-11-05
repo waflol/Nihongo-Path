@@ -1,8 +1,13 @@
 import { Prop, Schema, SchemaFactory } from "@nestjs/mongoose";
 import type { HydratedDocument } from "mongoose";
 
-/** Why the call was made: generating examples for cards, an admin test/benchmark, or "vocab" = per-word example activity. */
-export const AI_LOG_PURPOSES = ["example", "test", "vocab"] as const;
+/**
+ * Why the call was made: generating examples for cards, an admin test/benchmark,
+ * "vocab" = per-word example activity (counts as example generation),
+ * "ocr" = reading vocabulary from a PDF page, "translate" / "grammar" = the
+ * admin playground.
+ */
+export const AI_LOG_PURPOSES = ["example", "test", "vocab", "ocr", "translate", "grammar"] as const;
 export type AiLogPurpose = (typeof AI_LOG_PURPOSES)[number];
 
 /**

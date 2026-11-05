@@ -3,7 +3,8 @@
 > Tài liệu cho dev local. Chạy 2 app trong monorepo pnpm, cấu hình env, bật
 > MongoDB thật, và các lưu ý kỹ thuật (ESM, Preline, port, Swagger).
 >
-> **Ngày cập nhật:** 06/11/2026 (thêm env AI/Redis, nhập PDF, Tatoeba, admin AI/Redis).
+> **Ngày cập nhật:** 06/11/2026 (thêm env AI/Redis, nhập PDF, Tatoeba, admin AI/Redis);
+> cập nhật nhập PDF scan bằng OCR và luồng tạo ví dụ thủ công.
 
 ## 1. Yêu cầu tối thiểu
 
@@ -142,8 +143,23 @@ DDoS thật cần chặn ở hạ tầng (Cloudflare / nginx / firewall).
   ```
   Cần `MONGODB_URL`; ~35 MB dữ liệu / ~80 MB cả chỉ mục. Chưa nạp → fallback gọi API Tatoeba.
 - **Redis** (`REDIS_URL`, tuỳ chọn): không bắt buộc; thiếu thì bỏ qua. Console ở `/admin/redis`.
-- **Giới hạn file nhập:** CSV/XLSX ≤ **10 MB**, PDF ≤ **50 MB** (vượt → 413). PDF cần bảng có
-  cột STT; file scan (không có text) bị từ chối sớm sau 5 trang đầu.
+- **Giới hạn file nhập:** CSV/XLSX ≤ **10 MB**, PDF ≤ **50 MB** (vượt → 413). PDF có text
+  cần bảng có cột STT; text hỏng (OCR rác) bị phát hiện và bỏ, báo lỗi rõ.
+- **PDF scan (ảnh):** đọc bằng OCR qua dịch vụ AI có hỗ trợ ảnh (Gemini / Claude /
+  GPT-4o). Chạy nền như **tác vụ** (job) nên có thể để trang rồi quay lại:
+  - Trang render PNG (scale 2 ≈ 150 dpi) → gửi cho model đọc → JSON `{rows:[…]}`.
+  - Tối đa **300 trang**, 3 trang đọc song song, thử lại tối đa 4 lần/trang.
+  - Kết quả nhập được cache theo hash nội dung file (không OCR lại lần hai).
+  - Admin xem từng trang (ảnh gốc bên trái, dữ liệu đọc được bên phải) và đọc lại
+    trang lỗi.
+  - Cần có ít nhất một dịch vụ AI hỗ trợ ảnh; không có → báo lỗi rõ.
+- **Tạo ví dụ:** import **không** tự sinh ví dụ nữa. Admin bấm **“✨ Tạo ví dụ”**
+  (trang quản lý thẻ hoặc sau khi import) → chạy nền trên server, Tatoeba trước,
+  không có thì nhờ AI. Thẻ tự sinh từ "Tạo ví dụ bằng AI" cũng có ví dụ nếu
+  Tatoeba không có.
+- **Ví dụ AI không dùng:** thẻ còn trống nhưng AI **đã** trả lời cho từ đó (bị bộ
+  kiểm tra "câu có thật dùng từ này" chặn) → admin xem và thêm tay ở
+  `/admin/decks/[id]` (mục “AI chưa dùng”).
 
 ### 4.2. UI — `apps/ui/.env`
 

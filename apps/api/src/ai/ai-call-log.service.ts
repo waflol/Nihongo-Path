@@ -63,7 +63,8 @@ export class AiCallLogService {
     const filter: Record<string, unknown> = {};
     if (opts.serviceId) filter.serviceId = opts.serviceId;
     if (opts.ok !== undefined) filter.ok = opts.ok;
-    if (opts.purpose) filter.purpose = opts.purpose;
+    // "Tạo ví dụ" covers both batch generation and the per-word activity.
+    if (opts.purpose) filter.purpose = opts.purpose === "example" ? { $in: ["example", "vocab"] } : opts.purpose;
     if (opts.q?.trim()) {
       const rx = new RegExp(opts.q.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
       filter.$or = [{ words: rx }, { response: rx }];

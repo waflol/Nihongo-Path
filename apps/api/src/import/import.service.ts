@@ -1,7 +1,11 @@
+import { createHash, randomUUID } from "node:crypto";
+import { AiExampleService } from "../ai/ai-example.service.js";
 import {
+  Optional,
   Injectable,
   UnprocessableEntityException,
   ConflictException,
+  NotFoundException,
   HttpStatus,
   HttpException,
   type OnApplicationBootstrap,
@@ -23,7 +27,7 @@ import {
 import { parseCsv } from "./parsers/csv.js";
 import { parseXlsx } from "./parsers/xlsx.js";
 import { ExampleSuggestService } from "../flashcards/example-suggest.service.js";
-import { parsePdf } from "./parsers/pdf.js";
+import { ocrWithRetry, parsePdf, renderPdfPage, tableFromOcrPages } from "./parsers/pdf.js";
 
 /** What the multipart upload hands the service (multer, in-memory). */
 export interface UploadedImportFile {
@@ -147,6 +151,8 @@ export interface ImportConfirmResult {
   errors: { rowNumber: number; error: string }[];
   /** New cards without an example: one is generated in the background. */
   examplesQueued: number;
+  /** PDF imports: cards left without an example for now (generate later). */
+  examplesDeferred?: number;
   /** The skipped duplicates with the card each one matches (capped). */
   duplicates: DuplicateInfo[];
 }
@@ -165,6 +171,42 @@ export interface ImportConfirmResult {
  * PDF import is out of P3 (P3-IMPORT-05, deferred per Q-12 / user decision
  * 03/11 — "Bỏ PDF ở P3").
  */
+const JOB_TTL_MS = 6 * 3600_000;
+
+interface PdfJob {
+  id: string;
+  userId: string;
+  deckId: string;
+  fileName: string;
+  status: "running" | "done" | "error";
+  done: number;
+  total: number;
+  rows?: number;
+  error?: string;
+  createdAt: number;
+  finishedAt?: number;
+  file?: UploadedImportFile;
+  /** Content hash = key of the parsed table in the PDF cache. */
+  key: string;
+  /** OCR'd PDFs: rows per page, for the page-by-page review. */
+  pages?: { n: number; rows: number; ok: boolean }[];
+}
+
+/** What the browser sees of a job (never the file bytes). */
+export type PdfJobView = Omit<PdfJob, "file" | "userId" | "key">;
+
+function viewOf(j: PdfJob): PdfJobView {
+  const { file: _file, userId: _userId, key: _key, ...view } = j;
+  void _file;
+  void _userId;
+  void _key;
+  return view;
+}
+
+function pagesOf(table: Table): PdfJob["pages"] {
+  return table.ocr?.pages.map((p, i) => ({ n: i + 1, rows: p?.length ?? 0, ok: p !== null }));
+}
+
 @Injectable()
 export class ImportService implements OnApplicationBootstrap {
   /** Hard cap on data rows per import file (the row-count twin of T-P3-11). */
@@ -177,7 +219,143 @@ export class ImportService implements OnApplicationBootstrap {
     private readonly deck: Model<FlashcardDeckDocument>,
     private readonly morph: ReadingService,
     private readonly exampleSuggest: ExampleSuggestService,
+    @Optional() private readonly ai?: AiExampleService,
   ) {}
+
+  /** Parse a PDF (OCR when needed), remembering the table by content hash. */
+  private async parsePdfCached(buffer: Buffer, onProgress?: (done: number, total: number) => void): Promise<Table> {
+    const key = createHash("sha256").update(buffer).digest("hex");
+    const hit = this.pdfCache.get(key);
+    if (hit) return hit;
+    const table = await parsePdf(buffer, this.ai ? (png, n) => this.ai!.ocrVocabPage(png, n) : undefined, onProgress);
+    // Preview runs this twice (columns, then rows): don't pay for OCR twice.
+    this.pdfCache.set(key, table);
+    if (this.pdfCache.size > 12) this.pdfCache.delete(this.pdfCache.keys().next().value!);
+    return table;
+  }
+
+  // ── Background PDF reading jobs ─────────────────────────────────────
+  // Reading a scanned book through OCR takes minutes, so it runs as a job the
+  // browser can leave and come back to. State is in memory (lost on restart).
+  private readonly jobs = new Map<string, PdfJob>();
+
+  /** Start (or reuse a finished) PDF read; returns at once. */
+  async startPdfJob(caller: AuthUser, file: UploadedImportFile, deckId: string): Promise<PdfJobView> {
+    await this.resolveWritableDeck(caller, deckId);
+    const now = Date.now();
+    for (const [id, j] of this.jobs) if (now - j.createdAt > JOB_TTL_MS) this.jobs.delete(id);
+    const mine = [...this.jobs.values()].filter((j) => j.userId === caller.sub);
+    if (mine.some((j) => j.status === "running")) {
+      throw new ConflictException("Một PDF đang được đọc — đợi nó xong rồi hãy nhập file khác");
+    }
+    if (mine.length >= 5) {
+      const oldest = mine.sort((a, b) => a.createdAt - b.createdAt)[0];
+      this.jobs.delete(oldest.id);
+    }
+    const job: PdfJob = {
+      id: randomUUID(),
+      userId: caller.sub,
+      deckId,
+      fileName: file.originalname,
+      status: "running",
+      done: 0,
+      total: 0,
+      createdAt: now,
+      file,
+      key: createHash("sha256").update(file.buffer).digest("hex"),
+    };
+    this.jobs.set(job.id, job);
+    void this.parsePdfCached(file.buffer, (done, total) => {
+      job.done = done;
+      job.total = total;
+    })
+      .then((table) => {
+        job.status = "done";
+        job.rows = table.rows.length;
+        job.pages = pagesOf(table);
+        job.finishedAt = Date.now();
+      })
+      .catch((error: unknown) => {
+        job.status = "error";
+        job.error =
+          error instanceof UnsupportedFormatError || error instanceof EmptyTableError
+            ? error.detail
+            : "Không đọc được file PDF";
+        job.finishedAt = Date.now();
+        job.file = undefined;
+      });
+    return viewOf(job);
+  }
+
+  listPdfJobs(caller: AuthUser): PdfJobView[] {
+    return [...this.jobs.values()]
+      .filter((j) => j.userId === caller.sub)
+      .sort((a, b) => b.createdAt - a.createdAt)
+      .map(viewOf);
+  }
+
+  getPdfJob(caller: AuthUser, id: string): PdfJobView {
+    return viewOf(this.ownJob(caller, id));
+  }
+
+  /** The uploaded file of a finished job, so preview/confirm can run without re-uploading. */
+  pdfJobFile(caller: AuthUser, id: string): UploadedImportFile {
+    const job = this.ownJob(caller, id);
+    if (job.status !== "done" || !job.file) {
+      throw new ConflictException("PDF này chưa đọc xong hoặc đã hết hạn — hãy chọn lại file");
+    }
+    return job.file;
+  }
+
+  /** One page of the job's PDF as a PNG, so it can be compared with what was read. */
+  async pdfJobPageImage(caller: AuthUser, id: string, n: number): Promise<Buffer> {
+    const job = this.ownJob(caller, id);
+    if (!job.file) throw new NotFoundException("File của tác vụ này đã hết hạn");
+    try {
+      return await renderPdfPage(job.file.buffer, n);
+    } catch (error) {
+      if (error instanceof UnsupportedFormatError) throw new NotFoundException(error.detail);
+      throw error;
+    }
+  }
+
+  /** What was read from one page (OCR'd PDFs). */
+  pdfJobPageRows(caller: AuthUser, id: string, n: number) {
+    const job = this.ownJob(caller, id);
+    const page = this.pdfCache.get(job.key)?.ocr?.pages[n - 1];
+    if (page === undefined) throw new NotFoundException("Trang này không có dữ liệu OCR");
+    return { n, ok: page !== null, rows: page ?? [] };
+  }
+
+  /** Read one page again (after a failure, or when the result looked wrong). */
+  async retryPdfJobPage(caller: AuthUser, id: string, n: number): Promise<PdfJobView> {
+    const job = this.ownJob(caller, id);
+    const table = this.pdfCache.get(job.key);
+    if (job.status !== "done" || !job.file || !table?.ocr || !this.ai) {
+      throw new ConflictException("Không đọc lại được trang này (tác vụ đã hết hạn hoặc không phải PDF scan)");
+    }
+    if (n < 1 || n > table.ocr.pages.length) throw new NotFoundException("Trang không tồn tại");
+    const png = await this.pdfJobPageImage(caller, id, n);
+    const rows = await ocrWithRetry(png, n, (img) => this.ai!.ocrVocabPage(img, n));
+    const pages = [...table.ocr.pages];
+    pages[n - 1] = rows;
+    const next = tableFromOcrPages(pages);
+    this.pdfCache.set(job.key, next);
+    job.rows = next.rows.length;
+    job.pages = pagesOf(next);
+    return viewOf(job);
+  }
+
+  private ownJob(caller: AuthUser, id: string): PdfJob {
+    const job = this.jobs.get(id);
+    if (!job || job.userId !== caller.sub) {
+      throw new NotFoundException("Không tìm thấy tác vụ đọc PDF (có thể đã hết hạn)");
+    }
+    return job;
+  }
+
+  /** Parsed PDF tables by content hash (OCR'd scans are slow and cost AI calls). */
+  private readonly pdfCache = new Map<string, Table>();
 
   // ── Background example generation ───────────────────────────────────
   // Imported cards that arrive without an example get one suggested from
@@ -482,7 +660,7 @@ export class ImportService implements OnApplicationBootstrap {
     const looksPdf =
       file.buffer.length >= 5 && file.buffer.subarray(0, 5).toString("latin1") === "%PDF-";
     if (looksPdf || ext === "pdf") {
-      return parsePdf(file.buffer);
+      return this.parsePdfCached(file.buffer);
     }
     if (looksXlsx || ext === "xlsx") {
       return parseXlsx(file.buffer);
@@ -864,28 +1042,17 @@ export class ImportService implements OnApplicationBootstrap {
           : null;
       })
       .filter((x): x is NonNullable<typeof x> => x !== null);
-    if (pending.length > 0) {
-      // Show "processing examples" on the deck; a brand-new deck stays a
-      // draft until they are ready, then publishes itself.
-      await this.deck
-        .updateOne(
-          { _id: targetDeck._id },
-          {
-            $inc: { exampleTotal: pending.length },
-            ...(newDeck ? { $set: { status: "DRAFT", publishWhenReady: true } } : {}),
-          },
-        )
-        .exec();
-    }
-    this.enqueueExamples(pending);
-
+    // Examples are never generated by the import itself: the admin checks the
+    // cards first, then starts generation with the deck's "Tạo ví dụ" button
+    // (`examples/:deckId/retry`), which has its own progress and runs on the server.
     return {
       deckId,
       imported,
       skipped,
       overwritten,
       errors,
-      examplesQueued: pending.length,
+      examplesQueued: 0,
+      examplesDeferred: pending.length,
       duplicates: dupList,
     };
   }

@@ -159,7 +159,7 @@ apps/api (NestJS) ── REST + Swagger
 | `auth`, `users` | Đăng nhập email/Google, JWT access + refresh xoay vòng, vai trò USER/ADMIN/SUPER_ADMIN |
 | `content` | Giáo trình, bài, từ vựng, ngữ pháp (CRUD admin, đọc công khai) |
 | `flashcards` | Deck (cá nhân/chia sẻ), card, trùng lặp (`dedupeKey`), đọc hiragana, gợi ý ví dụ/ảnh |
-| `import` | Nhập CSV/XLSX (≤ 10 MB) và PDF bảng STT (≤ 50 MB): preview → confirm idempotent |
+| `import` | Nhập CSV/XLSX (≤ 10 MB) và PDF bảng STT (≤ 50 MB): preview → confirm idempotent; PDF scan đọc bằng OCR (AI có hỗ trợ ảnh) chạy nền như job, cache theo hash file |
 | `srs` | SM-2, hàng đợi ôn theo ngày tz user, giới hạn thẻ mới/ngày (`newCardsPerDay`), thống kê tiến độ (Mongo aggregation), ôn chéo deck |
 | `ai` | Dịch vụ AI do admin quản lý (key mã hoá), benchmark, gọi song song, cache kết quả, nhật ký gọi |
 | `redis` | Kết nối tuỳ chọn + console quản trị; khoá tiền tố `np:` |
@@ -177,11 +177,16 @@ apps/api (NestJS) ── REST + Swagger
 
 ```
 File (CSV/XLSX/PDF) → preview (không ghi DB) → confirm (idempotent)
-   → deck + card → nền: tạo câu ví dụ cho từng thẻ
-        1) Tatoeba cục bộ (cặp Nhật–Việt thật)
-        2) câu Nhật Tatoeba + AI dịch
-        3) AI viết, kuromoji kiểm tra
+   → deck + card (KHÔNG tự sinh ví dụ)
+        → admin bấm "✨ Tạo ví dụ" → nền (server):
+             1) Tatoeba cục bộ (cặp Nhật–Việt thật)
+             2) câu Nhật Tatoeba + AI dịch
+             3) AI viết, kuromoji kiểm tra
    → cache (Mongo `airesultcache` + Redis) → deck tự PUBLISHED khi xong
 ```
+
+PDF scan (không có text layer): render từng trang PNG → dịch vụ AI có hỗ trợ ảnh
+đọc ra JSON dòng từ vựng → job nền (tiến trình, xem trang, đọc lại trang lỗi) →
+bảng preview. Có text layer nhưng rác (OCR hỏng) → bỏ trang đó, báo lỗi rõ.
 
 Chi tiết schema: `database.md`; env & lệnh: `development.md`.

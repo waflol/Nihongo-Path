@@ -56,6 +56,16 @@ class AiFailure extends Error {
   }
 }
 
+/** One vocabulary entry read off a scanned page. */
+export interface VocabOcrRow {
+  no: string;
+  word: string;
+  reading: string;
+  /** Âm Hán Việt column, when the book has one. */
+  hanViet: string;
+  meaning: string;
+}
+
 const HAS_JAPANESE = /[぀-ヿ㐀-鿿]/;
 const BATCH = 20;
 const FLUSH_MS = 1500;
@@ -311,9 +321,12 @@ export class AiExampleService {
   /** Respect the service's own requests-per-minute. */
   private async pace(svc: RuntimeAiService): Promise<void> {
     const gap = Math.ceil(60_000 / Math.max(1, svc.rpm));
-    const wait = (this.lastCall.get(svc.id) ?? 0) + gap - Date.now();
+    // Reserve the slot before waiting, so concurrent callers queue one gap apart
+    // instead of all reading the same "last call" and firing together.
+    const slot = Math.max(Date.now(), (this.lastCall.get(svc.id) ?? 0) + gap);
+    this.lastCall.set(svc.id, slot);
+    const wait = slot - Date.now();
     if (wait > 0) await new Promise((r) => setTimeout(r, wait));
-    this.lastCall.set(svc.id, Date.now());
   }
 
   private prompt(batch: Pending[]): string {
@@ -351,11 +364,12 @@ export class AiExampleService {
     prompt: string,
     purpose: AiLogPurpose = "example",
     words: string[] = [],
+    image?: Buffer,
   ): Promise<string> {
     const t0 = Date.now();
     const url = this.endpointOf(svc);
     try {
-      const text = await this.callRaw(svc, prompt);
+      const text = await this.callRaw(svc, prompt, image);
       this.logCall(svc, purpose, url, words, prompt, t0, { ok: true, response: text });
       return text;
     } catch (err) {
@@ -373,7 +387,7 @@ export class AiExampleService {
         : `${p.baseUrl}/chat/completions`;
   }
 
-  private async callRaw(svc: RuntimeAiService, prompt: string): Promise<string> {
+  private async callRaw(svc: RuntimeAiService, prompt: string, image?: Buffer): Promise<string> {
     const p = svc.provider;
     const isGemini = p.kind === "gemini";
     const isAnthropic = p.kind === "anthropic";
@@ -388,15 +402,55 @@ export class AiExampleService {
       headers["x-api-key"] = svc.key;
       headers["anthropic-version"] = "2023-06-01";
     } else if (svc.key) headers.Authorization = `Bearer ${svc.key}`; // keyless local servers send none
+    const b64 = image?.toString("base64");
     const body = isGemini
-      ? { contents: [{ role: "user", parts: [{ text: prompt }] }], generationConfig: { responseMimeType: "application/json", temperature: 0.4 } }
+      ? {
+          contents: [
+            {
+              role: "user",
+              parts: b64
+                ? [{ text: prompt }, { inline_data: { mime_type: "image/png", data: b64 } }]
+                : [{ text: prompt }],
+            },
+          ],
+          generationConfig: { responseMimeType: "application/json", temperature: image ? 0 : 0.4 },
+        }
       : isAnthropic
-        ? { model: svc.model, max_tokens: 4096, temperature: 0.4, messages: [{ role: "user", content: prompt }] }
-        : { model: svc.model, messages: [{ role: "user", content: prompt }], temperature: 0.4 };
+        ? {
+            model: svc.model,
+            max_tokens: 4096,
+            temperature: image ? 0 : 0.4,
+            messages: [
+              {
+                role: "user",
+                content: b64
+                  ? [
+                      { type: "image", source: { type: "base64", media_type: "image/png", data: b64 } },
+                      { type: "text", text: prompt },
+                    ]
+                  : prompt,
+              },
+            ],
+          }
+        : {
+            model: svc.model,
+            temperature: image ? 0 : 0.4,
+            messages: [
+              {
+                role: "user",
+                content: b64
+                  ? [
+                      { type: "text", text: prompt },
+                      { type: "image_url", image_url: { url: `data:image/png;base64,${b64}` } },
+                    ]
+                  : prompt,
+              },
+            ],
+          };
 
     let res: Response;
     try {
-      res = await fetch(url, { method: "POST", headers, body: JSON.stringify(body), signal: AbortSignal.timeout(60_000) });
+      res = await fetch(url, { method: "POST", headers, body: JSON.stringify(body), signal: AbortSignal.timeout(image ? 120_000 : 60_000) });
     } catch (err) {
       throw new AiFailure("transient", `network: ${(err as Error).message}`);
     }
@@ -462,6 +516,46 @@ export class AiExampleService {
       throw new AiFailure("auth", `HTTP ${res.status}${detail ? `: ${detail}` : ""}`);
     }
     if (!res.ok) throw new AiFailure("transient", `HTTP ${res.status}`);
+  }
+
+  /**
+   * Read one scanned vocabulary-book page with a vision-capable service.
+   * Tries every available service in order (a text-only model just fails and
+   * the next one is used). Returns the rows, or `null` when none could read it.
+   */
+  async ocrVocabPage(png: Buffer, page?: number): Promise<VocabOcrRow[] | null> {
+    const prompt = [
+      "This image is one page of a Japanese vocabulary book (JLPT) for Vietnamese learners.",
+      "Transcribe every vocabulary entry on the page. Ignore headers, footers, page numbers, example sentences and exercises.",
+      'Return JSON only: {"rows":[{"no":string,"word":string,"reading":string,"hanViet":string,"meaning":string}]}.',
+      '"word" is the kanji form exactly as printed, or the kana itself when the entry has no kanji; "reading" the hiragana reading; "hanViet" the Sino-Vietnamese (Hán Việt) column if the page has one, else ""; "meaning" the Vietnamese meaning; "no" the entry number printed on the page, or "" if none. Keep one object per table row, in page order.',
+      'If the page has no vocabulary entries return {"rows":[]}. Never invent entries.',
+    ].join("\n");
+    for (const svc of await this.services.available()) {
+      if (this.isTranslator(svc)) continue;
+      try {
+        await this.pace(svc);
+        const text = await this.call(svc, prompt, "ocr", page ? [`Trang ${page}`] : [], png);
+        await this.services.reportOk(svc.id);
+        const json = /\{[\s\S]*\}/.exec(text)?.[0];
+        const parsed = json ? (JSON.parse(json) as { rows?: unknown }) : null;
+        if (!parsed || !Array.isArray(parsed.rows)) continue;
+        return parsed.rows
+          .filter((r): r is Record<string, unknown> => typeof r === "object" && r !== null)
+          .map((r) => ({
+            no: String(r.no ?? "").trim(),
+            word: String(r.word ?? "").trim(),
+            reading: String(r.reading ?? "").trim(),
+            hanViet: String(r.hanViet ?? "").trim(),
+            meaning: String(r.meaning ?? "").trim(),
+          }))
+          .filter((r) => r.word !== "");
+      } catch (err) {
+        if (err instanceof AiFailure) await this.services.reportFailure(svc.id, err.kind, err.message, err.retryAfterMs);
+        // else: unparsable answer — try the next service
+      }
+    }
+    return null;
   }
 
   /** True for a task-specific translation model (Cloudflare m2m100): it only translates. */
@@ -665,7 +759,7 @@ export class AiExampleService {
 
   /**
    * Playground: free-form translation or grammar breakdown of one text on one
-   * chosen service. Nothing is saved; the call is logged as a "test".
+   * chosen service. Nothing is saved; the call is logged as "translate" or "grammar".
    */
   async play(
     svc: RuntimeAiService,
@@ -673,12 +767,13 @@ export class AiExampleService {
     text: string,
   ): Promise<{ ok: boolean; ms: number; prompt?: string; raw?: string; data?: unknown; error?: string }> {
     const t0 = Date.now();
+    const purpose: AiLogPurpose = mode === "translate" ? "translate" : "grammar";
     let prompt: string | undefined;
     let raw: string | undefined;
     try {
       if (this.isTranslator(svc)) {
         if (mode !== "translate") throw new AiFailure("transient", "Model chỉ dịch — không phân tích ngữ pháp được, hãy chọn model chat");
-        const vi = await this.translateOne(svc, text, "test");
+        const vi = await this.translateOne(svc, text, purpose);
         void this.services.reportOk(svc.id);
         return { ok: true, ms: Date.now() - t0, raw: vi, data: { vi } };
       }
@@ -692,7 +787,7 @@ export class AiExampleService {
               JSON.stringify(text),
             ].join("\n")
           : this.grammarPrompt([text]);
-      raw = await this.call(svc, prompt, "test", [text.slice(0, 40)]);
+      raw = await this.call(svc, prompt, purpose, [text.slice(0, 40)]);
       const m = raw.match(/\{[\s\S]*\}/);
       let data: unknown;
       try {

@@ -23,6 +23,25 @@ export function tokenPos(t: kuromoji.IpadicFeatures): PartOfSpeech | null {
 
 export const KANJI_RE = /[㐀-䶿一-鿿豈-﫿々〆ヶ]/;
 
+/**
+ * The hiragana reading(s) written in a card's `reading` field, however a book
+ * decorates them: `【かくべつ】`, `（かくべつ）`, `げんぞん/げんそん`,
+ * `しんちゅう／しんじゅう`, `せ、そ`… Brackets are dropped, the text is split
+ * on `/ ／ 、 , ; ・ ･ 、` and whitespace, katakana is folded to hiragana.
+ * Empty when nothing usable is left.
+ */
+export function readingVariants(raw: string | undefined | null): string[] {
+  const cleaned = (raw ?? "")
+    .normalize("NFKC")
+    .replace(/[【】\[\]「」『』()（）〈〉<>]/g, " ")
+    .replace(/[~〜～*＊・･]/g, "");
+  const parts = cleaned
+    .split(/[\s/／、,;；-]+/)
+    .map((p) => toHiragana(p.trim()))
+    .filter(Boolean);
+  return [...new Set(parts)];
+}
+
 /** Katakana → hiragana (leaves ー and everything else alone). */
 export function toHiragana(text: string): string {
   return text.replace(/[ァ-ヶ]/g, (c) =>

@@ -82,6 +82,7 @@ describe("saved results", () => {
     const cache = {
       get: async (k: string) => store.get(k) ?? null,
       set: async (k: string, r: unknown) => void store.set(k, r),
+      backfillTerm: async () => undefined,
     };
     const services = { available: async () => [A], reportOk: vi.fn(), reportFailure: vi.fn() };
     const svc = new AiExampleService(services as never, undefined, cache as never);
@@ -94,7 +95,7 @@ describe("saved results", () => {
   it("does not save a failed attempt, so it is tried again later", async () => {
     stubFetch("openrouter.ai");
     const store = new Map<string, unknown>();
-    const cache = { get: async (k: string) => store.get(k) ?? null, set: async (k: string, r: unknown) => void store.set(k, r) };
+    const cache = { get: async (k: string) => store.get(k) ?? null, set: async (k: string, r: unknown) => void store.set(k, r), backfillTerm: async () => undefined };
     const services = { available: async () => [A], reportOk: vi.fn(), reportFailure: vi.fn() };
     const svc = new AiExampleService(services as never, undefined, cache as never);
     expect(await svc.run(task(1))).toBeNull();
