@@ -17,6 +17,7 @@ import { FlashcardsService } from "./flashcards.service.js";
 import { TatoebaSentenceSchema } from "./schemas/tatoeba.schema.js";
 import { ReadingModule } from "./reading.module.js";
 import { ImageSuggestService } from "./image-suggest.service.js";
+import { buildAiModule } from "../ai/ai.module.js";
 import { ExampleSuggestService } from "./example-suggest.service.js";
 
 /**
@@ -39,6 +40,7 @@ export function buildFlashcardsModule(): DynamicModule {
     imports: [
       buildDatabaseModule(),
       ReadingModule,
+      buildAiModule(),
       MongooseModule.forFeature([
         { name: FlashcardDeck.name, schema: FlashcardDeckSchema },
         { name: Flashcard.name, schema: FlashcardSchema },

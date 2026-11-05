@@ -5,6 +5,7 @@ import { Flashcard, FlashcardSchema } from "../flashcards/schemas/card.schema.js
 import { FlashcardDeck, FlashcardDeckSchema } from "../flashcards/schemas/deck.schema.js";
 import { ImportController } from "./import.controller.js";
 import { ImportService } from "./import.service.js";
+import { buildAiModule } from "../ai/ai.module.js";
 import { ExampleSuggestService } from "../flashcards/example-suggest.service.js";
 import { TatoebaSentenceSchema } from "../flashcards/schemas/tatoeba.schema.js";
 import { ReadingModule } from "../flashcards/reading.module.js";
@@ -28,6 +29,7 @@ export function buildImportModule(): DynamicModule {
     imports: [
       buildDatabaseModule(),
       ReadingModule,
+      buildAiModule(),
       MongooseModule.forFeature([
         { name: Flashcard.name, schema: FlashcardSchema },
         { name: FlashcardDeck.name, schema: FlashcardDeckSchema },

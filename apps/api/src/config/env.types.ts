@@ -42,4 +42,14 @@ export interface Env {
   ADMIN_EMAIL?: string;
   /** Initial password for `ADMIN_EMAIL` (used only on the create path, min 8 chars). */
   ADMIN_PASS?: string;
+
+  // --- AI example sentences (optional, free Google AI Studio tier). ---
+  /** Secret that encrypts AI keys stored by the admin page (default: JWT_ACCESS_SECRET). */
+  AI_KEY_SECRET?: string;
+  /** Gemini API key; unset = no AI (examples then use Tatoeba only). */
+  GEMINI_API_KEY?: string;
+  /** Model name (default `gemini-3.8-flash`). */
+  GEMINI_MODEL?: string;
+  /** Max requests per minute (default 10 — keep at or under the free quota). */
+  GEMINI_RPM?: string;
 }

@@ -55,6 +55,16 @@ const NAV: NavItem[] = [
     ),
   },
   {
+    href: "/admin/ai",
+    label: "Dịch vụ AI",
+    desc: "Dịch & viết câu ví dụ, ưu tiên + dự phòng",
+    icon: (
+      <svg {...iconProps}>
+        <path d="M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8zM18 15l.8 2.2L21 18l-2.2.8L18 21l-.8-2.2L15 18l2.2-.8z" />
+      </svg>
+    ),
+  },
+  {
     href: "/admin/content",
     label: "Nội dung học",
     desc: "Giáo trình, từ vựng, ngữ pháp",
