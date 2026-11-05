@@ -240,7 +240,7 @@ chặn route, CRUD nội dung. Test case: `T-P2-01` … `T-P2-10`.
 | P3-CARD-04 | Đọc bộ thẻ chia sẻ + lưu từ trong lúc học | P3-CARD-03 | `flashcards.service.ts` | Lưu từ tạo card trong deck cá nhân | gọi API save-vocab/grammar | `[x]` |
 | P3-IMPORT-01 | Parser CSV/XLSX | P3-CARD-02 | `src/import/parsers/*` | Đọc được file mẫu; báo lỗi rõ khi sai định dạng | upload file mẫu | `[x]` |
 | P3-IMPORT-02 | Ánh xạ cột + preview (không ghi DB) | P3-IMPORT-01 | `src/import/import.service.ts` | Trả về bản xem trước + danh sách lỗi từng dòng | gọi API preview | `[x]` |
-| P3-IMPORT-03 | Phát hiện trùng lặp trước khi nhập | P3-IMPORT-02 | `import.service.ts` | Đánh dấu dòng trùng, cho phép bỏ qua/ghi đè | gọi API với file có trùng | `[x]` |
+| P3-IMPORT-03 | Phát hiện trùng lặp trước khi nhập | P3-IMPORT-02 | `import.service.ts` | Đánh dấu dòng trùng; trùng = giống cả kanji + hiragana + nghĩa; luôn bỏ qua (giữ thẻ cũ), không ghi đè | gọi API với file có trùng | `[x]` |
 | P3-IMPORT-04 | Xác nhận và ghi hàng loạt (idempotent) | P3-IMPORT-03 | `import.service.ts` | Gửi lại cùng request không tạo bản ghi đôi | gọi 2 lần | `[x]` |
 | P3-IMPORT-05 | Hỗ trợ PDF (nếu được duyệt — Q-12) | P3-IMPORT-01 | `src/import/parsers/pdf.ts` | Chỉ làm khi Tôi duyệt; nếu không → `[—]` | — | `[—]` (hoãn — Q-12 chưa chốt; xem OPEN_QUESTIONS Q-12, ghi nhận 03/11) |
 | P3-SRS-01 | ADR thuật toán SRS (so sánh, chọn, mô tả dữ liệu cần lưu) | P3-CARD-02 | `docs/adr/ADR-srs.md` | Tôi duyệt; ADR `Accepted` | người dùng xác nhận | `[x]` |
@@ -256,6 +256,8 @@ chặn route, CRUD nội dung. Test case: `T-P2-01` … `T-P2-10`.
 | P3-UI-03 | Danh sách bộ thẻ + tiến độ | P3-CARD-03 | `app/learn/decks/*`, `components/learn/decks-console.tsx` | Hiển thị số thẻ mới/đến hạn | bấm thử trình duyệt 05/11/2026: tạo bộ, thêm thẻ, số thẻ mới/đến hạn | `[x]` |
 | P3-UI-04 | Màn admin quản lý bộ thẻ chung | P3-CARD-03 | `app/admin/decks/*`, `components/admin/shared-decks-console.tsx` | Admin tạo/chỉnh/xoá deck chung + thêm thẻ; người học read-only | build + API đã verify (chưa bấm trình duyệt) | `[~]` |
 | P3-UI-05 | Thêm/xoá thẻ trong UI + đánh giá mượt (optimistic + batch) | P3-CARD-03 | `decks-console.tsx`, `study-session.tsx`, `srs.controller.ts` (`reviews/batch`) | Thêm thẻ trực tiếp từ danh sách bộ; đánh giá không đợi API mỗi thẻ, flush batch | build + API đã verify (chưa bấm trình duyệt) | `[~]` |
+| P3-UI-08 | Trang hoàn thành khi bộ đã học xong (thống kê Quên/Khó/Tốt/Thuộc), "Học lại phiên này" chỉ học thẻ chưa thuộc (thuộc hết → Đặt lại), popup xác nhận đặt lại | P3-UI-01 | `study-session.tsx`, `study-complete.tsx`, `confirm-dialog.tsx`, `srs.service.ts` (`getQueue`: `total`, `grades`, `reviewAhead`, `nextDueDay`) | Bộ đã học xong không hiện "chưa có thẻ"; nút học lại đúng nhóm thẻ | bấm thử trình duyệt 05/11/2026 (QA Deck) | `[x]` |
+| P3-UI-09 | Người dùng xuất bộ thẻ ra CSV (cùng cột với wizard nhập) | P3-UI-03 | `GET /flashcards/decks/:id/export`, `decks-console.tsx` | Chỉ xuất được bộ của mình/bộ chung đã phát hành | build đã verify (chưa tải file thật) | `[~]` |
 | P3-DOC-01 | Cập nhật `database.md` cho deck/card/progress + SRS state | P3-SRS-02 | `docs/database.md` | Khớp code | đối chiếu | `[x]` |
 
 **Checkpoint P3:** build/lint/typecheck; import mẫu chạy end-to-end; thẻ đến hạn
