@@ -8,13 +8,44 @@ import { createHash } from "node:crypto";
  * "save a word" and import re-sends idempotent (T-P3-03) and lets the
  * preview flag duplicates before writing (T-P3-01/02).
  *
+ * A card is a duplicate only when kanji (front), hiragana (reading) AND
+ * meaning (back) all match.
+ *
  * Scoped to the deck by the `(deck, dedupeKey)` unique index: the same term
  * in two decks is two cards, as intended.
  */
-export function cardDedupeKey(front: string, back: string): string {
+export function cardDedupeKey(
+  front: string,
+  back: string,
+  reading = "",
+): string {
   const norm = (s: string) =>
     s.trim().toLowerCase().replace(/\s+/g, " ");
+  const r = norm(reading);
+  // An empty reading hashes exactly like the legacy (front, back) key, so
+  // cards without a reading keep their stored key.
   return createHash("sha256")
-    .update(`${norm(front)}\u0000${norm(back)}`)
+    .update(
+      r === ""
+        ? `${norm(front)}\u0000${norm(back)}`
+        : `${norm(front)}\u0000${norm(back)}\u0000${r}`,
+    )
+    .digest("hex");
+}
+
+/**
+ * Key for a card that was EDITED into content another card already has.
+ * Editing must always save, so such a card gets an id-scoped key instead of
+ * colliding on the `(deck, dedupeKey)` unique index; it returns to the
+ * canonical `cardDedupeKey` as soon as its content stops colliding.
+ */
+export function cardDedupeKeyForCopy(
+  front: string,
+  back: string,
+  cardId: string,
+  reading = "",
+): string {
+  return createHash("sha256")
+    .update(`${cardDedupeKey(front, back, reading)}\u0000${cardId}`)
     .digest("hex");
 }

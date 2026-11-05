@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
-import { Preline } from "@/components/preline";
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
+import { themeInitScript } from "@/components/theme-toggle";
 import { siteConfig } from "./site";
 
 const geistSans = Geist({
@@ -46,14 +46,16 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
       lang="vi"
+      suppressHydrationWarning
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
+      </head>
       <body className="flex min-h-full flex-col bg-[var(--background)] font-sans text-[var(--foreground)]">
         <SiteHeader />
         <main className="flex flex-1 flex-col">{children}</main>
         <SiteFooter />
-        {/* Preline JS init (client, idempotent, re-runs on route change). */}
-        <Preline />
       </body>
     </html>
   );

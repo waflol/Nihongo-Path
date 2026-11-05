@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
 
 /**
  * Bulk-import wizard (P3-UI-02, spec §4.2 "preview, ánh xạ cột, kiểm tra
@@ -30,6 +31,9 @@ interface PreviewRow {
   front: string;
   back: string;
   status: "ok" | "error" | "duplicate";
+  reading?: string;
+  partOfSpeech?: string;
+  examples?: number;
   error?: string;
 }
 
@@ -53,16 +57,65 @@ interface ConfirmResult {
 const inputClass =
   "block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:border-[var(--primary-focus)] focus:outline-none focus:ring-1 focus:ring-[var(--primary-focus)]";
 
+/** Optional columns the wizard can map (the API derives hiragana/POS when blank). */
+const OPTIONAL_COLUMNS = [
+  ["reading", "Hiragana (trống → tự tạo)"],
+  ["partOfSpeech", "Từ loại (trống → tự nhận)"],
+  ["example", "Câu ví dụ"],
+  ["exampleTranslation", "Nghĩa câu ví dụ"],
+  ["tags", "Tags"],
+] as const;
+
+const POS_LABEL: Record<string, string> = {
+  verb: "Động từ",
+  noun: "Danh từ",
+  adjective: "Tính từ",
+};
+
+/** Sample CSV (UTF-8 + BOM so Excel opens Japanese correctly). */
+function downloadTemplate() {
+  const rows = [
+    ["front", "back", "reading", "partOfSpeech", "example", "exampleTranslation", "tags"],
+    ["食べる", "ăn", "", "verb", "朝ご飯を食べます。", "Tôi ăn cơm sáng.", "N5, động từ"],
+    ["猫", "con mèo", "", "noun", "猫が好きです。", "Tôi thích mèo.", "N5, động vật"],
+    ["大きい", "to, lớn", "", "adjective", "この犬、大きいよ。", "Con chó này to.", "N5"],
+    ["テレビ", "tivi", "", "noun", "", "", "N5"],
+  ];
+  const csv = rows
+    .map((r) => r.map((c) => `"${c.replace(/"/g, '""')}"`).join(","))
+    .join("\r\n");
+  const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "mau-nhap-the.csv";
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function mappingPayload(m: Record<string, string>) {
+  return {
+    front: m.front,
+    back: m.back,
+    reading: m.reading || undefined,
+    partOfSpeech: m.partOfSpeech || undefined,
+    example: m.example || undefined,
+    exampleTranslation: m.exampleTranslation || undefined,
+    tags: m.tags || undefined,
+  };
+}
+
 const ROW_LIMIT = 40; // preview table window (the API caps rows per file)
 
-export function ImportWizard() {
+export function ImportWizard({ learner = false }: { learner?: boolean }) {
+  const backHref = learner ? "/learn/decks" : "/admin/decks";
+  const backLabel = learner ? "← Bộ flashcard của tôi" : "← Bộ thẻ chung";
   const [decks, setDecks] = useState<Deck[]>([]);
   const [deckId, setDeckId] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [mapping, setMapping] = useState<Record<string, string>>({});
   const [preview, setPreview] = useState<Preview | null>(null);
-  const [policy, setPolicy] = useState<"skip" | "overwrite">("skip");
-  const [result, setResult] = useState<ConfirmResult | null>(null);
+    const [result, setResult] = useState<ConfirmResult | null>(null);
 
   const [error, setError] = useState<string | null>(null);
   const [running, setRunning] = useState<
@@ -70,17 +123,71 @@ export function ImportWizard() {
   >(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  async function loadDecks() {
-    const res = await fetch("/api/flashcards/decks", { cache: "no-store" }).catch(
-      () => null,
-    );
+  const search = useSearchParams();
+  const wantedDeck = search.get("deck");
+
+  // Shared decks (any status) — what an admin imports into. Falls back to the
+  // caller's own list when the admin endpoint is not available to them.
+  async function fetchDecks(): Promise<Deck[] | null> {
+    let res = learner
+      ? null
+      : await fetch("/api/flashcards/admin/decks", { cache: "no-store" }).catch(() => null);
     if (!res || !res.ok) {
+      res = await fetch("/api/flashcards/decks", { cache: "no-store" }).catch(() => null);
+    }
+    if (!res || !res.ok) return null;
+    const list = (await res.json().catch(() => [])) as Deck[];
+    // Learners can only import into their OWN decks (shared decks are admin-only).
+    return learner ? list.filter((d) => !d.shared) : list;
+  }
+
+  function applyDecks(list: Deck[] | null, selectId?: string) {
+    if (!list) {
       setError("Không tải được danh sách bộ thẻ");
       return;
     }
-    const list = (await res.json().catch(() => [])) as Deck[];
     setDecks(list);
-    if (!deckId && list.length > 0) setDeckId(list[0]._id);
+    setDeckId((cur) => {
+      if (selectId && list.some((d) => d._id === selectId)) return selectId;
+      if (cur) return cur;
+      if (wantedDeck && list.some((d) => d._id === wantedDeck)) return wantedDeck;
+      return list[0]?._id ?? "";
+    });
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetchDecks().then((list) => {
+      if (!cancelled) applyDecks(list);
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Create a new shared deck without leaving the wizard.
+  const [newTitle, setNewTitle] = useState("");
+  const [creatingDeck, setCreatingDeck] = useState(false);
+  async function createDeck() {
+    if (!newTitle.trim()) return;
+    setCreatingDeck(true);
+    setError(null);
+    const res = await fetch(learner ? "/api/flashcards/decks" : "/api/flashcards/admin/decks", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(
+        learner ? { title: newTitle.trim() } : { title: newTitle.trim(), status: "PUBLISHED" },
+      ),
+    }).catch(() => null);
+    setCreatingDeck(false);
+    if (!res?.ok) {
+      setError(learner ? "Không tạo được bộ thẻ" : "Không tạo được bộ thẻ chung (cần quyền admin)");
+      return;
+    }
+    const created = (await res.json().catch(() => null)) as { _id?: string } | null;
+    setNewTitle("");
+    applyDecks(await fetchDecks(), created?._id);
   }
 
   // Step 2: fetch the columns for the chosen mapping (no mapping sent yet →
@@ -100,11 +207,7 @@ export function ImportWizard() {
     if (revealed && mapping.front && mapping.back) {
       form.append(
         "mapping",
-        JSON.stringify({
-          front: mapping.front,
-          back: mapping.back,
-          tags: mapping.tags || undefined,
-        }),
+        JSON.stringify(mappingPayload(mapping)),
       );
     }
 
@@ -128,9 +231,11 @@ export function ImportWizard() {
     if (data && data.columns.length > 0) {
       setMapping((m) => {
         const cols = data!.columns;
-        const guess = (name: string, candidates: string[]) => {
-          const hit = cols.find((c) =>
-            candidates.some((k) => c.toLowerCase().includes(k)),
+        const guess = (name: string, candidates: string[], exclude?: RegExp) => {
+          const hit = cols.find(
+            (c) =>
+              candidates.some((k) => c.toLowerCase().includes(k)) &&
+              !(exclude && exclude.test(c.toLowerCase())),
           );
           return hit ?? "";
         };
@@ -138,6 +243,12 @@ export function ImportWizard() {
           front: m.front || guess("front", ["front", "term", "word", "câu hỏi"]),
           back: m.back || guess("back", ["back", "meaning", "nghĩa", "đáp án"]),
           tags: m.tags || guess("tags", ["tag"]),
+          reading: m.reading || guess("reading", ["reading", "hiragana", "kana", "cách đọc", "furigana"]),
+          partOfSpeech: m.partOfSpeech || guess("pos", ["partofspeech", "part_of_speech", "pos", "từ loại", "loại từ", "wordtype"]),
+          example: m.example || guess("example", ["example", "ví dụ", "例文"], /translation|meaning|nghĩa|dịch/),
+          exampleTranslation:
+            m.exampleTranslation ||
+            guess("exampleTranslation", ["exampletranslation", "example_translation", "example_meaning", "nghĩa ví dụ", "dịch ví dụ"]),
         };
       });
     }
@@ -157,13 +268,9 @@ export function ImportWizard() {
     form.append("deckId", deckId);
     form.append(
       "mapping",
-      JSON.stringify({
-        front: mapping.front,
-        back: mapping.back,
-        tags: mapping.tags || undefined,
-      }),
+      JSON.stringify(mappingPayload(mapping)),
     );
-    form.append("duplicatePolicy", policy);
+    form.append("duplicatePolicy", "skip");
 
     const res = await fetch("/api/import?action=confirm", {
       method: "POST",
@@ -194,10 +301,10 @@ export function ImportWizard() {
           Nhập flashcard hàng loạt
         </h1>
         <Link
-          href="/admin/content"
+          href={backHref}
           className="text-sm font-medium text-[var(--primary)] hover:text-[var(--primary-hover)]"
         >
-          ← Nội dung học
+          {backLabel}
         </Link>
       </div>
       <p className="mt-1 text-sm text-[var(--muted-foreground)]">
@@ -231,7 +338,7 @@ export function ImportWizard() {
       {error && (
         <p
           role="alert"
-          className="mt-4 rounded-lg bg-[#fef2f2] px-4 py-3 text-sm text-[#b91c1c]"
+          className="mt-4 rounded-lg bg-[#fef2f2] px-4 py-3 text-sm text-[#b91c1c] dark:bg-[#2a1215] dark:text-[#fca5a5]"
         >
           {error}
         </p>
@@ -241,9 +348,18 @@ export function ImportWizard() {
       <section className="mt-6 rounded-2xl border border-[var(--border)] bg-[var(--background-1)] p-5">
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
-            <label className="block text-sm font-medium text-[var(--foreground)]">
-              File CSV / XLSX
-            </label>
+            <div className="flex items-center justify-between gap-2">
+              <label className="block text-sm font-medium text-[var(--foreground)]">
+                File CSV / XLSX
+              </label>
+              <button
+                type="button"
+                onClick={downloadTemplate}
+                className="text-xs font-medium text-[var(--primary)] hover:underline"
+              >
+                ⬇ Tải file mẫu (CSV)
+              </button>
+            </div>
             <input
               ref={fileRef}
               type="file"
@@ -283,7 +399,6 @@ export function ImportWizard() {
                   setResult(null);
                 }}
                 className={inputClass}
-                onClick={loadDecks}
               >
                 <option value="">— chọn bộ thẻ —</option>
                 {decks.map((d) => (
@@ -298,6 +413,29 @@ export function ImportWizard() {
               Thẻ được tạo trong đúng bộ thẻ này, dấu nguồn là{" "}
               <code>import</code>.
             </p>
+            <div className="mt-3 flex gap-2">
+              <input
+                value={newTitle}
+                onChange={(e) => setNewTitle(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    void createDeck();
+                  }
+                }}
+                placeholder={learner ? "Hoặc tạo bộ thẻ mới…" : "Hoặc tạo bộ chung mới…"}
+                aria-label="Tên bộ thẻ chung mới"
+                className={inputClass}
+              />
+              <button
+                type="button"
+                onClick={() => void createDeck()}
+                disabled={creatingDeck || !newTitle.trim()}
+                className="shrink-0 rounded-lg border border-[var(--border)] px-3 py-2 text-sm font-medium text-[var(--primary)] hover:bg-[var(--layer-hover)] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {creatingDeck ? "Đang tạo…" : "＋ Tạo"}
+              </button>
+            </div>
           </div>
         </div>
 
@@ -321,35 +459,40 @@ export function ImportWizard() {
           <h2 className="text-sm font-semibold text-[var(--foreground)]">
             Ánh xạ cột ({preview.format.toUpperCase()}, {preview.totalRows} dòng)
           </h2>
-          <div className="mt-3 grid gap-3 sm:grid-cols-3">
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
             {(
               [
-                ["front", "Câu hỏi (bắt buộc)"],
-                ["back", "Đáp án (bắt buộc)"],
-                ["tags", "Tags (tuỳ chọn)"],
+                ["front", "Mặt trước / từ vựng (bắt buộc)"],
+                ["back", "Mặt sau / nghĩa (bắt buộc)"],
               ] as const
             ).map(([key, label]) => (
-              <label key={key} className="block text-sm">
-                <span className="text-[var(--muted-foreground)]">
-                  {label}
-                </span>
-                <select
-                  value={mapping[key] ?? ""}
-                  onChange={(e) =>
-                    setMapping((m) => ({ ...m, [key]: e.target.value }))
-                  }
-                  className={`mt-1 ${inputClass}`}
-                >
-                  <option value="">—</option>
-                  {preview.columns.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <ColumnSelect
+                key={key}
+                label={label}
+                value={mapping[key] ?? ""}
+                columns={preview.columns}
+                onChange={(v) => setMapping((m) => ({ ...m, [key]: v }))}
+              />
             ))}
           </div>
+          <p className="mt-4 text-xs font-medium uppercase tracking-wide text-[var(--muted-foreground)]">
+            Cột tuỳ chọn
+          </p>
+          <div className="mt-2 grid gap-3 sm:grid-cols-3">
+            {OPTIONAL_COLUMNS.map(([key, label]) => (
+              <ColumnSelect
+                key={key}
+                label={label}
+                value={mapping[key] ?? ""}
+                columns={preview.columns}
+                onChange={(v) => setMapping((m) => ({ ...m, [key]: v }))}
+              />
+            ))}
+          </div>
+          <p className="mt-3 text-xs text-[var(--muted-foreground)]">
+            Không có cột hiragana/từ loại? Hệ thống tự tạo hiragana cho từ có kanji (từ chỉ có
+            hiragana/katakana để trống) và tự nhận động từ / danh từ / tính từ.
+          </p>
 
           <div className="mt-4">
             <button
@@ -375,17 +518,9 @@ export function ImportWizard() {
               </span>
               , {preview.duplicateRows} trùng, {preview.errorRows} lỗi
             </h2>
-            <label className="text-xs text-[var(--muted-foreground)]">
-              Khi trùng:{" "}
-              <select
-                value={policy}
-                onChange={(e) => setPolicy(e.target.value as "skip" | "overwrite")}
-                className="ml-1 rounded border border-[var(--border)] bg-[var(--background)] px-2 py-1 text-xs text-[var(--foreground)]"
-              >
-                <option value="skip">bỏ qua (giữ thẻ cũ)</option>
-                <option value="overwrite">ghi đè (dùng giá trị mới)</option>
-              </select>
-            </label>
+            <p className="text-xs text-[var(--muted-foreground)]">
+              Thẻ trùng sẽ được bỏ qua (giữ thẻ cũ).
+            </p>
           </div>
 
           <div className="mt-3 overflow-hidden rounded-xl border border-[var(--border)]">
@@ -397,6 +532,9 @@ export function ImportWizard() {
                     <th className="px-3 py-2 font-medium">Trạng thái</th>
                     <th className="px-3 py-2 font-medium">Câu hỏi</th>
                     <th className="px-3 py-2 font-medium">Đáp án</th>
+                    <th className="px-3 py-2 font-medium">Hiragana</th>
+                    <th className="px-3 py-2 font-medium">Từ loại</th>
+                    <th className="px-3 py-2 font-medium">Ví dụ</th>
                     <th className="px-3 py-2 font-medium">Lỗi</th>
                   </tr>
                 </thead>
@@ -408,17 +546,17 @@ export function ImportWizard() {
                       </td>
                       <td className="px-3 py-2">
                         {r.status === "ok" && (
-                          <span className="rounded-full bg-[#f0fdf4] px-2 py-0.5 text-xs font-medium text-[#15803d]">
+                          <span className="rounded-full bg-[#f0fdf4] px-2 py-0.5 text-xs font-medium text-[#15803d] dark:bg-[#0f2418] dark:text-[#86efac]">
                             Hợp lệ
                           </span>
                         )}
                         {r.status === "duplicate" && (
-                          <span className="rounded-full bg-[#fef9c3] px-2 py-0.5 text-xs font-medium text-[#a16207]">
+                          <span className="rounded-full bg-[#fef9c3] px-2 py-0.5 text-xs font-medium text-[#a16207] dark:bg-[#3a3210] dark:text-[#fde047]">
                             Trùng
                           </span>
                         )}
                         {r.status === "error" && (
-                          <span className="rounded-full bg-[#fef2f2] px-2 py-0.5 text-xs font-medium text-[#b91c1c]">
+                          <span className="rounded-full bg-[#fef2f2] px-2 py-0.5 text-xs font-medium text-[#b91c1c] dark:bg-[#2a1215] dark:text-[#fca5a5]">
                             Lỗi
                           </span>
                         )}
@@ -428,6 +566,15 @@ export function ImportWizard() {
                       </td>
                       <td className="px-3 py-2 text-[var(--foreground)]">
                         {r.back || "—"}
+                      </td>
+                      <td lang="ja" className="px-3 py-2 text-[var(--muted-foreground)]">
+                        {r.reading || "—"}
+                      </td>
+                      <td className="px-3 py-2 text-[var(--muted-foreground)]">
+                        {r.partOfSpeech ? POS_LABEL[r.partOfSpeech] ?? r.partOfSpeech : "—"}
+                      </td>
+                      <td className="px-3 py-2 text-[var(--muted-foreground)]">
+                        {r.examples ? r.examples : "—"}
                       </td>
                       <td className="px-3 py-2 text-xs text-[#b91c1c]">
                         {r.error ?? ""}
@@ -464,8 +611,8 @@ export function ImportWizard() {
 
       {/* ── Done ───────────────────────────────────────────────────── */}
       {result && (
-        <section className="mt-6 rounded-2xl border border-[var(--border)] bg-[#f0fdf4] p-5">
-          <h2 className="text-sm font-semibold text-[#15803d]">
+        <section className="mt-6 rounded-2xl border border-[var(--border)] bg-[#f0fdf4] p-5 dark:bg-[#0f2418]">
+          <h2 className="text-sm font-semibold text-[#15803d] dark:text-[#86efac]">
             Đã nhập: {result.imported} thẻ mới
           </h2>
           <dl className="mt-2 space-y-1 text-sm text-[var(--muted-foreground)]">
@@ -511,14 +658,44 @@ export function ImportWizard() {
               Nhập file khác
             </button>
             <Link
-              href="/learn/decks"
+              href={backHref}
               className="rounded-lg border border-[var(--border)] px-4 py-2 text-sm font-medium text-[var(--foreground)] hover:bg-[var(--layer-hover)]"
             >
-              Xem bộ thẻ
+              {learner ? "Xem bộ thẻ" : "Xem bộ thẻ chung"}
             </Link>
           </div>
         </section>
       )}
     </div>
+  );
+}
+
+function ColumnSelect({
+  label,
+  value,
+  columns,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  columns: string[];
+  onChange: (v: string) => void;
+}) {
+  return (
+    <label className="block text-sm">
+      <span className="text-[var(--muted-foreground)]">{label}</span>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className={`mt-1 ${inputClass}`}
+      >
+        <option value="">—</option>
+        {columns.map((c) => (
+          <option key={c} value={c}>
+            {c}
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }

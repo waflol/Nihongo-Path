@@ -26,6 +26,11 @@ async function forward(
     cache: "no-store",
   });
 
+  // 204/205/304 must not carry a body; NextResponse.json("") throws on them.
+  if (upstream.status === 204 || upstream.status === 205 || upstream.status === 304) {
+    return new NextResponse(null, { status: upstream.status });
+  }
+
   // Preserve the API's status + body (incl. 403 role, 404, 429 rate-limit).
   const text = await upstream.text();
   let payload: unknown = text;

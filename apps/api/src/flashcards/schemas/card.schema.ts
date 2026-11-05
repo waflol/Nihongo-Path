@@ -11,6 +11,14 @@ export type CardKind = (typeof CARD_KINDS)[number];
 export const CARD_ORIGINS = ["manual", "import", "saved"] as const;
 export type CardOrigin = (typeof CARD_ORIGINS)[number];
 
+/** One example sentence on a card (inline subdocument). */
+export interface CardExample {
+  /** Japanese example sentence. */
+  sentence: string;
+  /** Translation (e.g. Vietnamese); may be empty. */
+  translation?: string;
+}
+
 /**
  * A single flashcard (P3-CARD-02, spec §4.2–4.3, database.md "flashcards").
  *
@@ -49,6 +57,35 @@ export class Flashcard {
   /** Answer face (e.g. reading + meaning, structure + usage). */
   @Prop({ type: String, trim: true, required: true })
   back: string;
+
+  /** Optional example sentences shown on the answer face (0..N). */
+  /** Hiragana reading; empty for hiragana/katakana-only words. */
+  @Prop({ type: String, trim: true, default: "" })
+  reading?: string;
+
+  /** Mnemonic picture: a small data: URL (uploaded) or a Wikimedia https URL. */
+  @Prop({ type: String, default: "" })
+  image?: string;
+
+  /** Attribution line for a suggested (Wikimedia Commons) image. */
+  @Prop({ type: String, trim: true, default: "" })
+  imageCredit?: string;
+
+  /** Only verb / noun / adjective are distinguished. */
+  @Prop({ type: String, enum: ["verb", "noun", "adjective", ""], default: "" })
+  partOfSpeech?: "verb" | "noun" | "adjective" | "";
+
+  @Prop({
+    type: [
+      {
+        _id: false,
+        sentence: { type: String, required: true, trim: true },
+        translation: { type: String, trim: true, default: "" },
+      },
+    ],
+    default: [],
+  })
+  examples: CardExample[];
 
   @Prop({ type: [String], default: [] })
   tags: string[];

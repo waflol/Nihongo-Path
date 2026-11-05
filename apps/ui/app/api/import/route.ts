@@ -28,13 +28,17 @@ export async function POST(request: Request) {
   }
 
   const contentType = request.headers.get("content-type") ?? "";
+  // Forward the multipart body as bytes. Passing the request STREAM makes
+  // Node's fetch throw "duplex option is required" (every upload 500'd); the
+  // API caps files at 10 MB so buffering is fine.
+  const bytes = await request.arrayBuffer();
   const upstream = await fetch(`${API_BASE_URL}/flashcards/import/${action}`, {
     method: "POST",
     headers: {
       "Content-Type": contentType,
       Authorization: `Bearer ${session.accessToken}`,
     },
-    body: request.body,
+    body: bytes,
     cache: "no-store",
   });
 

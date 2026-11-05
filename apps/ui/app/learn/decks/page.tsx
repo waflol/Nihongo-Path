@@ -18,7 +18,7 @@ export default function LearnDecksPage() {
   return (
     <Suspense
       fallback={
-        <p className="mx-auto max-w-3xl px-4 py-16 text-center text-sm text-[var(--muted-foreground)] sm:px-6">
+        <p className="mx-auto max-w-6xl px-4 py-16 text-center text-sm text-[var(--muted-foreground)] sm:px-6">
           Đang tải…
         </p>
       }

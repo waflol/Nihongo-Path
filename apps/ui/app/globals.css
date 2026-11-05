@@ -1,18 +1,119 @@
 @import "tailwindcss";
 
-/* Preline UI — per official v5 setup (Tailwind CSS 4 CSS-first).
-   @source points at Preline's compiled JS so its data-state utilities
-   (e.g. "hs-dropdown-open:opacity-100") are generated. Relative path
-   because @source globs resolve from the importing CSS file and pnpm
-   hoists packages to app-level node_modules. */
-@source "../node_modules/preline/dist/index.js";
-@import "preline/variants.css";
-@import "preline/theme.css";
-
 /* Nihongo Path brand tokens (placeholder palette — replace on brand approval). */
 @import "./themes/theme.css";
+
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+}
 
 @theme inline {
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
+
+/* ── Flashcard study motion ───────────────────────────────────────────
+   A calm crossfade + rise, used when a card face swaps. Deliberately NOT a
+   3D flip: the rotation read as "cheap" and made the Japanese text
+   shear mid-animation. */
+@keyframes card-face-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes card-face-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+.animate-card-in {
+  animation: card-face-in 180ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.animate-card-out {
+  animation: card-face-out 140ms ease-in both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-card-in,
+  .animate-card-out {
+    animation: none;
+  }
+}
+
+/* ── Study completion "stage" ────────────────────────────────────────── */
+@property --stage-pct {
+  syntax: "<number>";
+  inherits: false;
+  initial-value: 0;
+}
+
+@keyframes stage-aurora-a {
+  0%, 100% { transform: translate(-10%, -8%) scale(1); }
+  50% { transform: translate(12%, 10%) scale(1.25); }
+}
+@keyframes stage-aurora-b {
+  0%, 100% { transform: translate(10%, 8%) scale(1.15); }
+  50% { transform: translate(-12%, -10%) scale(0.9); }
+}
+@keyframes stage-ring {
+  from { --stage-pct: 0; }
+  to { --stage-pct: var(--target, 100); }
+}
+@keyframes stage-pop {
+  0% { transform: translateY(18px) scale(0.92); opacity: 0; }
+  100% { transform: none; opacity: 1; }
+}
+@keyframes stage-shine {
+  0% { background-position: -150% 0; }
+  100% { background-position: 250% 0; }
+}
+@keyframes stage-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+
+.stage-aurora-a { animation: stage-aurora-a 14s ease-in-out infinite; }
+.stage-aurora-b { animation: stage-aurora-b 17s ease-in-out infinite; }
+.stage-ring {
+  background:
+    conic-gradient(
+      from -90deg,
+      #8b5cf6 0%,
+      #38bdf8 calc(var(--stage-pct) * 0.5%),
+      #4ade80 calc(var(--stage-pct) * 1%),
+      transparent calc(var(--stage-pct) * 1%)
+    );
+  animation: stage-ring 1500ms cubic-bezier(0.22, 1, 0.36, 1) 350ms both;
+}
+.stage-pop { animation: stage-pop 640ms cubic-bezier(0.22, 1, 0.36, 1) both; }
+.stage-shine {
+  background-size: 250% 100%;
+  animation: stage-shine 3.2s linear 1.6s infinite;
+}
+.stage-float { animation: stage-float 3.6s ease-in-out infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .stage-aurora-a, .stage-aurora-b, .stage-shine, .stage-float, .stage-pop { animation: none; }
+  .stage-ring { animation: none; --stage-pct: var(--target, 100); }
+}
+

@@ -9,6 +9,7 @@ import { User, UserSchema } from "../users/schemas/user.schema.js";
 import { AuthSession, AuthSessionSchema } from "./schemas/auth-session.schema.js";
 import { AuthController } from "./auth.controller.js";
 import { AuthService } from "./auth.service.js";
+import { AdminBootstrapService } from "./admin-bootstrap.service.js";
 import { TokenService } from "./token.service.js";
 import { RateLimiterService } from "../common/rate-limiter.service.js";
 import { AuthGuard } from "./guards/auth.guard.js";
@@ -55,6 +56,9 @@ export function buildAuthModule(): DynamicModule {
         AuthService,
         TokenService,
         RateLimiterService,
+        // Opt-in env bootstrap (ADMIN_EMAIL + ADMIN_PASS); only present in the
+        // DB-backed build because it injects the User/AuthAccount models.
+        AdminBootstrapService,
         // Fixed order (architecture §4.3): authenticate, then authorize.
         { provide: "APP_GUARD", useClass: AuthGuard },
         { provide: "APP_GUARD", useClass: RolesGuard },

@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
-import { AdminImportGate } from "./gate";
+import { ImportWizard } from "@/components/admin/import-wizard";
 
 export const metadata: Metadata = {
   title: "Nhập flashcard hàng loạt",
@@ -10,19 +10,12 @@ export const metadata: Metadata = {
 
 /**
  * Admin import wizard (P3-UI-02): upload → map columns → preview → confirm.
- * The gate (session read via `cookies()`) must sit behind `<Suspense>`
- * under `cacheComponents` (Next 16 PPR), matching the P2 content gate.
+ * `useSearchParams` (the `?deck=` preselect) needs a Suspense boundary.
  */
 export default function AdminImportPage() {
   return (
-    <Suspense
-      fallback={
-        <p className="mx-auto max-w-3xl px-4 py-16 text-center text-sm text-[var(--muted-foreground)] sm:px-6">
-          Đang tải…
-        </p>
-      }
-    >
-      <AdminImportGate />
+    <Suspense fallback={<p className="px-4 py-16 text-center text-sm text-[var(--muted-foreground)]">Đang tải…</p>}>
+      <ImportWizard />
     </Suspense>
   );
 }

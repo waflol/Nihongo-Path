@@ -1,6 +1,9 @@
+import type { CSSProperties } from "react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { siteConfig } from "./site";
+import BlurText from "@/components/reactbits/BlurText";
+import SpotlightCard from "@/components/reactbits/SpotlightCard";
 
 export const metadata: Metadata = {
   title: "Học tiếng Nhật mỗi ngày",
@@ -37,9 +40,12 @@ export default function Home() {
       <section className="border-b border-[var(--border)] bg-[var(--background-1)]">
         <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
           <div className="max-w-2xl">
-            <h1 className="text-4xl font-bold tracking-tight text-[var(--foreground)] sm:text-5xl">
-              {siteConfig.name}
-            </h1>
+            <h1 className="sr-only">{siteConfig.name}</h1>
+            <BlurText
+              text={siteConfig.name}
+              animateBy="words"
+              className="text-4xl font-bold tracking-tight text-[var(--foreground)] sm:text-5xl"
+            />
             <p className="mt-4 text-lg text-[var(--muted-foreground)]">
               {siteConfig.tagline}
             </p>
@@ -74,13 +80,16 @@ export default function Home() {
         </h2>
         <div className="mt-8 grid gap-6 sm:grid-cols-2">
           {features.map((f) => (
-            <article
+            <SpotlightCard
               key={f.title}
-              className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-6 shadow-sm"
+              theme="light"
+              spotlightColor="var(--primary)"
+              className="!rounded-2xl !p-6"
+              style={{ "--spotlight-card-surface": "var(--card)", "--spotlight-card-border": "var(--border)" } as CSSProperties}
             >
               <h3 className="text-base font-semibold text-[var(--foreground)]">{f.title}</h3>
               <p className="mt-2 text-sm leading-6 text-[var(--muted-foreground-1)]">{f.desc}</p>
-            </article>
+            </SpotlightCard>
           ))}
         </div>
       </section>

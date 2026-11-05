@@ -14,6 +14,9 @@ import {
 } from "../content/schemas/grammar-point.schema.js";
 import { FlashcardsController } from "./flashcards.controller.js";
 import { FlashcardsService } from "./flashcards.service.js";
+import { ReadingModule } from "./reading.module.js";
+import { ImageSuggestService } from "./image-suggest.service.js";
+import { ExampleSuggestService } from "./example-suggest.service.js";
 
 /**
  * Personal-deck + save-a-word surface (P3-CARD-01..04).
@@ -34,6 +37,7 @@ export function buildFlashcardsModule(): DynamicModule {
     module: FlashcardsModule,
     imports: [
       buildDatabaseModule(),
+      ReadingModule,
       MongooseModule.forFeature([
         { name: FlashcardDeck.name, schema: FlashcardDeckSchema },
         { name: Flashcard.name, schema: FlashcardSchema },
@@ -43,7 +47,11 @@ export function buildFlashcardsModule(): DynamicModule {
       ]),
     ],
     controllers: [FlashcardsController],
-    providers: [FlashcardsService],
+    providers: [
+      FlashcardsService,
+      ImageSuggestService,
+      ExampleSuggestService,
+    ],
   };
 }
 

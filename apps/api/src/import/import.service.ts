@@ -10,6 +10,8 @@ import { Model, Types, type Document } from "mongoose";
 import type { FlashcardDeckDocument } from "../flashcards/schemas/deck.schema.js";
 import type { FlashcardDocument } from "../flashcards/schemas/card.schema.js";
 import { cardDedupeKey } from "../flashcards/dedupe.js";
+import { ReadingService } from "../flashcards/reading.service.js";
+import type { CardExample } from "../flashcards/schemas/card.schema.js";
 import { CONTENT_ADMIN } from "../common/roles.js";
 import type { AuthUser } from "../auth/auth.types.js";
 import {
@@ -37,6 +39,34 @@ export interface ColumnMapping {
   front: string;
   back: string;
   tags?: string;
+  /** Hiragana reading. Empty/unmapped → generated for kanji words. */
+  reading?: string;
+  /** verb / noun / adjective (also động từ / danh từ / tính từ, 動詞…). */
+  partOfSpeech?: string;
+  /** Example sentence(s); several in one cell are separated by a new line or `|`. */
+  example?: string;
+  /** Translation(s) of the example(s), in the same order. */
+  exampleTranslation?: string;
+}
+
+type Pos = "verb" | "noun" | "adjective" | "";
+
+/** Accepts English, Vietnamese, Japanese and short forms. */
+function normalizePos(raw: string | undefined): Pos | null {
+  const v = (raw ?? "").trim().toLowerCase();
+  if (!v) return null;
+  if (/^(verb|v|động từ|dong tu|động|動詞)$/.test(v)) return "verb";
+  if (/^(noun|n|danh từ|danh tu|danh|名詞)$/.test(v)) return "noun";
+  if (/^(adjective|adj|a|tính từ|tinh tu|tính|形容詞|形容動詞)$/.test(v)) return "adjective";
+  return null;
+}
+
+/** "a\nb" / "a|b" → ["a","b"]. */
+function splitMulti(raw: string | undefined): string[] {
+  return (raw ?? "")
+    .split(/\r?\n|\||｜/)
+    .map((x) => x.trim())
+    .filter(Boolean);
 }
 
 /** Per-row outcome in the preview (never written to the DB — P3-IMPORT-02). */
@@ -48,6 +78,10 @@ export interface PreviewRow {
   tags: string[];
   /** `ok` | `error` (bad row) | `duplicate` (already in the deck). */
   status: "ok" | "error" | "duplicate";
+  /** Derived/mapped extras shown in the preview. */
+  reading?: string;
+  partOfSpeech?: string;
+  examples?: number;
   /** Why the row is unusable, when `status === "error"`. */
   error?: string;
 }
@@ -102,7 +136,56 @@ export class ImportService {
     private readonly card: Model<FlashcardDocument>,
     @InjectModel("FlashcardDeck")
     private readonly deck: Model<FlashcardDeckDocument>,
+    private readonly morph: ReadingService,
   ) {}
+
+  /**
+   * Optional card fields of one row: mapped values win; an empty/unmapped
+   * hiragana or part-of-speech is derived from the word itself (kanji words
+   * get a reading, kana-only/katakana words stay empty).
+   */
+  private async extras(
+    row: Record<string, string>,
+    mapping: ColumnMapping,
+    front: string,
+  ): Promise<{ reading: string; partOfSpeech: Pos; examples: CardExample[] }> {
+    let reading = mapping.reading ? (row[mapping.reading] ?? "").trim() : "";
+    let pos: Pos = (mapping.partOfSpeech ? normalizePos(row[mapping.partOfSpeech]) : null) ?? "";
+    if (!reading || !pos) {
+      try {
+        const guess = await this.morph.analyze(front);
+        if (!reading) reading = guess.reading;
+        if (!pos) pos = guess.partOfSpeech ?? "";
+      } catch {
+        /* analyser unavailable — leave blank */
+      }
+    }
+    const sentences = splitMulti(mapping.example ? row[mapping.example] : "");
+    const translations = splitMulti(mapping.exampleTranslation ? row[mapping.exampleTranslation] : "");
+    const examples = sentences.slice(0, 10).map((sentence, i) => ({
+      sentence,
+      translation: translations[i] ?? "",
+    }));
+    return { reading, partOfSpeech: pos, examples };
+  }
+
+  /**
+   * Per-row extras (reading/POS/examples) for every row that has a front and
+   * a back. Computed once up front because the reading is part of a card's
+   * duplicate key (kanji + hiragana + meaning).
+   */
+  private async rowExtras(
+    table: Table,
+    mapping: ColumnMapping,
+  ): Promise<(Awaited<ReturnType<ImportService["extras"]>> | null)[]> {
+    const out: (Awaited<ReturnType<ImportService["extras"]>> | null)[] = [];
+    for (const row of table.rows) {
+      const front = (row[mapping.front] ?? "").trim();
+      const back = (row[mapping.back] ?? "").trim();
+      out.push(front && back ? await this.extras(row, mapping, front) : null);
+    }
+    return out;
+  }
 
   // ── Parsing ─────────────────────────────────────────────────────────
 
@@ -195,10 +278,12 @@ export class ImportService {
     }
 
     // Which dedupe keys already exist in the deck (one batched lookup)?
-    const candidateKeys = table.rows.map((row) =>
+    const extrasByRow = await this.rowExtras(table, mapping);
+    const candidateKeys = table.rows.map((row, idx) =>
       cardDedupeKey(
         (row[mapping.front] ?? "").trim(),
         (row[mapping.back] ?? "").trim(),
+        extrasByRow[idx]?.reading ?? "",
       ),
     );
     const existing = await this.card
@@ -215,7 +300,8 @@ export class ImportService {
     let errors = 0;
     let duplicates = 0;
 
-    table.rows.forEach((row, i) => {
+    for (let i = 0; i < table.rows.length; i++) {
+      const row = table.rows[i];
       const rawFront = (row[mapping.front] ?? "").trim();
       const rawBack = (row[mapping.back] ?? "").trim();
       const tags = this.parseTags(row[mapping.tags ?? ""]);
@@ -230,10 +316,11 @@ export class ImportService {
           error: `missing ${rawFront === "" ? "front" : ""}${rawFront === "" && rawBack === "" ? " & " : ""}${rawBack === "" ? "back" : ""} value`,
         });
         errors += 1;
-        return;
+        continue;
       }
 
-      const key = cardDedupeKey(rawFront, rawBack);
+      const extra = extrasByRow[i]!;
+      const key = cardDedupeKey(rawFront, rawBack, extra.reading);
       if (existingKeys.has(key) || seenInFile.has(key)) {
         rows.push({
           rowNumber: i + 2,
@@ -244,13 +331,22 @@ export class ImportService {
         });
         duplicates += 1;
         seenInFile.add(key);
-        return;
+        continue;
       }
 
-      rows.push({ rowNumber: i + 2, front: rawFront, back: rawBack, tags, status: "ok" });
+      rows.push({
+        rowNumber: i + 2,
+        front: rawFront,
+        back: rawBack,
+        tags,
+        status: "ok",
+        reading: extra.reading,
+        partOfSpeech: extra.partOfSpeech,
+        examples: extra.examples.length,
+      });
       ok += 1;
       seenInFile.add(key);
-    });
+    }
 
     return {
       deckId,
@@ -277,11 +373,16 @@ export class ImportService {
     const table = this.parseTable(file);
 
     // Rebuild the exact rows the preview showed, in the same order.
+    const extrasByRow = await this.rowExtras(table, mapping);
     const existing = await this.card
       .find({
         deck: targetDeck._id,
-        dedupeKey: table.rows.map((r) =>
-          cardDedupeKey((r[mapping.front] ?? "").trim(), (r[mapping.back] ?? "").trim()),
+        dedupeKey: table.rows.map((r, idx) =>
+          cardDedupeKey(
+            (r[mapping.front] ?? "").trim(),
+            (r[mapping.back] ?? "").trim(),
+            extrasByRow[idx]?.reading ?? "",
+          ),
         ),
       })
       .select("dedupeKey front back")
@@ -300,6 +401,9 @@ export class ImportService {
       tags: string[];
       origin: "import";
       dedupeKey: string;
+      reading: string;
+      partOfSpeech: Pos;
+      examples: CardExample[];
     }
 
     const toInsert: ImportCardDoc[] = [];
@@ -308,7 +412,7 @@ export class ImportService {
     const errors: { rowNumber: number; error: string }[] = [];
     let rowNo = 1;
 
-    for (const row of table.rows) {
+    for (const [rowIdx, row] of table.rows.entries()) {
       rowNo += 1;
       const front = (row[mapping.front] ?? "").trim();
       const back = (row[mapping.back] ?? "").trim();
@@ -319,7 +423,8 @@ export class ImportService {
         continue;
       }
 
-      const key = cardDedupeKey(front, back);
+      const extra = extrasByRow[rowIdx]!;
+      const key = cardDedupeKey(front, back, extra.reading);
       const doc: ImportCardDoc = {
         deck: targetDeck._id,
         front,
@@ -327,6 +432,9 @@ export class ImportService {
         tags,
         origin: "import",
         dedupeKey: key,
+        reading: extra.reading,
+        partOfSpeech: extra.partOfSpeech,
+        examples: extra.examples,
       };
 
       if (seenInFile.has(key)) {
@@ -354,15 +462,22 @@ export class ImportService {
       try {
         const res = await this.card.insertMany(
           toInsert as unknown as Document[],
-          { ordered: true },
+          { ordered: false },
         );
         imported = res.length;
       } catch (error) {
         const code = (error as { code?: number }).code;
         if (code === 11000 || code === 11001) {
-          // A duplicate-key collision mid-batch: count it as skipped; the
-          // unique index already guarantees no second record exists.
-          skipped += 1;
+          // Duplicate-key collisions (a concurrent confirm): with an
+          // unordered insert every other row still lands. Count the
+          // collisions as skipped; the unique index guarantees no copy.
+          const e = error as {
+            insertedDocs?: unknown[];
+            writeErrors?: unknown[];
+            result?: { insertedCount?: number };
+          };
+          imported = e.insertedDocs?.length ?? e.result?.insertedCount ?? 0;
+          skipped += Math.max(1, e.writeErrors?.length ?? toInsert.length - imported);
         } else {
           throw error;
         }
@@ -378,7 +493,14 @@ export class ImportService {
           .updateOne(
             { _id: current?._id ?? { deck: targetDeck._id, dedupeKey: doc.dedupeKey } },
             {
-              $set: { front: doc.front, back: doc.back, tags: doc.tags },
+              $set: {
+                front: doc.front,
+                back: doc.back,
+                tags: doc.tags,
+                reading: doc.reading,
+                partOfSpeech: doc.partOfSpeech,
+                examples: doc.examples,
+              },
               $setOnInsert: {
                 deck: targetDeck._id,
                 dedupeKey: doc.dedupeKey,

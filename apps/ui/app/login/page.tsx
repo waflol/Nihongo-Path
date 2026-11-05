@@ -46,6 +46,16 @@ export default function LoginPage() {
           Tạo tài khoản
         </Link>
       </p>
+
+      <p className="mt-4 text-center text-xs text-[var(--muted-foreground)]">
+        Quản trị viên?{" "}
+        <Link
+          href="/admin/login"
+          className="font-medium text-[var(--muted-foreground)] underline hover:text-[var(--foreground)]"
+        >
+          Đăng nhập khu quản trị
+        </Link>
+      </p>
     </div>
   );
 }

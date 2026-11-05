@@ -20,7 +20,8 @@ async function forward(request: NextRequest, route: string[]): Promise<NextRespo
   }
 
   const hasBody = request.method !== "GET" && request.method !== "DELETE";
-  const target = `${API_BASE_URL}/flashcards/${route.join("/")}`;
+  const url = new URL(request.url);
+  const target = `${API_BASE_URL}/flashcards/${route.join("/")}${url.search}`;
 
   const upstream = await fetch(target, {
     method: request.method.toUpperCase() as "GET" | "POST" | "PATCH" | "DELETE",
@@ -31,6 +32,26 @@ async function forward(request: NextRequest, route: string[]): Promise<NextRespo
     body: hasBody ? await request.text() : undefined,
     cache: "no-store",
   });
+
+  // 204/205/304 must not carry a body — `NextResponse.json("", {status: 204})`
+  // throws, which turned every successful DELETE into a failure in the UI.
+  if (upstream.status === 204 || upstream.status === 205 || upstream.status === 304) {
+    return new NextResponse(null, { status: upstream.status });
+  }
+
+  // CSV export: hand the file through untouched (BOM + attachment headers).
+  const type = upstream.headers.get("content-type") ?? "";
+  if (type.startsWith("text/csv")) {
+    // Bytes, not text(): decoding to a string would drop the UTF-8 BOM Excel needs.
+    return new NextResponse(await upstream.arrayBuffer(), {
+      status: upstream.status,
+      headers: {
+        "Content-Type": type,
+        "Content-Disposition": upstream.headers.get("content-disposition") ?? "attachment",
+        "Cache-Control": "no-store",
+      },
+    });
+  }
 
   const text = await upstream.text();
   let payload: unknown = text;

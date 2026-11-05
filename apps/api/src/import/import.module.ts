@@ -5,6 +5,7 @@ import { Flashcard, FlashcardSchema } from "../flashcards/schemas/card.schema.js
 import { FlashcardDeck, FlashcardDeckSchema } from "../flashcards/schemas/deck.schema.js";
 import { ImportController } from "./import.controller.js";
 import { ImportService } from "./import.service.js";
+import { ReadingModule } from "../flashcards/reading.module.js";
 
 /**
  * Bulk flashcard import (P3-IMPORT-01..04): CSV/XLSX → parse → map → preview
@@ -24,6 +25,7 @@ export function buildImportModule(): DynamicModule {
     module: ImportModule,
     imports: [
       buildDatabaseModule(),
+      ReadingModule,
       MongooseModule.forFeature([
         { name: Flashcard.name, schema: FlashcardSchema },
         { name: FlashcardDeck.name, schema: FlashcardDeckSchema },

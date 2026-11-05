@@ -16,6 +16,9 @@ import {
 } from "@nestjs/swagger";
 import { Type } from "class-transformer";
 import {
+  ArrayMaxSize,
+  ArrayMinSize,
+  IsArray,
   IsIn,
   IsInt,
   IsOptional,
@@ -23,6 +26,7 @@ import {
   Max,
   Min,
   MinLength,
+  ValidateNested,
 } from "class-validator";
 import { CurrentUser } from "../auth/decorators/current-user.decorator.js";
 import type { AuthUser } from "../auth/auth.types.js";
@@ -51,6 +55,36 @@ export class ReviewDto {
 
   @IsIn([...REVIEW_GRADES])
   grade: (typeof REVIEW_GRADES)[number];
+
+  /** IANA time zone; omitted → the caller's profile timezone. */
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  tz?: string;
+}
+
+/** One card + grade inside a batch. */
+export class BatchReviewItemDto {
+  @IsString()
+  @MinLength(1)
+  cardId: string;
+
+  @IsIn([...REVIEW_GRADES])
+  grade: (typeof REVIEW_GRADES)[number];
+}
+
+/**
+ * A batch of reviews (P3-UI-01). The study screen grades many cards in a
+ * sitting; sending them in one request removes the per-card round-trip that
+ * made the screen feel laggy.
+ */
+export class BatchReviewDto {
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(200)
+  @ValidateNested({ each: true })
+  @Type(() => BatchReviewItemDto)
+  reviews: BatchReviewItemDto[];
 
   /** IANA time zone; omitted → the caller's profile timezone. */
   @IsOptional()
@@ -104,6 +138,29 @@ export class SrsController {
   })
   review(@CurrentUser() caller: AuthUser, @Body() body: ReviewDto) {
     return this.srs.review(caller, body);
+  }
+
+  @Post("reviews/batch")
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: "Grade many cards in one request (same rules as a single review)",
+  })
+  @ApiResponse({
+    status: 200,
+    description: "New SRS state + next due instant per reviewed card",
+  })
+  reviewBatch(@CurrentUser() caller: AuthUser, @Body() body: BatchReviewDto) {
+    return this.srs.reviewBatch(caller, body);
+  }
+
+  @Post("decks/:deckId/reset")
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      "Reset my progress on a deck — every card becomes new again (cards kept)",
+  })
+  resetDeck(@CurrentUser() caller: AuthUser, @Param("deckId") deckId: string) {
+    return this.srs.resetDeck(caller, deckId);
   }
 
   @Get("decks-progress")

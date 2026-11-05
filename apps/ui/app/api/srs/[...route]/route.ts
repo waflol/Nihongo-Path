@@ -31,6 +31,11 @@ async function forward(request: NextRequest, route: string[]): Promise<NextRespo
     cache: "no-store",
   });
 
+  // 204/205/304 must not carry a body; NextResponse.json("") throws on them.
+  if (upstream.status === 204 || upstream.status === 205 || upstream.status === 304) {
+    return new NextResponse(null, { status: upstream.status });
+  }
+
   const text = await upstream.text();
   let payload: unknown = text;
   if (text) {

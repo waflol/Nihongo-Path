@@ -6,6 +6,11 @@ import { emitSessionChanged } from "@/lib/session-events";
 
 interface AuthFormProps {
   mode: "login" | "register";
+  /**
+   * Admin-area login (`/admin/login`): after a successful sign-in the user
+   * lands in `/admin` instead of `/learn` (unless `?from=` says otherwise).
+   */
+  admin?: boolean;
 }
 
 interface Result {
@@ -22,7 +27,7 @@ const inputClass =
  * (`/api/auth/login` / `/api/auth/register`), which own the httpOnly cookie
  * (P2-UI-05). Shows a loading state and a clear error on failure.
  */
-export function AuthForm({ mode }: AuthFormProps) {
+export function AuthForm({ mode, admin }: AuthFormProps) {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -59,7 +64,11 @@ export function AuthForm({ mode }: AuthFormProps) {
 
     emitSessionChanged();
     const from = new URLSearchParams(window.location.search).get("from");
-    router.push(from && from.startsWith("/") ? from : "/learn");
+    // Admin-area login lands in the admin dashboard; the regular login lands
+    // in the learning area (both still honour `?from=` when it is a real
+    // same-site path).
+    const home = admin ? "/admin" : "/learn";
+    router.push(from && from.startsWith("/") ? from : home);
     router.refresh();
   }
 

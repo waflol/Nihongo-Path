@@ -2,6 +2,7 @@ import { Logger, ValidationPipe } from "@nestjs/common";
 import { NestFactory } from "@nestjs/core";
 import { ConfigService } from "@nestjs/config";
 import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
+import type { NestExpressApplication } from "@nestjs/platform-express";
 import { AppModule } from "./app.module.js";
 
 /**
@@ -16,7 +17,13 @@ import { AppModule } from "./app.module.js";
  * (spec §12).
  */
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  // JSON bodies up to 400 kB: flashcards may carry a small (client-resized)
+  // image as a data URL. Express' default 100 kB would reject those.
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+    bodyParser: false,
+  });
+  app.useBodyParser("json", { limit: "400kb" });
+  app.useBodyParser("urlencoded", { extended: true, limit: "400kb" });
 
   app.useGlobalPipes(
     new ValidationPipe({

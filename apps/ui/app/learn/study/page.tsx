@@ -16,9 +16,14 @@ export default function LearnStudyPage() {
   return (
     <Suspense
       fallback={
-        <p className="mx-auto max-w-3xl px-4 py-16 text-center text-sm text-[var(--muted-foreground)] sm:px-6">
-          Đang tải…
-        </p>
+        <div className="mx-auto w-full max-w-4xl px-4 py-8 sm:px-6">
+          <h1 className="text-2xl font-semibold tracking-tight text-[var(--foreground)]">
+            Ôn tập
+          </h1>
+          <p className="mt-8 text-center text-sm text-[var(--muted-foreground)]">
+            Đang tải danh sách ôn tập…
+          </p>
+        </div>
       }
     >
       <LearnStudyGate />

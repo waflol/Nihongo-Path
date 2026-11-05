@@ -36,4 +36,10 @@ export interface Env {
   GOOGLE_CLIENT_SECRET?: string;
   /** Callback/redirect URI the client was registered with. */
   GOOGLE_CALLBACK_URL?: string;
+
+  // --- Admin bootstrap (P2-USER-02). Opt-in: both must be present. ---
+  /** Admin account email to ensure at startup (role ADMIN, manual email credential). */
+  ADMIN_EMAIL?: string;
+  /** Initial password for `ADMIN_EMAIL` (used only on the create path, min 8 chars). */
+  ADMIN_PASS?: string;
 }

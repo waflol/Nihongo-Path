@@ -81,5 +81,9 @@ export function validateEnv(config: Record<string, unknown>): Env {
     GOOGLE_CLIENT_ID: toOptionalString(config.GOOGLE_CLIENT_ID),
     GOOGLE_CLIENT_SECRET: toOptionalString(config.GOOGLE_CLIENT_SECRET),
     GOOGLE_CALLBACK_URL: toOptionalString(config.GOOGLE_CALLBACK_URL),
+    // Admin bootstrap (P2-USER-02): opt-in — both must be set for the
+    // AdminBootstrapService to act; either alone is a no-op.
+    ADMIN_EMAIL: toOptionalString(config.ADMIN_EMAIL),
+    ADMIN_PASS: toOptionalString(config.ADMIN_PASS),
   };
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { onSessionChanged } from "@/lib/session-events";
@@ -26,8 +26,8 @@ interface AccountMenuProps {
  * Header account area (P2-UI-06). Reads the session once on mount and shows
  * either the "Đăng nhập" link or the signed-in user with a logout action.
  *
- * Wired through the Preline dropdown markup already in `site-header.tsx` —
- * this component replaces that hardcoded region so it reflects real state.
+ * The dropdown is plain React state (click toggles; outside click / Escape
+ * close it).
  */
 export function AccountMenu({ className = "hidden md:inline-flex" }: AccountMenuProps) {
   const router = useRouter();
@@ -53,26 +53,27 @@ export function AccountMenu({ className = "hidden md:inline-flex" }: AccountMenu
     return onSessionChanged(loadSession);
   }, [loadSession]);
 
-  // Preline binds `.hs-dropdown` triggers only when its plugin autoInit runs
-  // (DOMContentLoaded + every App Router pathname change). The signed-in
-  // dropdown markup appears LATER, when the async session fetch resolves —
-  // after the last autoInit, so the trigger would never get bound and the
-  // menu wouldn't open. Re-run the dropdown autoInit exactly when the
-  // dropdown variant first renders; it is idempotent (already-initialized
-  // elements are filtered out), so re-runs on later renders are safe.
-  const hasDropdown = status === "ready" && user !== null;
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
-    if (!hasDropdown) return;
-    let cancelled = false;
-    void import("preline").then((mod) => {
-      if (!cancelled) mod.HSStaticMethods.autoInit("dropdown");
-    });
-    return () => {
-      cancelled = true;
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (!rootRef.current?.contains(e.target as Node)) setOpen(false);
     };
-  }, [hasDropdown]);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
 
   async function logout() {
+    setOpen(false);
     await fetch("/api/auth/logout", { method: "POST" }).catch(() => undefined);
     setUser(null);
     router.push("/");
@@ -103,15 +104,14 @@ export function AccountMenu({ className = "hidden md:inline-flex" }: AccountMenu
   const initial = label.trim().charAt(0).toUpperCase() || "T";
 
   return (
-    <div className={`hs-dropdown relative ${className}`}>
-      {/* Standard Preline toolbar/user dropdown trigger: avatar + chevron
-          that flips when the menu opens (hs-dropdown-open variant). */}
+    <div ref={rootRef} className={`relative ${className}`}>
+      {/* Trigger: avatar + chevron that flips when the menu is open. */}
       <button
         type="button"
-        data-hs-dropdown=""
-        aria-expanded="false"
-        aria-haspopup="true"
-        className="hs-dropdown-toggle group inline-flex items-center gap-1.5 rounded-lg py-1 pl-1 pr-2 text-sm font-medium text-[var(--foreground)] transition hover:bg-[var(--layer-hover)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary-focus)]"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        aria-haspopup="menu"
+        className="group inline-flex items-center gap-1.5 rounded-lg py-1 pl-1 pr-2 text-sm font-medium text-[var(--foreground)] transition hover:bg-[var(--layer-hover)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary-focus)]"
       >
         <span
           aria-hidden="true"
@@ -122,7 +122,7 @@ export function AccountMenu({ className = "hidden md:inline-flex" }: AccountMenu
         <span className="hidden max-w-[140px] truncate sm:inline">{label}</span>
         <span
           aria-hidden="true"
-          className="hs-dropdown-open:rotate-180 inline-flex text-[var(--muted-foreground)] transition-transform duration-150 group-hover:text-[var(--foreground)]"
+          className={`${open ? "rotate-180" : ""} inline-flex text-[var(--muted-foreground)] transition-transform duration-150 group-hover:text-[var(--foreground)]`}
         >
           <svg className="size-4" viewBox="0 0 20 20" fill="currentColor">
             <path
@@ -134,15 +134,14 @@ export function AccountMenu({ className = "hidden md:inline-flex" }: AccountMenu
         </span>
       </button>
 
-      {/* Standard Preline dropdown menu: token-based surfaces
-          (bg-dropdown / border-dropdown-line / dropdown-item-hover …) so it
-          follows the Preline theme incl. dark mode. Absolute so opening the
-          menu never reflows the fixed-height navbar. */}
+      {/* Dropdown menu. Absolute so opening it never reflows the navbar. */}
       <div
-        data-hs-dropdown-menu=""
-        className="hs-dropdown-menu hidden absolute right-0 z-50 mt-2 w-60 rounded-lg border border-dropdown-line bg-dropdown opacity-0 shadow-lg transition-opacity duration-150 hs-dropdown-open:opacity-100"
+        role="menu"
+        className={`absolute right-0 z-50 mt-2 w-60 rounded-lg border border-[var(--dropdown-line)] bg-[var(--dropdown)] shadow-lg transition-opacity duration-150 ${
+          open ? "opacity-100" : "pointer-events-none invisible opacity-0"
+        }`}
       >
-        <div className="flex items-center gap-2.5 border-b border-dropdown-divider px-3 py-2.5">
+        <div className="flex items-center gap-2.5 border-b border-[var(--dropdown-divider)] px-3 py-2.5">
           <span
             aria-hidden="true"
             className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--primary)] text-sm font-semibold text-[var(--primary-foreground)] ring-1 ring-inset ring-black/5"
@@ -150,7 +149,7 @@ export function AccountMenu({ className = "hidden md:inline-flex" }: AccountMenu
             {initial}
           </span>
           <div className="min-w-0">
-            <p className="flex items-center gap-1.5 truncate text-sm font-semibold text-dropdown-item-foreground">
+            <p className="flex items-center gap-1.5 truncate text-sm font-semibold text-[var(--dropdown-item-foreground)]">
               {label}
               {isAdmin && (
                 <span className="rounded-full bg-[var(--primary-100)] px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--primary-700)]">
@@ -166,10 +165,25 @@ export function AccountMenu({ className = "hidden md:inline-flex" }: AccountMenu
 
         <ul className="py-1">
           {isAdmin && (
-            <li className="hs-dropdown-item relative flex cursor-pointer items-center gap-2.5 px-3 py-2 text-sm text-dropdown-item-foreground hover:bg-dropdown-item-hover focus:bg-dropdown-item-focus active:bg-dropdown-item-active">
+            <li className="relative flex cursor-pointer items-center gap-2.5 px-3 py-2 text-sm text-[var(--dropdown-item-foreground)] hover:bg-[var(--dropdown-item-hover)] focus:bg-[var(--dropdown-item-focus)] active:bg-[var(--dropdown-item-active)]">
               <Link
+                onClick={() => setOpen(false)}
+                href="/admin"
+                className="flex w-full items-center gap-2.5 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--dropdown-item-focus)]"
+              >
+                <svg aria-hidden="true" className="size-4 shrink-0 text-[var(--muted-foreground)]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M4 4h16v16H4zM4 10h16M10 4v16" />
+                </svg>
+                Khu quản trị
+              </Link>
+            </li>
+          )}
+          {isAdmin && (
+            <li className="relative flex cursor-pointer items-center gap-2.5 px-3 py-2 text-sm text-[var(--dropdown-item-foreground)] hover:bg-[var(--dropdown-item-hover)] focus:bg-[var(--dropdown-item-focus)] active:bg-[var(--dropdown-item-active)]">
+              <Link
+                onClick={() => setOpen(false)}
                 href="/admin/content"
-                className="flex w-full items-center gap-2.5 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-dropdown-item-focus"
+                className="flex w-full items-center gap-2.5 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--dropdown-item-focus)]"
               >
                 <svg aria-hidden="true" className="size-4 shrink-0 text-[var(--muted-foreground)]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
                   <path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z" />
@@ -178,11 +192,39 @@ export function AccountMenu({ className = "hidden md:inline-flex" }: AccountMenu
               </Link>
             </li>
           )}
-          <li className="hs-dropdown-item hs-dropdown-close relative flex cursor-pointer items-center gap-2.5 px-3 py-2 text-sm font-medium text-dropdown-item-foreground hover:bg-dropdown-item-hover focus:bg-dropdown-item-focus active:bg-dropdown-item-active">
+          {isAdmin && (
+            <li className="relative flex cursor-pointer items-center gap-2.5 px-3 py-2 text-sm text-[var(--dropdown-item-foreground)] hover:bg-[var(--dropdown-item-hover)] focus:bg-[var(--dropdown-item-focus)] active:bg-[var(--dropdown-item-active)]">
+              <Link
+                onClick={() => setOpen(false)}
+                href="/admin/decks"
+                className="flex w-full items-center gap-2.5 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--dropdown-item-focus)]"
+              >
+                <svg aria-hidden="true" className="size-4 shrink-0 text-[var(--muted-foreground)]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M4 5h16v14H4zM4 9h16M8 5v14" />
+                </svg>
+                Bộ thẻ chia sẻ
+              </Link>
+            </li>
+          )}
+          {isAdmin && (
+            <li className="relative flex cursor-pointer items-center gap-2.5 px-3 py-2 text-sm text-[var(--dropdown-item-foreground)] hover:bg-[var(--dropdown-item-hover)] focus:bg-[var(--dropdown-item-focus)] active:bg-[var(--dropdown-item-active)]">
+              <Link
+                onClick={() => setOpen(false)}
+                href="/admin/import"
+                className="flex w-full items-center gap-2.5 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--dropdown-item-focus)]"
+              >
+                <svg aria-hidden="true" className="size-4 shrink-0 text-[var(--muted-foreground)]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 3v12m0 0l-4-4m4 4l4-4M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2" />
+                </svg>
+                Nhập hàng loạt
+              </Link>
+            </li>
+          )}
+          <li className="relative flex cursor-pointer items-center gap-2.5 px-3 py-2 text-sm font-medium text-[var(--dropdown-item-foreground)] hover:bg-[var(--dropdown-item-hover)] focus:bg-[var(--dropdown-item-focus)] active:bg-[var(--dropdown-item-active)]">
             <button
               type="button"
               onClick={logout}
-              className="flex w-full items-center gap-2.5 rounded-md text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-dropdown-item-focus"
+              className="flex w-full items-center gap-2.5 rounded-md text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--dropdown-item-focus)]"
             >
               <svg aria-hidden="true" className="size-4 shrink-0 text-[var(--muted-foreground)]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
                 <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" />

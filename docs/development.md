@@ -115,6 +115,38 @@ NEXT_PUBLIC_SITE_URL=      # chỉ đặt khi đã có domain production
 > chỉ trỏ tới DB không tới được, app cố tình không chạy (để lộ lỗi cấu hình) —
 > xem §7.
 
+## 5.1. Tạo tài khoản admin
+
+Quản trị nội dung (`/admin/*`) cần vai trò `ADMIN` / `SUPER_ADMIN`. **Không** có
+đường self-service tự nâng quyền — tài khoản đăng ký qua UI luôn về `USER`. Hai cách:
+
+**Cách A — env (khuyến nghị cho dev):** đặt trong `apps/api/.env`
+
+```bash
+ADMIN_EMAIL=admin@example.com
+ADMIN_PASS=Password123!
+```
+
+Khi cả hai có mặt, API tự đảm bảo tài khoản đó tồn tại khi khởi động
+(`AdminBootstrapService`): chưa có → tạo mới (`role: ADMIN`, `status: ACTIVE`,
+kèm credential email để đăng nhập ngay); đã có → thăng role về `ADMIN`/`ACTIVE`
+(idempotent, **không** đổi mật khẩu của tài khoản đang có). Chỉ cả hai biến đều
+có mới chạy; một mình là no-op. Lặp lại an toàn.
+
+**Cách B — script one-shot (cần DB thật):**
+
+```bash
+cd apps/api
+node scripts/bootstrap-admin.mjs admin@example.com "Password123!"
+```
+
+Dùng cách B khi muốn thăng cấp một tài khoản bất kỳ (kể cả tài khoản Google-only)
+mà không giữ env luôn. Cả hai đều là thao tác thủ công, không auto-seed mặc định
+(spec: không tạo tài khoản ngầm).
+
+> **B mật khẩu:** sau khi tạo, đổi mật khẩu trong DB / xoá `ADMIN_PASS` khi không
+> còn cần; `ADMIN_PASS` chỉ dùng ở bước tạo mới.
+
 ## 6. Build & verify
 
 ```bash
@@ -152,16 +184,19 @@ Swagger chỉ bật khi `NODE_ENV !== "production"` (chốt ở bootstrap).
   `app.module.ts` để `MONGODB_URL` có sẵn khi `buildDatabaseModule()` được
   evaluate (ESM chạy import tĩnh trước thân module).
 
-### 8.2. Preline UI (Next 16 App Router)
+### 8.2. UI: Tailwind 4 + ReactBits (Next 16 App Router)
 
-- Preline v5 bundle full tham chiếu `window` ở module scope → **không được**
-  import top-level (phá prerender).
-- Khởi tạo qua `components/preline.tsx`: `useEffect` + dynamic
-  `import("preline")` + `HSStaticMethods.autoInit("all")`, re-run theo
-  `usePathname`. `autoInit` idempotent → không double-init khi chuyển route.
-- CSS: Tailwind 4 CSS-first, `globals.css` khai báo `@source` trỏ tới
-  `preline/dist/index.js` + import `preline/variants.css`, `preline/theme.css`.
-- Palette hiện là **placeholder** (`app/themes/theme.css`, ghi `TODO(rebrand)`).
+- Đã **bỏ Preline**. Dropdown tài khoản (`components/auth/account-menu.tsx`) và
+  menu off-canvas (`components/site-header.tsx`) dùng React state thuần
+  (click ngoài / Escape / click link để đóng).
+- [ReactBits](https://reactbits.dev) là thư viện copy-paste, không phải npm
+  package: file nằm ở `apps/ui/components/reactbits/` (hiện có `BlurText`,
+  `SpotlightCard`; cần `motion`). Thêm component mới:
+  `curl https://reactbits.dev/r/<Name>-TS-TW.json` rồi lấy `files[].content`
+  (hoặc `npx shadcn@latest add https://reactbits.dev/r/<Name>-TS-TW.json`).
+  Thư mục này bị ESLint bỏ qua vì là code vendored.
+- CSS: Tailwind 4 CSS-first; token màu là biến thô trong `app/themes/theme.css`
+  (dùng `var(--...)`). Palette hiện là **placeholder** (`TODO(rebrand)`).
 
 ### 8.3. Framework test
 

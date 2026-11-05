@@ -48,14 +48,18 @@ export default function LearnPage() {
             Phiên ôn tập thẻ mới + đến hạn theo lịch cá nhân.
           </p>
         </Link>
-        <div className="rounded-2xl border border-dashed border-[var(--border)] bg-[var(--background-1)] p-6">
+        <Link
+          href="/learn/exercises"
+          className="rounded-2xl border border-[var(--border)] bg-[var(--background-1)] p-6 transition-colors hover:bg-[var(--layer-hover)]"
+        >
           <h2 className="text-sm font-semibold text-[var(--foreground)]">
             Bài tập
           </h2>
           <p className="mt-1 text-sm text-[var(--muted-foreground)]">
-            Chờ triển khai (Sprint 4)
+            Trắc nghiệm 4 lựa chọn và gõ đáp án theo bộ thẻ — luyện không tính
+            vào lịch ôn tập.
           </p>
-        </div>
+        </Link>
         <div className="rounded-2xl border border-dashed border-[var(--border)] bg-[var(--background-1)] p-6">
           <h2 className="text-sm font-semibold text-[var(--foreground)]">
             Luyện nghe

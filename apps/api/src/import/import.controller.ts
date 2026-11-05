@@ -121,7 +121,8 @@ export class ImportController {
         "mapping must name at least the `front` and `back` columns",
       );
     }
-    const policy: "skip" | "overwrite" = body.duplicatePolicy ?? "skip";
+    // Duplicates are always skipped (existing cards are never overwritten).
+    const policy: "skip" | "overwrite" = "skip";
     return this.imports.confirm(
       caller,
       this.asUploaded(file),
