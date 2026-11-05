@@ -94,6 +94,8 @@ export function RedisConsole() {
   const [more, setMore] = useState(false);
   const [match, setMatch] = useState("np:*");
   const [matchInput, setMatchInput] = useState("np:*");
+  const [word, setWord] = useState("");
+  const [autoAll, setAutoAll] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [detail, setDetail] = useState<KeyDetail | null>(null);
   const [message, setMessage] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
@@ -153,6 +155,12 @@ export function RedisConsole() {
     return () => window.clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [match]);
+
+  // A word search keeps scanning until the whole keyspace is covered (SCAN+MATCH
+  // returns only a few hits per step, so one page would often look empty).
+  useEffect(() => {
+    if (autoAll && more && !scanning) void scan(cursor, false);
+  }, [autoAll, more, scanning, cursor, scan]);
 
   // Running tasks refresh every 3 s while the tab is visible.
   useEffect(() => {
@@ -369,13 +377,47 @@ export function RedisConsole() {
               className="mt-3 flex flex-wrap items-center gap-2"
               onSubmit={(e) => {
                 e.preventDefault();
-                setMatch(matchInput.trim() || "*");
+                const w = word.trim().replace(/[\s:*?[\]\\]+/g, "_");
+                if (!w) {
+                  setAutoAll(false);
+                  setMatchInput("np:*");
+                  setMatch("np:*");
+                  return;
+                }
+                const m = `np:ai:res:*${w}*`;
+                setAutoAll(true);
+                setMatchInput(m);
+                setMatch(m);
+              }}
+            >
+              <input
+                value={word}
+                onChange={(e) => setWord(e.target.value)}
+                placeholder="Tìm theo từ vựng, vd. 犬"
+                aria-label="Tìm theo từ vựng"
+                className={`${field} min-w-56 flex-1`}
+              />
+              <button type="submit" className={btn}>
+                Tìm từ
+              </button>
+            </form>
+            <form
+              className="mt-3 flex flex-wrap items-center gap-2"
+              onSubmit={(e) => {
+                e.preventDefault();
+                // Plain text (e.g. a kanji like 犬) has no glob characters: search
+                // it anywhere in the key, since keys embed the word (`np:ai:res:犬:…`).
+                const q = matchInput.trim();
+                const m = !q ? "*" : /[*?[\]]/.test(q) ? q : `*${q}*`;
+                setAutoAll(false);
+                setMatchInput(m);
+                setMatch(m);
               }}
             >
               <input
                 value={matchInput}
                 onChange={(e) => setMatchInput(e.target.value)}
-                placeholder="Mẫu, vd. np:ai:res:*"
+                placeholder="Mẫu hoặc kanji, vd. 犬 hay np:ai:res:*"
                 aria-label="Mẫu key"
                 className={`${field} min-w-56 flex-1 font-mono`}
               />
