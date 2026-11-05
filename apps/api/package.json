@@ -16,6 +16,7 @@
     "start:debug": "nest start --debug --watch",
     "start:prod": "node dist/main.js",
     "lint": "oxlint --type-aware src/ test/",
+    "tatoeba:import": "node scripts/import-tatoeba.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -43,7 +44,8 @@
     "multer": "2.5.0",
     "pdfjs-dist": "^6.5.438",
     "reflect-metadata": "^0.2.2",
-    "rxjs": "^7.8.1"
+    "rxjs": "^7.8.1",
+    "seek-bzip": "^2.0.0"
   },
   "devDependencies": {
     "@nestjs/cli": "^12.0.0",

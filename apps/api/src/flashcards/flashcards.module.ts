@@ -14,6 +14,7 @@ import {
 } from "../content/schemas/grammar-point.schema.js";
 import { FlashcardsController } from "./flashcards.controller.js";
 import { FlashcardsService } from "./flashcards.service.js";
+import { TatoebaSentenceSchema } from "./schemas/tatoeba.schema.js";
 import { ReadingModule } from "./reading.module.js";
 import { ImageSuggestService } from "./image-suggest.service.js";
 import { ExampleSuggestService } from "./example-suggest.service.js";
@@ -44,6 +45,7 @@ export function buildFlashcardsModule(): DynamicModule {
         { name: UserCardProgress.name, schema: UserCardProgressSchema },
         { name: Vocabulary.name, schema: VocabularySchema },
         { name: GrammarPoint.name, schema: GrammarPointSchema },
+        { name: "TatoebaSentence", schema: TatoebaSentenceSchema },
       ]),
     ],
     controllers: [FlashcardsController],

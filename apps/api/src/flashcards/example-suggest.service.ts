@@ -1,4 +1,7 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { Injectable, Logger, Optional } from "@nestjs/common";
+import { InjectModel } from "@nestjs/mongoose";
+import type { Model } from "mongoose";
+import type { TatoebaSentenceDocument } from "./schemas/tatoeba.schema.js";
 import {
   ReadingService,
   toHiragana,
@@ -53,7 +56,28 @@ const HAS_JAPANESE = /[぀-ヿ㐀-鿿]/;
 export class ExampleSuggestService {
   private readonly logger = new Logger(ExampleSuggestService.name);
 
-  constructor(private readonly morph: ReadingService) {}
+  constructor(
+    private readonly morph: ReadingService,
+    @Optional()
+    @InjectModel("TatoebaSentence")
+    private readonly local?: Model<TatoebaSentenceDocument>,
+  ) {}
+
+  private localReadyAt = 0;
+  private localReadyValue = false;
+
+  /** True when the local Tatoeba index is filled (checked at most once a minute). */
+  async hasLocalIndex(): Promise<boolean> {
+    if (!this.local) return false;
+    if (Date.now() - this.localReadyAt < 60_000) return this.localReadyValue;
+    try {
+      this.localReadyValue = (await this.local.estimatedDocumentCount().exec()) > 0;
+    } catch {
+      this.localReadyValue = false;
+    }
+    this.localReadyAt = Date.now();
+    return this.localReadyValue;
+  }
 
   async suggest(input: ExampleSuggestInput): Promise<ExampleSuggestion | null> {
     const term = input.term.replace(/[（(][^）)]*[）)]/g, "").trim();
@@ -70,6 +94,10 @@ export class ExampleSuggestService {
       const pos = input.partOfSpeech || tokenPos(head) || null;
       const reading = (input.reading ?? "").trim();
       const meanings = this.meaningWords(input.meaning ?? "");
+
+      if (await this.hasLocalIndex()) {
+        return await this.fromLocal(term, termTokens, pos, reading, meanings);
+      }
 
       // Verbs/adjectives are conjugated (食べる → 食べます): search by the stem
       // too, the token check below keeps it exact.
@@ -108,6 +136,40 @@ export class ExampleSuggestService {
       this.logger.warn(`Example suggestion failed: ${(err as Error).message}`);
       return null;
     }
+  }
+
+  /**
+   * Same selection as the live lookup, but over the local index: one indexed
+   * query on the sentence's dictionary forms, then the identical checks.
+   */
+  private async fromLocal(
+    term: string,
+    termTokens: { surface_form: string; basic_form: string; pos: string }[],
+    pos: PartOfSpeech | null,
+    reading: string,
+    meanings: string[],
+  ): Promise<ExampleSuggestion | null> {
+    const base = (t: { surface_form: string; basic_form: string }) =>
+      t.basic_form && t.basic_form !== "*" ? t.basic_form : t.surface_form;
+    const docs = await this.local!
+      .find({ tokens: { $all: [...new Set(termTokens.map(base))] } })
+      .limit(60)
+      .lean()
+      .exec();
+    let best: { score: number; value: ExampleSuggestion } | null = null;
+    for (const d of docs) {
+      const sentence = d.ja.trim();
+      if (!sentence || sentence === term || sentence.length > 40) continue;
+      if (meanings.length > 0 && !this.mentionsMeaning(d.vi, meanings)) continue;
+      if (!(await this.usesWord(sentence, termTokens, pos, reading))) continue;
+      let score = -Math.abs(sentence.length - 12);
+      if (/[。！？]$/.test(sentence)) score += 2;
+      if (sentence.length < 5) score -= 6;
+      if (!best || score > best.score) {
+        best = { score, value: { sentence, translation: d.vi.trim() } };
+      }
+    }
+    return best?.value ?? null;
   }
 
   /** Words of the card's meaning ("ăn (động từ)" → ["ăn"]). */

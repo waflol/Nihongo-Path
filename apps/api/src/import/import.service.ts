@@ -165,7 +165,7 @@ export class ImportService implements OnApplicationBootstrap {
     reading: string;
     partOfSpeech: Pos;
   }[] = [];
-  private exampleWorkerRunning = false;
+  private activeExampleWorkers = 0;
 
   /** After a restart, resume decks whose examples were still being generated. */
   async onApplicationBootstrap(): Promise<void> {
@@ -210,12 +210,25 @@ export class ImportService implements OnApplicationBootstrap {
 
   private enqueueExamples(items: typeof this.exampleQueue): void {
     this.exampleQueue.push(...items);
-    if (this.exampleWorkerRunning || items.length === 0) return;
-    this.exampleWorkerRunning = true;
-    void this.runExampleWorker();
+    if (items.length === 0) return;
+    void this.startExampleWorkers();
   }
 
-  private async runExampleWorker(): Promise<void> {
+  /**
+   * With the local Tatoeba index a lookup is a database query, so several run
+   * side by side with no pause. Without it every lookup is a slow HTTP call:
+   * a few in parallel, politely spaced.
+   */
+  private async startExampleWorkers(): Promise<void> {
+    if (this.activeExampleWorkers > 0) return; // already running; they drain the queue
+    const local = await this.exampleSuggest.hasLocalIndex();
+    const workers = local ? 6 : 3;
+    const pause = local ? 0 : 250;
+    this.activeExampleWorkers = workers;
+    for (let i = 0; i < workers; i++) void this.runExampleWorker(pause);
+  }
+
+  private async runExampleWorker(pauseMs: number): Promise<void> {
     try {
       let job: (typeof this.exampleQueue)[number] | undefined;
       while ((job = this.exampleQueue.shift())) {
@@ -242,10 +255,14 @@ export class ImportService implements OnApplicationBootstrap {
         if (d && (d.exampleDone ?? 0) >= (d.exampleTotal ?? 0)) {
           await this.finishDeckExamples(job.deck);
         }
-        await new Promise((r) => setTimeout(r, 250)); // be polite to Tatoeba
+        if (pauseMs > 0) await new Promise((r) => setTimeout(r, pauseMs));
       }
     } finally {
-      this.exampleWorkerRunning = false;
+      this.activeExampleWorkers -= 1;
+      // Jobs queued just as the last worker finished must not be stranded.
+      if (this.activeExampleWorkers === 0 && this.exampleQueue.length > 0) {
+        void this.startExampleWorkers();
+      }
     }
   }
 
