@@ -1,8 +1,8 @@
 import { Prop, Schema, SchemaFactory } from "@nestjs/mongoose";
 import type { HydratedDocument } from "mongoose";
 
-/** Why the call was made: generating examples for cards, or an admin test/benchmark. */
-export const AI_LOG_PURPOSES = ["example", "test"] as const;
+/** Why the call was made: generating examples for cards, an admin test/benchmark, or "vocab" = per-word example activity. */
+export const AI_LOG_PURPOSES = ["example", "test", "vocab"] as const;
 export type AiLogPurpose = (typeof AI_LOG_PURPOSES)[number];
 
 /**

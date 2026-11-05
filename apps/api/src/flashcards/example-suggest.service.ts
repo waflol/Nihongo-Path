@@ -3,8 +3,10 @@ import { InjectModel } from "@nestjs/mongoose";
 import type { Model } from "mongoose";
 import type { TatoebaSentenceDocument } from "./schemas/tatoeba.schema.js";
 import { AiExampleService } from "../ai/ai-example.service.js";
+import { AiCallLogService } from "../ai/ai-call-log.service.js";
 import {
   ReadingService,
+  readingVariants,
   toHiragana,
   tokenPos,
   type PartOfSpeech,
@@ -38,6 +40,8 @@ interface TatoebaSentence {
 }
 
 const UA = "NihongoPath/0.1 (language-learning app; example sentences)";
+/** At most this many AI services are asked, one after another, for one card. */
+const MAX_AI_TRIES = 6;
 const HAS_JAPANESE = /[぀-ヿ㐀-鿿]/;
 
 /**
@@ -68,6 +72,7 @@ export class ExampleSuggestService {
     @InjectModel("TatoebaSentence")
     private readonly local?: Model<TatoebaSentenceDocument>,
     @Optional() private readonly ai?: AiExampleService,
+    @Optional() private readonly callLog?: AiCallLogService,
   ) {}
 
   private localReadyAt = 0;
@@ -86,7 +91,44 @@ export class ExampleSuggestService {
     return this.localReadyValue;
   }
 
-  async suggest(input: ExampleSuggestInput): Promise<ExampleSuggestion | null> {
+  /** Write one per-word entry to the admin call history ("Hoạt động ví dụ"). */
+  private logActivity(
+    input: ExampleSuggestInput,
+    hit: ExampleSuggestion | null,
+    t0: number,
+    via: string,
+  ): void {
+    const label = hit
+      ? { tatoeba: "Tatoeba", "ai-translated": "Tatoeba + AI dịch", ai: "AI viết" }[hit.source ?? "tatoeba"]
+      : "Không tìm được ví dụ";
+    void this.callLog?.record({
+      purpose: "vocab",
+      serviceId: "",
+      serviceLabel: `${via} · ${label}`,
+      provider: "activity",
+      modelName: hit?.source ?? "none",
+      url: "",
+      words: [input.term],
+      request: JSON.stringify(
+        { term: input.term, meaning: input.meaning, reading: input.reading, partOfSpeech: input.partOfSpeech },
+        null,
+        2,
+      ),
+      response: hit ? `${hit.sentence}\n${hit.translation}` : "Không có câu nào đạt kiểm tra.",
+      ok: !!hit,
+      status: 0,
+      ms: Date.now() - t0,
+    });
+  }
+
+  async suggest(input: ExampleSuggestInput, log = true): Promise<ExampleSuggestion | null> {
+    const t0 = Date.now();
+    const hit = await this.suggestInner(input);
+    if (log) this.logActivity(input, hit, t0, "Thêm thẻ");
+    return hit;
+  }
+
+  private async suggestInner(input: ExampleSuggestInput): Promise<ExampleSuggestion | null> {
     const term = input.term.replace(/[（(][^）)]*[）)]/g, "").trim();
     if (!term || term.length > 30 || !HAS_JAPANESE.test(term)) return null;
 
@@ -203,8 +245,16 @@ export class ExampleSuggestService {
    * path for adding a single card.
    */
   async suggestFull(input: ExampleSuggestInput): Promise<ExampleSuggestion | null> {
-    const first = await this.suggest(input);
-    if (first || !(await this.hasLocalIndex())) return first;
+    const t0 = Date.now();
+    const hit = await this.suggestFullInner(input);
+    this.logActivity(input, hit, t0, "Import");
+    return hit;
+  }
+
+  private async suggestFullInner(input: ExampleSuggestInput): Promise<ExampleSuggestion | null> {
+    const first = await this.suggestInner(input);
+    if (first) return first;
+    const hasLocal = await this.hasLocalIndex();
 
     const term = input.term.replace(/[（(][^）)]*[）)]/g, "").trim();
     if (!term || term.length > 30 || !HAS_JAPANESE.test(term)) return null;
@@ -216,11 +266,14 @@ export class ExampleSuggestService {
       const meaning = (input.meaning ?? "").trim();
 
       // 2. a real sentence without a Vietnamese translation.
-      const docs = await this.local!
-        .find({ tokens: { $all: this.contentForms(termTokens) }, hasVi: { $ne: true } })
-        .limit(150)
-        .lean()
-        .exec();
+      // (needs the local index; without it, go straight to the AI-written sentence)
+      const docs = hasLocal
+        ? await this.local!
+            .find({ tokens: { $all: this.contentForms(termTokens) }, hasVi: { $ne: true } })
+            .limit(150)
+            .lean()
+            .exec()
+        : [];
       let best: { score: number; sentence: string } | null = null;
       for (const d of docs) {
         const sentence = d.ja.trim();
@@ -235,19 +288,44 @@ export class ExampleSuggestService {
         if (!this.ai || !(await this.ai.isEnabled())) {
           return { sentence: best.sentence, translation: "", source: "tatoeba" };
         }
-        const r = await this.ai.run({ kind: "translate", ja: best.sentence, term, meaning });
-        if (r && r.matches !== false) {
-          return { sentence: best.sentence, translation: r.vi, source: "ai-translated" };
+        // Ask the AI services one after another: if the first one says the word
+        // has another sense here (`matches === false`), the next ready service
+        // is asked, and so on. None agrees → write our own sentence below.
+        const tried: string[] = [];
+        for (let i = 0; i < MAX_AI_TRIES; i++) {
+          const r = await this.ai.run({ kind: "translate", ja: best.sentence, term, meaning, skip: [...tried] });
+          if (!r) break; // no further service can answer
+          if (r.matches !== false) {
+            return { sentence: best.sentence, translation: r.vi, source: "ai-translated" };
+          }
+          if (!r.service) break;
+          tried.push(r.service);
         }
-        // `matches === false` → a different sense of the word: write our own.
       }
 
-      // 3. a sentence written by AI, verified like the others.
+      // 3. a sentence written by AI. The first service's sentence is checked;
+      // if it is not suitable the next ready service is asked, then the next…
+      // If none gives a suitable one the card stays empty.
+      // The AI was given this exact word, reading and meaning, so the card's
+      // own part of speech / reading (often typo'd in the source book) is not
+      // held against it: the word (or one of its written forms / readings)
+      // just has to be in the sentence.
       if (this.ai && (await this.ai.isEnabled())) {
-        const r = await this.ai.run({ kind: "write", term, reading, meaning, pos: pos ?? "" });
-        const sentence = r?.ja?.trim() ?? "";
-        if (r && sentence && sentence.length <= 40 && (await this.usesWord(sentence, termTokens, pos, reading))) {
-          return { sentence, translation: r.vi, source: "ai" };
+        const forms = this.wordForms(term, input.reading);
+        const tried: string[] = [];
+        for (let i = 0; i < MAX_AI_TRIES; i++) {
+          const r = await this.ai.run({ kind: "write", term, reading, meaning, pos: pos ?? "", skip: [...tried] });
+          if (!r) break; // no further service can answer
+          const sentence = r.ja?.trim() ?? "";
+          if (
+            sentence &&
+            sentence.length <= 40 &&
+            (forms.some((f) => sentence.includes(f)) || (await this.usesWord(sentence, termTokens, null, "")))
+          ) {
+            return { sentence, translation: r.vi, source: "ai" };
+          }
+          if (!r.service) break;
+          tried.push(r.service);
         }
       }
       return null;
@@ -255,6 +333,17 @@ export class ExampleSuggestService {
       this.logger.warn(`Full example suggestion failed: ${(err as Error).message}`);
       return null;
     }
+  }
+
+  /**
+   * Every way the word may appear in a sentence: the front as written, each
+   * variant when the book lists several (`寄附／寄付`), and its hiragana
+   * reading(s). Forms of one character are ignored (too common to prove anything).
+   */
+  private wordForms(term: string, reading?: string): string[] {
+    const parts = term.split(/[／/・、,\s]+/).filter(Boolean);
+    const forms = new Set<string>([term, ...parts, ...readingVariants(reading)]);
+    return [...forms].filter((f) => [...f].length >= 2 || f === term);
   }
 
   /** Words of the card's meaning ("ăn (động từ)" → ["ăn"]). */
@@ -287,6 +376,8 @@ export class ExampleSuggestService {
     const base = (t: { surface_form: string; basic_form: string }) =>
       t.basic_form && t.basic_form !== "*" ? t.basic_form : t.surface_form;
     const n = termTokens.length;
+    // The card's reading as a book wrote it (`【かくべつ】`, `げんぞん/げんそん`) → plain hiragana variants.
+    const readings = readingVariants(reading);
 
     for (let i = 0; i + n <= tokens.length; i++) {
       const window = tokens.slice(i, i + n);
@@ -299,11 +390,11 @@ export class ExampleSuggestService {
       // homograph — 空 "そら" (sky) vs 空く "すく" / 空 "から" (empty).
       if (
         n === 1 &&
-        reading &&
+        readings.length > 0 &&
         last.reading &&
         last.reading !== "*" &&
         last.surface_form === last.basic_form &&
-        toHiragana(last.reading) !== reading
+        !readings.includes(toHiragana(last.reading))
       ) {
         continue;
       }

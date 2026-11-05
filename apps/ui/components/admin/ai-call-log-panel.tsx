@@ -5,7 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 
 interface LogRow {
   _id: string;
-  purpose: "example" | "test";
+  purpose: "example" | "test" | "vocab";
   serviceId: string;
   serviceLabel: string;
   provider: string;
@@ -177,6 +177,7 @@ export function AiCallLogPanel() {
         <select value={purpose} onChange={filter(setPurpose)} className={field} aria-label="Mục đích">
           <option value="">Mọi mục đích</option>
           <option value="example">Tạo ví dụ</option>
+          <option value="vocab">Hoạt động từ vựng</option>
           <option value="test">Kiểm tra / benchmark</option>
         </select>
         <input
@@ -268,8 +269,9 @@ function RowGroup({
         <td className="px-3 py-2">
           <div className="font-medium text-[var(--foreground)]">{r.serviceLabel || r.provider}</div>
           <div className="text-xs text-[var(--muted-foreground)]">
-            {r.modelName}
+            {r.purpose === "vocab" ? "" : r.modelName}
             {r.purpose === "test" ? " · kiểm tra" : ""}
+            {r.purpose === "vocab" ? "tạo ví dụ cho từ vựng" : ""}
           </div>
         </td>
         <td lang="ja" className="max-w-64 truncate px-3 py-2 text-[var(--foreground)]" title={r.words.join("、")}>
@@ -298,7 +300,7 @@ function RowGroup({
             ) : (
               <div className="space-y-3">
                 <p className="break-all text-xs text-[var(--muted-foreground)]">
-                  POST {detail.endpoint || "—"} · {detail.provider}
+                  {detail.purpose === "vocab" ? "Hoạt động tạo ví dụ" : `POST ${detail.endpoint || "—"} · ${detail.provider}`}
                 </p>
                 <div>
                   <h3 className="text-xs font-semibold text-[var(--foreground)]">Yêu cầu gửi đi</h3>

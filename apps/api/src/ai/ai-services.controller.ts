@@ -79,11 +79,13 @@ export class AiServicesController {
   @Post("services/auto-sort")
   @HttpCode(HttpStatus.OK)
   @ContentAdmin()
-  @ApiOperation({ summary: "Re-order services by benchmark score (accuracy vs speed weight, minimum accuracy)" })
-  autoSort(@Body() body: { speedWeight?: number; minAccuracy?: number }) {
+  @ApiOperation({ summary: "Re-order services by benchmark score (accuracy vs speed weight, minimum accuracy); with `task`, only that task's own order" })
+  autoSort(@Body() body: { speedWeight?: number; minAccuracy?: number; task?: string }) {
     const w = Number(body?.speedWeight);
     const m = Number(body?.minAccuracy);
+    const task = body?.task === "translate" || body?.task === "write" || body?.task === "grammar" ? body.task : undefined;
     return this.services.autoSort({
+      task,
       speedWeight: Number.isFinite(w) ? Math.min(1, Math.max(0, w)) : undefined,
       minAccuracy: Number.isFinite(m) ? Math.min(100, Math.max(0, m)) : undefined,
     });
@@ -235,7 +237,7 @@ export class AiServicesController {
       pageSize: Math.min(100, Math.max(1, Number(pageSize) || 25)),
       serviceId: serviceId || undefined,
       ok: ok === "1" ? true : ok === "0" ? false : undefined,
-      purpose: purpose === "example" || purpose === "test" ? purpose : undefined,
+      purpose: purpose === "example" || purpose === "test" || purpose === "vocab" ? purpose : undefined,
       q,
     });
   }
