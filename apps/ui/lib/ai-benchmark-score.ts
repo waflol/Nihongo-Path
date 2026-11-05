@@ -19,6 +19,10 @@ export function speedScore(ms: number): number {
   return clamp100(100 * (1 - Math.log(ms / SPEED_FAST_MS) / Math.log(SPEED_SLOW_MS / SPEED_FAST_MS)));
 }
 
+/** The jobs scored separately; each has its own priority order (mirrors the server's `BenchTask`). */
+export type BenchTask = "translate" | "write" | "grammar";
+export const TASK_LABELS: Record<BenchTask, string> = { translate: "Dịch", write: "Đặt câu", grammar: "Phân tích ngữ pháp" };
+
 export interface RankInput {
   id: string;
   bench?: { ok: boolean; accuracy: number; ms: number; successRate?: number } | null;

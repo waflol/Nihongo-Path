@@ -1,6 +1,6 @@
 import { Prop, Schema, SchemaFactory } from "@nestjs/mongoose";
 import type { HydratedDocument } from "mongoose";
-import type { BenchResult } from "./ai-benchmark.js";
+import type { BenchHistory, BenchResult, BenchTask } from "./ai-benchmark.js";
 
 /**
  * An AI service the admin added for example sentences. Services are tried in
@@ -28,6 +28,14 @@ export class AiServiceConfig {
   @Prop({ type: Object })
   bench?: BenchResult;
 
+  /** Latest benchmark of each task (translate / write / grammar), each scored on its own. */
+  @Prop({ type: Object })
+  benchByTask?: Partial<Record<BenchTask, BenchResult>>;
+
+  /** Past benchmark runs, kept separately per task (newest last, capped). */
+  @Prop({ type: Object })
+  benchHistory?: BenchHistory;
+
   /** `custom` only: base URL of the endpoint (validated, no trailing slash). */
   @Prop({ type: String })
   baseUrl?: string;
@@ -49,6 +57,10 @@ export class AiServiceConfig {
   /** Lower = tried first. */
   @Prop({ type: Number, default: 0, index: true })
   priority: number;
+
+  /** Own order per task (lower = first); a task without one falls back to `priority`. */
+  @Prop({ type: Object })
+  taskPriority?: Partial<Record<"translate" | "write" | "grammar", number>>;
 
   /** `ok` | `cooldown` (rate-limited) | `invalid` (key/model rejected) | `error`. */
   @Prop({ type: String, default: "unknown" })

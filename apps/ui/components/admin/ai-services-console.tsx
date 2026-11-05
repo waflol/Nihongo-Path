@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { TASK_LABELS, type BenchTask } from "@/lib/ai-benchmark-score";
 import { ConfirmDialog } from "@/components/learn/confirm-dialog";
-import { AiBenchmarkPanel, type Bench } from "@/components/admin/ai-benchmark-panel";
+import { AiBenchmarkPanel, type Bench, type HistoryEntry } from "@/components/admin/ai-benchmark-panel";
 
 interface Provider {
   id: string;
@@ -29,10 +30,13 @@ interface Service {
   keyHint: string;
   baseUrl?: string | null;
   translationOnly?: boolean;
-  bench?: Bench | null;
+  benchTasks?: Partial<Record<BenchTask, Bench>>;
+  benchHistory?: Partial<Record<BenchTask, HistoryEntry[]>>;
   rpm: number;
   enabled: boolean;
   priority: number;
+  /** Own order per task (lower = tried first); falls back to `priority`. */
+  taskPriority?: Partial<Record<BenchTask, number>>;
   status: string;
   lastError: string;
   lastOkAt: string | null;
@@ -294,6 +298,7 @@ export function AiServicesConsole() {
   const [testMsg, setTestMsg] = useState<Record<string, { ok: boolean; text: string }>>({});
   const [deleting, setDeleting] = useState<Service | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
+  const [task, setTask] = useState<BenchTask>("translate");
   const [edit, setEdit] = useState({ label: "", model: "", rpm: "", apiKey: "", baseUrl: "" });
 
   // Add form
@@ -395,13 +400,15 @@ export function AiServicesConsole() {
   }
 
   async function move(index: number, dir: -1 | 1) {
-    const own = services.filter((s) => !s.readOnly);
+    const own = shown.filter((s) => !s.readOnly);
     const j = index + dir;
     if (j < 0 || j >= own.length) return;
     const next = [...own];
     [next[index], next[j]] = [next[j], next[index]];
-    setServices([...next, ...services.filter((s) => s.readOnly)]);
-    const res = await call("/services/reorder", "POST", { ids: next.map((s) => s.id) });
+    // Optimistic: give the moved services the new positions of THIS task only.
+    const pos = new Map(next.map((s, k) => [s.id, k]));
+    setServices((all) => all.map((s) => (pos.has(s.id) ? { ...s, taskPriority: { ...s.taskPriority, [task]: pos.get(s.id)! } } : s)));
+    const res = await call("/services/reorder", "POST", { ids: next.map((s) => s.id), task });
     if (!res?.ok) setError(await message(res, "Không đổi được thứ tự"));
     await load();
   }
@@ -442,16 +449,24 @@ export function AiServicesConsole() {
     await load();
   }
 
-  const ownIndex = (s: Service) => services.filter((x) => !x.readOnly).findIndex((x) => x.id === s.id);
-  const ownCount = services.filter((s) => !s.readOnly).length;
+  // Each task has its own order. A translate-only model can only do "Dịch", so it is left out of the other two.
+  const rank = (s: Service) => s.taskPriority?.[task] ?? s.priority;
+  const shown = services
+    .filter((s) => task === "translate" || !s.translationOnly)
+    .map((s, k) => ({ s, k }))
+    .sort((a, b) => Number(a.s.readOnly ?? false) - Number(b.s.readOnly ?? false) || rank(a.s) - rank(b.s) || a.k - b.k)
+    .map((x) => x.s);
+  const hiddenCount = services.length - shown.length;
+  const ownIndex = (s: Service) => shown.filter((x) => !x.readOnly).findIndex((x) => x.id === s.id);
+  const ownCount = shown.filter((s) => !s.readOnly).length;
 
   return (
     <div className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6">
       <h1 className="text-2xl font-semibold tracking-tight text-[var(--foreground)]">Dịch vụ AI</h1>
       <p className="mt-1 max-w-3xl text-sm text-[var(--muted-foreground)]">
-        Dùng để dịch và viết câu ví dụ khi nhập thẻ. Hệ thống thử từng dịch vụ <strong>theo thứ tự từ trên xuống</strong>;
-        nếu một dịch vụ hết hạn mức, bị lỗi hoặc từ chối thì tự chuyển sang dịch vụ kế tiếp (dịch vụ lỗi được nghỉ một lúc
-        rồi mới thử lại). Khoá API được mã hoá khi lưu và không bao giờ hiển thị lại.
+        Dùng để dịch, viết câu ví dụ và phân tích ngữ pháp. Mỗi việc có <strong>thứ tự ưu tiên riêng</strong>: hệ thống thử từng dịch vụ
+        theo thứ tự của việc đó, từ trên xuống; nếu một dịch vụ hết hạn mức, bị lỗi hoặc từ chối thì tự chuyển sang dịch vụ kế tiếp (dịch vụ lỗi
+        được nghỉ một lúc rồi mới thử lại). Khoá API được mã hoá khi lưu và không bao giờ hiển thị lại.
       </p>
 
       {error && (
@@ -471,15 +486,33 @@ export function AiServicesConsole() {
         onConfirm={() => void confirmDelete()}
       />
 
-      {/* Priority list */}
-      <div className="mt-6 space-y-3">
+      {/* Priority list — one order per task */}
+      <div role="tablist" aria-label="Thứ tự ưu tiên theo việc" className="mt-6 flex flex-wrap gap-2">
+        {(["translate", "write", "grammar"] as const).map((k) => (
+          <button
+            key={k}
+            type="button"
+            role="tab"
+            aria-selected={task === k}
+            onClick={() => setTask(k)}
+            className={`inline-flex h-9 items-center rounded-lg border border-[var(--border)] px-4 text-sm font-medium text-[var(--foreground)] hover:bg-[var(--layer-hover)] ${task === k ? "bg-[var(--layer-hover)]" : ""}`}
+          >
+            {TASK_LABELS[k]}
+          </button>
+        ))}
+      </div>
+      <p className="mt-2 text-xs text-[var(--muted-foreground)]">
+        Thứ tự ưu tiên của “{TASK_LABELS[task]}” — dùng mũi tên để đổi, hoặc chấm điểm rồi bấm “Sắp xếp” ở phần Chấm điểm bên dưới.
+        {hiddenCount > 0 && ` ${hiddenCount} dịch vụ chỉ dịch được nên không nằm trong danh sách này.`}
+      </p>
+      <div className="mt-3 space-y-3">
         {!loaded && <p className="text-sm text-[var(--muted-foreground)]">Đang tải…</p>}
         {loaded && services.length === 0 && (
           <p className="rounded-2xl border border-dashed border-[var(--border)] p-8 text-center text-sm text-[var(--muted-foreground)]">
             Chưa có dịch vụ nào. Thêm một dịch vụ ở bên dưới — khi chưa có, ví dụ chỉ lấy từ Tatoeba.
           </p>
         )}
-        {services.map((s) => {
+        {shown.map((s) => {
           const i = ownIndex(s);
           const t = testMsg[s.id];
           return (
@@ -512,7 +545,10 @@ export function AiServicesConsole() {
                     </p>
                     <p className="mt-1 text-xs text-[var(--muted-foreground)]">
                       {s.providerName} · <code>{s.model}</code> · {s.keyHint ? `khoá ····${s.keyHint}` : "không dùng khoá"} · {s.rpm} yêu cầu/phút{s.provider === "custom" && s.baseUrl ? ` · ${s.baseUrl}` : ""}
-                      {s.bench?.ok && ` · điểm ${s.bench.accuracy.toFixed(0)} · ${(s.bench.ms / 1000).toFixed(1)}s`}
+                      {(["translate", "write", "grammar"] as const)
+                        .filter((t) => s.benchTasks?.[t]?.ok)
+                        .map((t) => ` · ${{ translate: "dịch", write: "đặt câu", grammar: "ngữ pháp" }[t]} ${s.benchTasks![t]!.accuracy.toFixed(0)}`)
+                        .join("")}
                     </p>
                   </div>
                 </div>
@@ -621,7 +657,7 @@ export function AiServicesConsole() {
       </div>
 
       <AiBenchmarkPanel
-        services={services.map((s) => ({ id: s.id, label: s.label, providerName: s.providerName, model: s.model, enabled: s.enabled, bench: s.bench }))}
+        services={services.map((s) => ({ id: s.id, label: s.label, providerName: s.providerName, model: s.model, enabled: s.enabled, benchTasks: s.benchTasks, benchHistory: s.benchHistory }))}
         onChanged={load}
       />
 

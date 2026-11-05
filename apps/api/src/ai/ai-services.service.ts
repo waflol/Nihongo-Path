@@ -11,7 +11,18 @@ import { InjectModel } from "@nestjs/mongoose";
 import { Model, Types } from "mongoose";
 import { openSecret, sealSecret } from "../common/secret-box.js";
 import { AI_PROVIDERS, providerById, type AiProvider } from "./ai-providers.js";
-import { rankServices, type BenchResult, type RankOptions, type Ranked } from "./ai-benchmark.js";
+import {
+  BENCH_TASKS,
+  HISTORY_LIMIT,
+  historyEntry,
+  legacyTaskResult,
+  rankServices,
+  type BenchHistory,
+  type BenchResult,
+  type BenchTask,
+  type RankOptions,
+  type Ranked,
+} from "./ai-benchmark.js";
 import { fetchNvidiaCatalog, nvidiaModels } from "./ai-nvidia.js";
 import { validateBaseUrl } from "./ai-url.js";
 import { normaliseModels, type AiModelInfo } from "./ai-models.js";
@@ -25,6 +36,8 @@ export interface RuntimeAiService {
   model: string;
   key: string;
   rpm: number;
+  /** Priority: the general one and, where the admin sorted by task, that task's own. */
+  order?: { default: number } & Partial<Record<BenchTask, number>>;
 }
 
 /** What the admin page sees — never the key. */
@@ -39,11 +52,15 @@ export interface AiServiceView {
   baseUrl: string | null;
   /** Translate-only model: used for translating sentences, never for writing them. */
   translationOnly: boolean;
-  /** Latest benchmark, if any. */
-  bench: (BenchResult & { score?: number; speed?: number; eligible?: boolean; pareto?: boolean }) | null;
+  /** Latest benchmark of each task, each with its own score / rank data. */
+  benchTasks: Partial<Record<BenchTask, BenchResult & { score?: number; speed?: number; eligible?: boolean; pareto?: boolean }>>;
+  /** Past runs per task. */
+  benchHistory: BenchHistory;
   rpm: number;
   enabled: boolean;
   priority: number;
+  /** Own order per task, where the admin sorted by that task. */
+  taskPriority: Partial<Record<BenchTask, number>>;
   status: string;
   lastError: string;
   lastOkAt: string | null;
@@ -144,7 +161,15 @@ export class AiServicesService {
         const provider = this.providerOf(d);
         const key = this.keyOf(d);
         if (!provider || key === null) continue; // unknown preset, or the secret changed
-        list.push({ id: String(d._id), label: d.label, provider, model: d.modelName, key, rpm: d.rpm });
+        list.push({
+          id: String(d._id),
+          label: d.label,
+          provider,
+          model: d.modelName,
+          key,
+          rpm: d.rpm,
+          order: { default: d.priority, ...(d.taskPriority ?? {}) },
+        });
       }
     }
     const env = this.envService();
@@ -153,10 +178,17 @@ export class AiServicesService {
     return list;
   }
 
-  /** `active()` minus the ones cooling down right now. */
-  async available(): Promise<RuntimeAiService[]> {
+  /**
+   * `active()` minus the ones cooling down right now. With a `task`, ordered
+   * by that task's own priority (services the admin never sorted for it keep
+   * their general priority); the read-only .env service always stays last.
+   */
+  async available(task?: BenchTask): Promise<RuntimeAiService[]> {
     const now = Date.now();
-    return (await this.active()).filter((s) => (this.cooldown.get(s.id) ?? 0) <= now);
+    const list = (await this.active()).filter((s) => (this.cooldown.get(s.id) ?? 0) <= now);
+    if (!task) return list;
+    const rank = (s: RuntimeAiService) => (s.order ? (s.order[task] ?? s.order.default) : Number.MAX_SAFE_INTEGER);
+    return list.map((s, i) => ({ s, i })).sort((a, b) => rank(a.s) - rank(b.s) || a.i - b.i).map((x) => x.s);
   }
 
   async reportOk(id: string): Promise<void> {
@@ -195,6 +227,16 @@ export class AiServicesService {
     return AI_PROVIDERS;
   }
 
+  /** Each task's latest result; a task never scored on its own falls back to the old combined benchmark. */
+  private benchTasksOf(d: Pick<AiServiceDocument, "bench" | "benchByTask">): AiServiceView["benchTasks"] {
+    const out: AiServiceView["benchTasks"] = {};
+    for (const t of BENCH_TASKS) {
+      const r = d.benchByTask?.[t] ?? legacyTaskResult(d.bench, t);
+      if (r) out[t] = r;
+    }
+    return out;
+  }
+
   private view(d: AiServiceDocument): AiServiceView {
     return {
       id: String(d._id),
@@ -205,10 +247,12 @@ export class AiServicesService {
       keyHint: d.keyHint,
       baseUrl: d.baseUrl ?? null,
       translationOnly: Boolean(providerById(d.provider)?.translators?.some((t) => t.toLowerCase() === d.modelName.toLowerCase())),
-      bench: d.bench ?? null,
+      benchTasks: this.benchTasksOf(d),
+      benchHistory: d.benchHistory ?? {},
       rpm: d.rpm,
       enabled: d.enabled,
       priority: d.priority,
+      taskPriority: d.taskPriority ?? {},
       status: d.status,
       lastError: d.lastError,
       lastOkAt: d.lastOkAt ? d.lastOkAt.toISOString() : null,
@@ -235,10 +279,12 @@ export class AiServicesService {
         keyHint: env.key.slice(-4),
         baseUrl: null,
         translationOnly: false,
-        bench: this.benchEnv ?? null,
+        benchTasks: { ...this.benchEnv },
+        benchHistory: this.historyEnv,
         rpm: env.rpm,
         enabled: true,
         priority: Number.MAX_SAFE_INTEGER,
+        taskPriority: {},
         ...this.envState(),
         readOnly: true,
       });
@@ -257,52 +303,73 @@ export class AiServicesService {
   }
 
   private readonly okAt = new Map<string, string>();
-  /** Benchmark of the read-only .env service (no document to keep it on). */
-  private benchEnv?: BenchResult;
+  /** Benchmarks / history of the read-only .env service (no document to keep them on). */
+  private benchEnv: Partial<Record<BenchTask, BenchResult>> = {};
+  private historyEnv: BenchHistory = {};
 
   /**
-   * Stores a benchmark. A run in which every call failed does not wipe a good
-   * earlier result: that one is kept and only annotated with the failed attempt.
+   * Stores one task's benchmark and adds a line to that task's history. A run
+   * in which every call failed does not wipe a good earlier result: that one
+   * is kept and only annotated with the failed attempt (the failure is still
+   * written to the history).
    */
-  async saveBench(id: string, result: BenchResult): Promise<void> {
+  async saveBench(id: string, task: BenchTask, result: BenchResult): Promise<void> {
+    const stamped: BenchResult = { ...result, task };
     const keep = (prev: BenchResult | undefined): BenchResult =>
-      !result.ok && prev?.ok
-        ? { ...prev, lastAttempt: { at: result.at, error: result.error, ms: result.ms } }
-        : result;
+      !stamped.ok && prev?.ok
+        ? { ...prev, lastAttempt: { at: stamped.at, error: stamped.error, ms: stamped.ms } }
+        : stamped;
+    const entry = historyEntry(stamped);
     if (id === "env") {
-      this.benchEnv = keep(this.benchEnv);
+      this.benchEnv[task] = keep(this.benchEnv[task]);
+      this.historyEnv[task] = [...(this.historyEnv[task] ?? []), entry].slice(-HISTORY_LIMIT);
       return;
     }
     const model = this.requireModel();
-    const doc = await model.findById(id).select("bench").lean().exec();
-    await model.updateOne({ _id: id }, { $set: { bench: keep(doc?.bench) } }).exec();
+    const doc = await model.findById(id).select("benchByTask").lean().exec();
+    await model
+      .updateOne(
+        { _id: id },
+        {
+          $set: { [`benchByTask.${task}`]: keep(doc?.benchByTask?.[task]) },
+          $push: { [`benchHistory.${task}`]: { $each: [entry], $slice: -HISTORY_LIMIT } },
+        },
+      )
+      .exec();
   }
 
   /**
-   * Re-orders the admin's services by their stored benchmark (`rankServices`):
-   * eligible ones by combined score, then those below the accuracy bar, then the
+   * Re-orders the admin's services for ONE task by that task's stored benchmark
+   * (`rankServices`): eligible ones by combined score, then those below the accuracy bar, then the
    * unmeasured / failed ones, which keep their relative order. Returns the new
    * list with each service's score attached.
    */
-  async autoSort(opts: RankOptions = {}): Promise<AiServiceView[]> {
+  async autoSort(opts: RankOptions & { task: BenchTask }): Promise<AiServiceView[]> {
     const model = this.requireModel();
     const docs = await model.find().sort({ priority: 1, _id: 1 }).exec();
+    const task = opts.task;
     const ranked = rankServices(
-      docs.map((d) => ({ id: String(d._id), bench: d.bench })),
+      docs.map((d) => ({ id: String(d._id), bench: this.benchTasksOf(d)[task] })),
       opts,
     );
     const pos = new Map(ranked.map((r, i) => [r.id, i]));
-    const order = [...docs].sort((a, b) => (pos.get(String(a._id)) ?? 1e9) - (pos.get(String(b._id)) ?? 1e9)); // stable
-    await Promise.all(order.map((d, i) => model.updateOne({ _id: d._id }, { $set: { priority: i } }).exec()));
+    // Stable: unmeasured services keep their relative order, after the ranked ones.
+    const order = [...docs].sort((a, b) => (pos.get(String(a._id)) ?? 1e9) - (pos.get(String(b._id)) ?? 1e9));
+    // Only this task's own order changes; the general priority stays.
+    const field = `taskPriority.${task}`;
+    await Promise.all(order.map((d, i) => model.updateOne({ _id: d._id }, { $set: { [field]: i } }).exec()));
     this.cache = null;
-    return this.listScored(new Map(ranked.map((r) => [r.id, r])));
+    return this.listScored(new Map(ranked.map((r) => [r.id, r])), task);
   }
 
-  /** `list()` with the combined score / speed score filled in where known. */
-  async listScored(scores: Map<string, Ranked>): Promise<AiServiceView[]> {
+  /** `list()` with the score / speed score of `task` filled in where known. */
+  async listScored(scores: Map<string, Ranked>, task: BenchTask): Promise<AiServiceView[]> {
     return (await this.list()).map((s) => {
       const c = scores.get(s.id);
-      return c && s.bench ? { ...s, bench: { ...s.bench, score: c.final, speed: c.speed, eligible: c.eligible, pareto: c.pareto } } : s;
+      const b = s.benchTasks[task];
+      return c && b
+        ? { ...s, benchTasks: { ...s.benchTasks, [task]: { ...b, score: c.final, speed: c.speed, eligible: c.eligible, pareto: c.pareto } } }
+        : s;
     });
   }
 
@@ -422,13 +489,13 @@ export class AiServicesService {
     this.cache = null;
   }
 
-  /** Set the priority order: `ids[0]` is tried first. */
-  async reorder(ids: string[]): Promise<AiServiceView[]> {
+  /** Set the priority order of ONE task: `ids[0]` is tried first for that task. */
+  async reorder(ids: string[], task: BenchTask): Promise<AiServiceView[]> {
     const model = this.requireModel();
     if (!Array.isArray(ids) || ids.some((i) => !Types.ObjectId.isValid(i))) {
       throw new UnprocessableEntityException("ids must be service ids");
     }
-    await Promise.all(ids.map((id, i) => model.updateOne({ _id: id }, { $set: { priority: i } }).exec()));
+    await Promise.all(ids.map((id, i) => model.updateOne({ _id: id }, { $set: { [`taskPriority.${task}`]: i } }).exec()));
     this.cache = null;
     return this.list();
   }

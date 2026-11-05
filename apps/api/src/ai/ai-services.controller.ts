@@ -14,13 +14,20 @@ import {
 } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { ContentAdmin } from "../auth/decorators/roles.decorator.js";
+import type { BenchTask } from "./ai-benchmark.js";
 import { AiCallLogService } from "./ai-call-log.service.js";
 import { AiExampleService, type AiTask } from "./ai-example.service.js";
 import { AiServicesService } from "./ai-services.service.js";
 
+/** The task a request names; anything else is a client error. */
+function parseTask(v: unknown): BenchTask {
+  if (v === "translate" || v === "write" || v === "grammar") return v;
+  throw new BadRequestException("task must be translate, write or grammar");
+}
+
 /**
  * Admin management of the AI services used for example sentences: add from
- * the preset list, reorder (priority), enable/disable, test, delete. API
+ * the preset list, reorder (priority, separately for translate / write / grammar), enable/disable, test, delete. API
  * keys are write-only — they are never returned.
  */
 @ApiTags("ai")
@@ -79,11 +86,11 @@ export class AiServicesController {
   @Post("services/auto-sort")
   @HttpCode(HttpStatus.OK)
   @ContentAdmin()
-  @ApiOperation({ summary: "Re-order services by benchmark score (accuracy vs speed weight, minimum accuracy); with `task`, only that task's own order" })
+  @ApiOperation({ summary: "Re-order services by benchmark score (accuracy vs speed weight, minimum accuracy); for ONE task — only that task's own order changes" })
   autoSort(@Body() body: { speedWeight?: number; minAccuracy?: number; task?: string }) {
+    const task = parseTask(body?.task);
     const w = Number(body?.speedWeight);
     const m = Number(body?.minAccuracy);
-    const task = body?.task === "translate" || body?.task === "write" || body?.task === "grammar" ? body.task : undefined;
     return this.services.autoSort({
       task,
       speedWeight: Number.isFinite(w) ? Math.min(1, Math.max(0, w)) : undefined,
@@ -95,9 +102,9 @@ export class AiServicesController {
   @Post("services/reorder")
   @HttpCode(HttpStatus.OK)
   @ContentAdmin()
-  @ApiOperation({ summary: "Set the priority order (first id is tried first)" })
-  reorder(@Body() body: { ids?: string[] }) {
-    return this.services.reorder(body?.ids ?? []);
+  @ApiOperation({ summary: "Set the priority order of ONE task — translate, write or grammar (first id is tried first)" })
+  reorder(@Body() body: { ids?: string[]; task?: string }) {
+    return this.services.reorder(body?.ids ?? [], parseTask(body?.task));
   }
 
   @Patch("services/:id")
@@ -121,9 +128,9 @@ export class AiServicesController {
   @Post("services/:id/benchmark")
   @HttpCode(HttpStatus.OK)
   @ContentAdmin()
-  @ApiOperation({ summary: "Score a service on the fixed translation test set (1–5 runs: accuracy + speed)" })
-  async benchmark(@Param("id") id: string, @Body() body: { runs?: number }) {
-    return this.examples.benchmark(await this.services.runtimeOf(id), Number(body?.runs) || undefined);
+  @ApiOperation({ summary: "Score a service on one task's fixed test set — translate, write or grammar (1–5 runs: accuracy + speed)" })
+  async benchmark(@Param("id") id: string, @Body() body: { runs?: number; task?: string }) {
+    return this.examples.benchmark(await this.services.runtimeOf(id), parseTask(body?.task), Number(body?.runs) || undefined);
   }
 
   @Post("services/:id/test")

@@ -1,12 +1,23 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { MIN_ACCURACY } from "@/lib/ai-benchmark-score";
 
 interface PlayService {
   id: string;
   label: string;
   model: string;
   enabled: boolean;
+  status?: string;
+  cooldownUntil?: string | null;
+  /** Translate-only model: cannot write sentences or analyse grammar. */
+  translationOnly?: boolean;
+  /** Last benchmark; grammar analysis only offers services that passed it. */
+  /** Latest benchmark of each task, scored on its own. */
+  benchTasks?: Partial<Record<string, { ok: boolean; accuracy: number }>>;
+  /** Own order per task, set by sorting the benchmark by that task. */
+  taskPriority?: Record<string, number>;
+  priority?: number;
 }
 
 type Mode = "write" | "translate" | "grammar";
@@ -93,9 +104,20 @@ export function AiPlayground() {
 
   const cur = MODES.find((m) => m.id === mode)!;
   const text = texts[mode];
-  const chosen = serviceId || services.find((s) => s.enabled)?.id || services[0]?.id || "";
+  // Only services that are on, healthy (no bad key / error / cooldown) and able to do this task.
+  const usable = services.filter(
+    (s) =>
+      s.enabled &&
+      s.status !== "invalid" &&
+      s.status !== "error" &&
+      !(s.cooldownUntil && new Date(s.cooldownUntil).getTime() > Date.now()) &&
+      (mode === "translate" || !s.translationOnly) &&
+      // Grammar analysis is the hardest task: only services that scored well on the grammar benchmark.
+      (mode !== "grammar" || (s.benchTasks?.grammar?.ok ? s.benchTasks.grammar.accuracy : 0) >= MIN_ACCURACY),
+  ).sort((a, b) => (a.taskPriority?.[mode] ?? a.priority ?? 0) - (b.taskPriority?.[mode] ?? b.priority ?? 0));
+  const chosen = usable.find((s) => s.id === serviceId)?.id ?? usable[0]?.id ?? "";
   const canRun = !busy && chosen !== "" && text.trim() !== "";
-  const enabledIds = services.filter((s) => s.enabled).map((s) => s.id);
+  const enabledIds = usable.map((s) => s.id);
 
   async function submit(ids: string[]) {
     setBusy(true);
@@ -154,12 +176,18 @@ export function AiPlayground() {
 
       <div className="mt-4 grid gap-3">
         <label className="text-xs text-[var(--muted-foreground)]">
-          Dịch vụ AI
+          Dịch vụ AI (chỉ hiện dịch vụ đang bật, sẵn sàng và phù hợp với chức năng này)
           <select className={`mt-1 h-9 ${field}`} value={chosen} onChange={(e) => setServiceId(e.target.value)}>
-            {services.map((s) => (
+            {usable.length === 0 && (
+              <option value="">
+                {mode === "grammar"
+                  ? `Chưa có dịch vụ nào đạt benchmark (≥ ${MIN_ACCURACY}%) — chạy benchmark ở trang Dịch vụ AI`
+                  : "Không có dịch vụ phù hợp và sẵn sàng"}
+              </option>
+            )}
+            {usable.map((s) => (
               <option key={s.id} value={s.id}>
                 {s.label} · {s.model}
-                {s.enabled ? "" : " (đang tắt)"}
               </option>
             ))}
           </select>
@@ -194,9 +222,9 @@ export function AiPlayground() {
           className={btn}
           disabled={!canRun || enabledIds.length < 2}
           onClick={() => void submit(enabledIds)}
-          title="Chạy cùng nội dung trên mọi dịch vụ đang bật để so sánh"
+          title="Chạy cùng nội dung trên mọi dịch vụ sẵn sàng để so sánh"
         >
-          So sánh tất cả dịch vụ đang bật
+          So sánh tất cả dịch vụ sẵn sàng
         </button>
         {runs.length > 0 && (
           <button type="button" className={btn} onClick={() => setRuns([])}>

@@ -46,6 +46,34 @@ export const BENCH_ITEMS: readonly BenchItem[] = [
  */
 export const ACCURACY_WEIGHTS = { chrf: 0.35, terminology: 0.15, completeness: 0.1, match: 0.2, write: 0.2 } as const;
 
+/** The jobs a service can be asked to do; each has its own score and its own priority order. */
+export type BenchTask = "translate" | "write" | "grammar";
+export const BENCH_TASKS: readonly BenchTask[] = ["translate", "write", "grammar"];
+
+/** One grammar-analysis answer, as parsed from the model. */
+export interface GrammarAnswer {
+  translation: string;
+  tokens: { text?: string; reading?: string; pos?: string; meaning?: string }[];
+  grammar: { pattern?: string; level?: string; explanation?: string }[];
+}
+
+/**
+ * Grammar test set. `needs`: each group is a list of alternatives, and a
+ * group counts when ANY of them appears in the grammar points the model gave
+ * (pattern + explanation, lower-cased). `minTokens`: the sentence should be
+ * split into at least this many pieces.
+ */
+export interface GrammarBenchItem {
+  ja: string;
+  needs: string[][];
+  minTokens: number;
+}
+export const GRAMMAR_ITEMS: readonly GrammarBenchItem[] = [
+  { ja: "雨が降っているにもかかわらず、彼は出かけた。", needs: [["にもかかわらず"], ["ている", "進行", "đang"]], minTokens: 6 },
+  { ja: "日本語を勉強すればするほど、面白くなる。", needs: [["ほど"], ["くなる", "なる"]], minTokens: 6 },
+  { ja: "先生に褒められて、嬉しかった。", needs: [["られ", "受身", "受け身", "bị động"], ["かった", "過去", "quá khứ"]], minTokens: 5 },
+];
+
 /** Speed scale: this latency or better = 100, this or worse = 0 (log scale in between). */
 export const SPEED_FAST_MS = 2_000;
 export const SPEED_SLOW_MS = 30_000;
@@ -60,8 +88,8 @@ export const MAX_RUNS = 5;
 /** What one test item looked like and how the model did on it. */
 export interface BenchDetail {
   id: number;
-  kind: "translate" | "write";
-  /** The word being tested and its meaning. */
+  kind: "translate" | "write" | "grammar";
+  /** The word being tested and its meaning (grammar: the sentence). */
   term: string;
   meaning: string;
   /** translate: the Japanese sentence to translate. */
@@ -86,6 +114,10 @@ export interface BenchDetail {
   matchOk?: boolean;
   /** write: 0 / 60 / 100. */
   writeScore?: number;
+  /** grammar: share of expected grammar points named, annotated pieces vs needed, 0–100; the points the model named. */
+  hit?: number;
+  split?: number;
+  points?: string[];
 }
 
 /** One repetition of the benchmark, kept for the record (failures too). */
@@ -150,6 +182,14 @@ export interface BenchResult {
   charsPerSec?: number;
   /** A newer attempt that failed while this (older) result was kept. */
   lastAttempt?: { at: string; error?: string; ms: number };
+  /** Which task this result scores (absent on results from before per-task benchmarks). */
+  task?: BenchTask;
+  /** Result rebuilt from an older combined benchmark, not measured per task. */
+  legacy?: boolean;
+  /** grammar: mean share (0–100) of the expected grammar points named / pieces annotated / translation given. */
+  grammarHit?: number;
+  grammarSplit?: number;
+  grammarTrans?: number;
 }
 
 /** Lower-case, NFC, no punctuation, single-spaced. */
@@ -230,8 +270,18 @@ export function completenessScore(hyp: string, ref: string): number {
   return 100;
 }
 
-/** Turn the model's answers (by 1-based item id) and the call time into the result of ONE run. */
-export function scoreBenchmark(
+/** The test items of one task (translate, write), in test order. */
+export const itemsOf = (task: "translate" | "write"): BenchItem[] => BENCH_ITEMS.filter((i) => i.task.kind === task);
+
+/**
+ * Turn the model's answers (by 1-based id within `items`) and the call time
+ * into the result of ONE run. The accuracy is the weighted mean of the parts
+ * the items can measure, re-normalised: translate items → chrF, terminology,
+ * completeness, sense verdict; write items → the sentence check. A
+ * translate-only model is judged on the first three alone.
+ */
+export function scoreItems(
+  items: readonly BenchItem[],
   answers: Map<number, AiResult>,
   ms: number,
   raw?: string,
@@ -247,7 +297,7 @@ export function scoreBenchmark(
   let writeSum = 0;
   let nWrite = 0;
   let outChars = 0;
-  BENCH_ITEMS.forEach((item, i) => {
+  items.forEach((item, i) => {
     const a = answers.get(i + 1);
     outChars += (a?.vi?.length ?? 0) + (a?.ja?.length ?? 0);
     const base = { id: i + 1, term: item.task.term, meaning: item.task.meaning, answered: Boolean(a), vi: a?.vi };
@@ -292,10 +342,12 @@ export function scoreBenchmark(
   const matchAcc = nTranslate ? (100 * matchRight) / nTranslate : 0;
   const writeScore = nWrite ? writeSum / nWrite : 0;
   const w = ACCURACY_WEIGHTS;
-  // A translator is judged on translation alone: the first three parts, re-normalised.
-  const accuracy = translateOnly
-    ? (w.chrf * chrf + w.terminology * terminology + w.completeness * completeness) / (w.chrf + w.terminology + w.completeness)
-    : w.chrf * chrf + w.terminology * terminology + w.completeness * completeness + w.match * matchAcc + w.write * writeScore;
+  const parts: [number, number][] = [];
+  if (nTranslate) parts.push([w.chrf, chrf], [w.terminology, terminology], [w.completeness, completeness]);
+  if (nTranslate && !translateOnly) parts.push([w.match, matchAcc]);
+  if (nWrite) parts.push([w.write, writeScore]);
+  const weight = parts.reduce((a, [x]) => a + x, 0);
+  const accuracy = weight ? parts.reduce((a, [x, v]) => a + x * v, 0) / weight : 0;
   return {
     ok: answers.size > 0,
     at: new Date().toISOString(),
@@ -306,9 +358,100 @@ export function scoreBenchmark(
     completeness: round1(completeness),
     matchAcc: round1(matchAcc),
     writeScore: round1(writeScore),
-    items: translateOnly ? nTranslate : BENCH_ITEMS.length,
+    items: translateOnly ? nTranslate : items.length,
     answered: answers.size,
     translateOnly: translateOnly || undefined,
+    details,
+    raw: raw?.slice(0, 6000),
+    outChars,
+  };
+}
+
+/** The whole fixed set at once (translate + write in one batch). */
+export const scoreBenchmark = (answers: Map<number, AiResult>, ms: number, raw?: string, translateOnly = false) =>
+  scoreItems(BENCH_ITEMS, answers, ms, raw, translateOnly);
+
+/** Pull `{items:[{id, translation, tokens, grammar}]}` out of the model's text, keyed by 1-based id. */
+export function parseGrammar(text: string): Map<number, GrammarAnswer> {
+  const out = new Map<number, GrammarAnswer>();
+  const m = text.match(/[\[{][\s\S]*[\]}]/);
+  let data: unknown;
+  try {
+    data = JSON.parse(m ? m[0] : text);
+  } catch {
+    return out;
+  }
+  const arr = Array.isArray(data) ? data : (data as { items?: unknown })?.items;
+  if (!Array.isArray(arr)) return out;
+  for (const row of arr as Record<string, unknown>[]) {
+    const id = Number(row?.id);
+    if (!Number.isFinite(id)) continue;
+    out.set(id, {
+      translation: typeof row.translation === "string" ? row.translation.trim() : "",
+      tokens: Array.isArray(row.tokens) ? (row.tokens as GrammarAnswer["tokens"]).filter((t) => t && typeof t === "object") : [],
+      grammar: Array.isArray(row.grammar) ? (row.grammar as GrammarAnswer["grammar"]).filter((g) => g && typeof g === "object") : [],
+    });
+  }
+  return out;
+}
+
+/**
+ * Grammar result of ONE run: accuracy 0–100, mean over the test sentences —
+ * 60% the expected grammar points are named, 25% the sentence is split into
+ * enough annotated pieces, 15% a Vietnamese translation is given. An
+ * unanswered sentence scores 0.
+ */
+export function scoreGrammar(answers: Map<number, GrammarAnswer>, ms: number, raw?: string): BenchResult {
+  const details: BenchDetail[] = [];
+  let hitSum = 0;
+  let splitSum = 0;
+  let transSum = 0;
+  let outChars = 0;
+  GRAMMAR_ITEMS.forEach((item, i) => {
+    const a = answers.get(i + 1);
+    const base = { id: i + 1, kind: "grammar" as const, term: item.ja, meaning: "", source: item.ja, answered: Boolean(a) };
+    if (!a) {
+      details.push({ ...base, expected: item.needs.map((g) => g[0]).join(" · "), hit: 0, split: 0 });
+      return;
+    }
+    outChars += a.translation.length + a.grammar.length * 20;
+    const hay = a.grammar.map((g) => `${g.pattern ?? ""} ${g.explanation ?? ""}`).join(" ").toLowerCase();
+    const hit = (100 * item.needs.filter((alts) => alts.some((x) => hay.includes(x.toLowerCase()))).length) / item.needs.length;
+    const annotated = a.tokens.filter((t) => (t.text ?? "").trim() && ((t.meaning ?? "").trim() || (t.pos ?? "").trim())).length;
+    const split = 100 * Math.min(1, annotated / item.minTokens);
+    const trans = a.translation ? 100 : 0;
+    hitSum += hit;
+    splitSum += split;
+    transSum += trans;
+    details.push({
+      ...base,
+      expected: item.needs.map((g) => g[0]).join(" · "),
+      vi: a.translation,
+      hit: round1(hit),
+      split: round1(split),
+      points: a.grammar.map((g) => g.pattern ?? "").filter(Boolean),
+    });
+  });
+  const n = GRAMMAR_ITEMS.length;
+  const hit = hitSum / n;
+  const split = splitSum / n;
+  const trans = transSum / n;
+  return {
+    ok: answers.size > 0,
+    at: new Date().toISOString(),
+    ms,
+    task: "grammar",
+    accuracy: round1(0.6 * hit + 0.25 * split + 0.15 * trans),
+    chrf: 0,
+    terminology: 0,
+    completeness: 0,
+    matchAcc: 0,
+    writeScore: 0,
+    grammarHit: round1(hit),
+    grammarSplit: round1(split),
+    grammarTrans: round1(trans),
+    items: n,
+    answered: answers.size,
     details,
     raw: raw?.slice(0, 6000),
     outChars,
@@ -346,7 +489,7 @@ export type BenchAttempt = { ok: true; result: BenchResult } | { ok: false; at: 
  * successful runs, latency is their median, the failures stay on record in
  * `runs` and lower `successRate`. All runs failing gives `ok: false`.
  */
-export function aggregateRuns(attempts: BenchAttempt[]): BenchResult {
+export function aggregateRuns(attempts: BenchAttempt[], itemCount = BENCH_ITEMS.length): BenchResult {
   const runs: BenchRun[] = attempts.map((a) =>
     a.ok
       ? { ok: true, at: a.result.at, ms: a.result.ms, accuracy: a.result.accuracy, answered: a.result.answered }
@@ -366,7 +509,7 @@ export function aggregateRuns(attempts: BenchAttempt[]): BenchResult {
       completeness: 0,
       matchAcc: 0,
       writeScore: 0,
-      items: BENCH_ITEMS.length,
+      items: itemCount,
       answered: 0,
       error: fail.error,
       raw: fail.raw,
@@ -377,6 +520,8 @@ export function aggregateRuns(attempts: BenchAttempt[]): BenchResult {
   const last = good[good.length - 1];
   const mean = (f: (r: BenchResult) => number) => round1(avg(good.map(f)));
   const latency = latencyStats(good.map((r) => r.ms));
+  const opt = (f: (r: BenchResult) => number | undefined) =>
+    good.some((r) => f(r) !== undefined) ? mean((r) => f(r) ?? 0) : undefined;
   return {
     ok: true,
     at: last.at,
@@ -387,6 +532,9 @@ export function aggregateRuns(attempts: BenchAttempt[]): BenchResult {
     completeness: mean((r) => r.completeness),
     matchAcc: mean((r) => r.matchAcc),
     writeScore: mean((r) => r.writeScore),
+    grammarHit: opt((r) => r.grammarHit),
+    grammarSplit: opt((r) => r.grammarSplit),
+    grammarTrans: opt((r) => r.grammarTrans),
     items: last.items,
     answered: Math.round(avg(good.map((r) => r.answered))),
     translateOnly: last.translateOnly,
@@ -495,4 +643,48 @@ export function bestOf(ranked: Ranked[]): BestOf {
     speed: fastest(ok).id,
     value: fastest(ok.filter((r) => r.pareto && r.accuracy >= maxAcc - 5)).id,
   };
+}
+
+/** One line of a task's benchmark history: how a past run of that task went. */
+export interface BenchHistoryEntry {
+  at: string;
+  ok: boolean;
+  accuracy: number;
+  ms: number;
+  successRate: number;
+  /** Repetitions in that run. */
+  runs: number;
+  error?: string;
+}
+export type BenchHistory = Partial<Record<BenchTask, BenchHistoryEntry[]>>;
+export const HISTORY_LIMIT = 30;
+
+export const historyEntry = (r: BenchResult): BenchHistoryEntry => ({
+  at: r.at,
+  ok: r.ok,
+  accuracy: r.accuracy,
+  ms: r.ms,
+  successRate: r.successRate ?? (r.ok ? 1 : 0),
+  runs: r.runs?.length ?? 1,
+  ...(r.error ? { error: r.error.slice(0, 200) } : {}),
+});
+
+/**
+ * A result for one task rebuilt from an OLD combined benchmark (translate +
+ * write in one call), so scores measured before per-task benchmarks stay
+ * visible until the service is scored again. Grammar was never measured then.
+ */
+export function legacyTaskResult(bench: BenchResult | null | undefined, task: BenchTask): BenchResult | undefined {
+  if (!bench?.ok || bench.task || task === "grammar") return undefined;
+  if (task === "write" && bench.translateOnly) return undefined;
+  const details = bench.details?.filter((d) => d.kind === task);
+  const w = ACCURACY_WEIGHTS;
+  const accuracy =
+    task === "translate"
+      ? round1(
+          (w.chrf * bench.chrf + w.terminology * bench.terminology + w.completeness * bench.completeness + (bench.translateOnly ? 0 : w.match * bench.matchAcc)) /
+            (w.chrf + w.terminology + w.completeness + (bench.translateOnly ? 0 : w.match)),
+        )
+      : bench.writeScore;
+  return { ...bench, task, legacy: true, accuracy, details, items: details?.length ?? bench.items };
 }

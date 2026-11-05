@@ -2,7 +2,7 @@
 
 import { Fragment, useMemo, useState } from "react";
 import { Icon } from "@/components/learn/icons";
-import { bestOf, DEFAULT_SPEED_WEIGHT, MIN_ACCURACY, rankServices, speedScore, type Ranked } from "@/lib/ai-benchmark-score";
+import { bestOf, DEFAULT_SPEED_WEIGHT, MIN_ACCURACY, rankServices, speedScore, TASK_LABELS, type BenchTask, type Ranked } from "@/lib/ai-benchmark-score";
 
 export interface BenchRun {
   ok: boolean;
@@ -36,11 +36,28 @@ export interface Bench {
   latency?: { mean: number; median: number; min: number; max: number; stdev: number; cv: number; p95?: number };
   charsPerSec?: number;
   lastAttempt?: { at: string; error?: string; ms: number };
+  task?: BenchTask;
+  /** Rebuilt from an older combined benchmark — score again to measure this task on its own. */
+  legacy?: boolean;
+  grammarHit?: number;
+  grammarSplit?: number;
+  grammarTrans?: number;
+}
+
+/** One line of a task's history: how a past run of that task went. */
+export interface HistoryEntry {
+  at: string;
+  ok: boolean;
+  accuracy: number;
+  ms: number;
+  successRate: number;
+  runs: number;
+  error?: string;
 }
 
 export interface BenchDetail {
   id: number;
-  kind: "translate" | "write";
+  kind: "translate" | "write" | "grammar";
   term: string;
   meaning: string;
   source?: string;
@@ -55,6 +72,9 @@ export interface BenchDetail {
   chrf?: number;
   matchOk?: boolean;
   writeScore?: number;
+  hit?: number;
+  split?: number;
+  points?: string[];
 }
 
 export interface BenchService {
@@ -63,7 +83,9 @@ export interface BenchService {
   providerName: string;
   model: string;
   enabled: boolean;
-  bench?: Bench | null;
+  /** Latest result of each task, scored on its own. */
+  benchTasks?: Partial<Record<BenchTask, Bench>>;
+  benchHistory?: Partial<Record<BenchTask, HistoryEntry[]>>;
 }
 
 const API = "/api/flashcards/admin/ai";
@@ -93,6 +115,15 @@ const SORTS: { key: SortKey; label: string }[] = [
   { key: "speed", label: "Tốc độ" },
 ];
 
+const HOW: Record<BenchTask, string> = {
+  translate:
+    "10 câu mẫu (8 đúng nghĩa, 2 cố ý sai nghĩa). Chính xác = 35% độ giống bản dịch chuẩn (chrF) + 15% dùng đúng thuật ngữ + 10% đủ ý (độ dài hợp lý) + 20% đoán đúng nghĩa của từ (model chuyên dịch chỉ tính 3 phần đầu).",
+  write: "4 từ mẫu. Chính xác = câu model viết có dùng đúng từ (100), quá 25 ký tự (60) hoặc thiếu từ / không phải tiếng Nhật (0), trung bình 4 từ.",
+  grammar:
+    "3 câu mẫu. Chính xác = 60% nêu đúng các mẫu ngữ pháp cần có + 25% tách câu thành đủ từ có chú thích (từ loại / nghĩa) + 15% có bản dịch tiếng Việt.",
+};
+const ITEMS: Record<BenchTask, string> = { translate: "10 câu dịch", write: "4 từ đặt câu", grammar: "3 câu ngữ pháp" };
+
 export function AiBenchmarkPanel({
   services,
   onChanged,
@@ -104,6 +135,8 @@ export function AiBenchmarkPanel({
   const [minAcc, setMinAcc] = useState(MIN_ACCURACY);
   const [runs, setRuns] = useState(3);
   const [sortBy, setSortBy] = useState<SortKey>("final");
+  // Each task is scored, ranked and ordered on its own.
+  const [task, setTask] = useState<BenchTask>("translate");
   const [autoSort, setAutoSort] = useState(true);
   const [running, setRunning] = useState<Set<string>>(new Set());
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
@@ -112,7 +145,8 @@ export function AiBenchmarkPanel({
   const [picked, setPicked] = useState<Set<string>>(new Set());
 
   const { rows, byId, best } = useMemo(() => {
-    const withBench = services.filter((s): s is BenchService & { bench: Bench } => Boolean(s.bench));
+    // Every number below is the selected task's own accuracy / latency.
+    const withBench = services.flatMap((s) => (s.benchTasks?.[task] ? [{ ...s, bench: s.benchTasks[task]! }] : []));
     const ranked = rankServices(
       withBench.map((s) => ({ id: s.id, bench: s.bench })),
       weight / 100,
@@ -127,14 +161,14 @@ export function AiBenchmarkPanel({
       .map((s) => ({ ...s, r: rk.get(s.id) ?? null }))
       .sort((a, b) => (ids.get(a.id) ?? 1e9) - (ids.get(b.id) ?? 1e9));
     return { rows, byId: new Map(rows.map((r) => [r.id, r])), best: bestOf(ranked) };
-  }, [services, weight, minAcc, sortBy]);
+  }, [services, weight, minAcc, sortBy, task]);
 
   const ok = rows.filter((s) => s.bench.ok);
   const enabled = services.filter((s) => s.enabled);
   const compared = rows.filter((r) => picked.has(r.id) && r.bench.ok);
 
   function sortBody() {
-    return JSON.stringify({ speedWeight: weight / 100, minAccuracy: minAcc });
+    return JSON.stringify({ speedWeight: weight / 100, minAccuracy: minAcc, task });
   }
 
   async function run(ids: string[]) {
@@ -145,7 +179,7 @@ export function AiBenchmarkPanel({
         fetch(`${API}/services/${id}/benchmark`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ runs }),
+          body: JSON.stringify({ runs, task }),
         }).catch(() => null),
       ),
     );
@@ -162,11 +196,11 @@ export function AiBenchmarkPanel({
       }).catch(() => null);
       setMsg(
         res?.ok
-          ? { ok: true, text: "Đã chấm điểm và sắp xếp lại thứ tự ưu tiên." }
+          ? { ok: true, text: `Đã chấm điểm “${TASK_LABELS[task]}” và sắp xếp lại thứ tự ưu tiên của việc này.` }
           : { ok: false, text: "Đã chấm điểm nhưng không sắp xếp được." },
       );
     } else {
-      setMsg({ ok: true, text: "Đã chấm điểm." });
+      setMsg({ ok: true, text: `Đã chấm điểm “${TASK_LABELS[task]}”.` });
     }
     await onChanged();
   }
@@ -178,7 +212,7 @@ export function AiBenchmarkPanel({
       headers: { "Content-Type": "application/json" },
       body: sortBody(),
     }).catch(() => null);
-    setMsg(res?.ok ? { ok: true, text: "Đã sắp xếp theo điểm hiện có." } : { ok: false, text: "Không sắp xếp được." });
+    setMsg(res?.ok ? { ok: true, text: `Đã sắp xếp thứ tự ưu tiên của “${TASK_LABELS[task]}” theo điểm hiện có.` } : { ok: false, text: "Không sắp xếp được." });
     await onChanged();
   }
 
@@ -208,20 +242,38 @@ export function AiBenchmarkPanel({
       <h2 id="bench-title" className="text-sm font-semibold text-[var(--foreground)]">
         Chấm điểm & so sánh dịch vụ
       </h2>
-      <p className="mt-1 text-xs text-[var(--muted-foreground)]">
-        Mỗi dịch vụ dịch bộ 14 câu mẫu cố định, chạy nhiều lần. <b>Chính xác</b> = 35% độ giống bản dịch chuẩn (chrF) + 15% dùng đúng thuật ngữ + 10% đủ
-        ý (độ dài hợp lý) + 20% đoán đúng nghĩa của từ + 20% viết câu có dùng đúng từ. <b>Tốc độ</b> = độ trễ trung vị của lượt gọi 14 câu, quy ra điểm trên
-        thang log cố định (≤ 2s = 100, ≥ 30s = 0) nên điểm không đổi khi thêm bớt dịch vụ khác. <b>Tổng hợp</b> = ((1 − tỉ trọng) × chính xác + tỉ trọng × tốc độ) × tỉ lệ chạy thành công;
-        dịch vụ dưới ngưỡng chính xác chỉ hiển thị, không được xếp hạng. Model chuyên dịch (như m2m100) chỉ được chấm phần dịch.
+      <div role="tablist" aria-label="Loại việc" className="mt-3 flex flex-wrap gap-2">
+        {(["translate", "write", "grammar"] as const).map((k) => (
+          <button
+            key={k}
+            type="button"
+            role="tab"
+            aria-selected={task === k}
+            onClick={() => {
+              setTask(k);
+              setPicked(new Set());
+              setOpenId(null);
+            }}
+            className={`${btn} ${task === k ? "bg-[var(--layer-hover)]" : ""}`}
+          >
+            {TASK_LABELS[k]}
+          </button>
+        ))}
+      </div>
+      <p className="mt-3 text-xs text-[var(--muted-foreground)]">
+        <b>Cách chấm “{TASK_LABELS[task]}”:</b> {HOW[task]} <b>Tốc độ</b> = độ trễ trung vị của lượt gọi, quy ra điểm trên thang log cố định (≤ 2s = 100, ≥ 30s = 0)
+        nên điểm không đổi khi thêm bớt dịch vụ khác. <b>Tổng hợp</b> = ((1 − tỉ trọng) × chính xác + tỉ trọng × tốc độ) × tỉ lệ chạy thành công; dịch vụ dưới ngưỡng
+        chỉ hiển thị, không được xếp hạng. Điểm, biểu đồ, xếp hạng, lịch sử và thứ tự ưu tiên của từng việc tách biệt hoàn toàn; khi chạy thật, mỗi việc dùng thứ tự riêng của nó
+        (dịch vụ chưa sắp xếp riêng dùng thứ tự chung).
       </p>
 
       <div className="mt-4 flex flex-col gap-3">
         <div className="flex flex-wrap gap-2">
           <button type="button" className={btnWide} disabled={busy || enabled.length === 0} onClick={() => void run(enabled.map((s) => s.id))}>
-            {busy ? `Đang chấm (${running.size})…` : "Chấm điểm tất cả dịch vụ đang bật"}
+            {busy ? `Đang chấm (${running.size})…` : `Chấm điểm “${TASK_LABELS[task]}” cho mọi dịch vụ đang bật`}
           </button>
           <button type="button" className={btnWide} disabled={busy || ok.length === 0} onClick={() => void sortNow()}>
-            Sắp xếp theo điểm hiện có
+            Sắp xếp “{TASK_LABELS[task]}” theo điểm
           </button>
         </div>
         <div className="flex flex-wrap items-end gap-x-6 gap-y-3">
@@ -256,7 +308,7 @@ export function AiBenchmarkPanel({
           </label>
         </div>
         <p className="text-[11px] text-[var(--muted-foreground)]">
-          Mỗi lần chạy tốn một lượt gọi API (14 câu; model chuyên dịch gọi 10 lần) nên {runs} lần chạy dùng khoảng {runs}× hạn mức — chú ý dịch vụ miễn phí có hạn mức thấp.
+          Mỗi lần chạy tốn một lượt gọi API ({ITEMS[task]}{task === "translate" ? "; model chuyên dịch gọi mỗi câu một lần" : ""}) nên {runs} lần chạy dùng khoảng {runs}× hạn mức — chú ý dịch vụ miễn phí có hạn mức thấp.
           Gặp lỗi hết hạn mức/từ chối thì dừng ngay để khỏi tốn thêm.
         </p>
       </div>
@@ -267,7 +319,7 @@ export function AiBenchmarkPanel({
       )}
 
       {rows.length === 0 ? (
-        <p className="mt-5 text-sm text-[var(--muted-foreground)]">Chưa có điểm nào — bấm “Chấm điểm” để bắt đầu.</p>
+        <p className="mt-5 text-sm text-[var(--muted-foreground)]">Chưa có điểm “{TASK_LABELS[task]}” nào — bấm “Chấm điểm” để bắt đầu.</p>
       ) : (
         <>
           {/* Best-of views */}
@@ -303,7 +355,7 @@ export function AiBenchmarkPanel({
                 onTip={setTip}
               />
               <BarChart
-                title="Độ trễ trung vị (giây cho 14 câu, thấp hơn = tốt)"
+                title="Độ trễ trung vị (giây cho một lượt gọi, thấp hơn = tốt)"
                 rows={[...ok].sort((a, b) => a.bench.ms - b.bench.ms).map((s) => ({ key: s.id, label: s.label, value: s.bench.ms / 1000, text: `${secs(s.bench.ms)}s`, tip: [s.label, `${(s.bench.ms / 1000).toFixed(2)} giây (trung vị)`, `Điểm tốc độ ${speedScore(s.bench.ms).toFixed(1)}`] }))}
                 max={Math.max(...ok.map((s) => s.bench.ms / 1000)) * 1.1}
                 onTip={setTip}
@@ -451,7 +503,7 @@ export function AiBenchmarkPanel({
                       {openId === s.id && (
                         <tr className="bg-[var(--layer)]">
                           <td colSpan={8} className="px-3 py-3">
-                            <ResultDetails bench={s.bench} label={s.label} />
+                            <ResultDetails bench={s.bench} label={s.label} task={task} />
                           </td>
                         </tr>
                       )}
@@ -462,7 +514,7 @@ export function AiBenchmarkPanel({
             </table>
           </div>
 
-          {compared.length >= 2 && <Compare rows={compared} onClear={() => setPicked(new Set())} />}
+          {compared.length >= 2 && <Compare rows={compared} task={task} onClear={() => setPicked(new Set())} />}
 
           <p className="mt-2 text-[11px] text-[var(--muted-foreground)]">
             Bộ mẫu nhỏ nên điểm chỉ mang tính tham khảo — chrF so với một bản dịch chuẩn duy nhất, một bản dịch hay nhưng khác cách diễn đạt có thể bị chấm thấp. Các lần chạy
@@ -470,7 +522,67 @@ export function AiBenchmarkPanel({
           </p>
         </>
       )}
+
+      <History services={services} task={task} />
     </section>
+  );
+}
+
+/* ── history (kept separately for each task) ─────────────────────────── */
+
+function History({ services, task }: { services: BenchService[]; task: BenchTask }) {
+  const lines = services
+    .flatMap((s) => (s.benchHistory?.[task] ?? []).map((h) => ({ ...h, label: s.label, model: s.model })))
+    .sort((a, b) => b.at.localeCompare(a.at))
+    .slice(0, 40);
+  return (
+    <div className="mt-6">
+      <h3 className="text-sm font-semibold text-[var(--foreground)]">Lịch sử chấm điểm “{TASK_LABELS[task]}”</h3>
+      <p className="mt-0.5 text-[11px] text-[var(--muted-foreground)]">
+        Mỗi lần bấm chấm một dòng (kể cả lần lỗi); chỉ lưu riêng cho việc này, mỗi dịch vụ giữ 30 lần gần nhất.
+      </p>
+      {lines.length === 0 ? (
+        <p className="mt-2 text-xs text-[var(--muted-foreground)]">Chưa có lần chấm nào được lưu.</p>
+      ) : (
+        <div className="mt-2 max-h-80 overflow-auto rounded-xl border border-[var(--border)]">
+          <table className="w-full text-left text-xs">
+            <caption className="sr-only">Lịch sử chấm điểm {TASK_LABELS[task]}</caption>
+            <thead className="sticky top-0 whitespace-nowrap bg-[var(--layer)] text-[var(--muted-foreground)]">
+              <tr>
+                <th className="px-3 py-2">Thời gian</th>
+                <th className="px-3 py-2">Dịch vụ</th>
+                <th className="px-3 py-2">Chính xác</th>
+                <th className="px-3 py-2">Độ trễ</th>
+                <th className="px-3 py-2">Thành công</th>
+                <th className="px-3 py-2">Số lần chạy</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[var(--border)] text-[var(--foreground)]">
+              {lines.map((h, i) => (
+                <tr key={`${h.label}-${h.at}-${i}`}>
+                  <td className="whitespace-nowrap px-3 py-1.5">{new Date(h.at).toLocaleString("vi-VN")}</td>
+                  <td className="px-3 py-1.5">
+                    {h.label} <span className="text-[var(--muted-foreground)]">· {short(h.model, 28)}</span>
+                  </td>
+                  {h.ok ? (
+                    <>
+                      <td className="px-3 py-1.5 tabular-nums">{h.accuracy.toFixed(1)}</td>
+                      <td className="px-3 py-1.5 tabular-nums">{secs(h.ms)}s</td>
+                      <td className="px-3 py-1.5 tabular-nums">{Math.round(h.successRate * 100)}%</td>
+                    </>
+                  ) : (
+                    <td colSpan={3} className="px-3 py-1.5 text-[#b91c1c]" title={h.error}>
+                      ✗ lỗi {h.error ? `(${short(h.error, 60)})` : ""}
+                    </td>
+                  )}
+                  <td className="px-3 py-1.5 tabular-nums">{h.runs}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -478,15 +590,24 @@ export function AiBenchmarkPanel({
 
 type Row = BenchService & { bench: Bench; r: Ranked | null };
 
-function Compare({ rows, onClear }: { rows: Row[]; onClear: () => void }) {
+function Compare({ rows, task, onClear }: { rows: Row[]; task: BenchTask; onClear: () => void }) {
   const metrics: { label: string; get: (r: Row) => number | undefined; fmt: (n: number) => string; higherIsBetter: boolean }[] = [
     { label: "Tổng hợp", get: (r) => r.r?.final, fmt: (n) => n.toFixed(1), higherIsBetter: true },
     { label: "Chính xác", get: (r) => r.bench.accuracy, fmt: (n) => n.toFixed(1), higherIsBetter: true },
-    { label: "chrF", get: (r) => r.bench.chrf, fmt: (n) => n.toFixed(1), higherIsBetter: true },
-    { label: "Thuật ngữ", get: (r) => r.bench.terminology, fmt: (n) => n.toFixed(1), higherIsBetter: true },
-    { label: "Đủ ý", get: (r) => r.bench.completeness, fmt: (n) => n.toFixed(1), higherIsBetter: true },
-    { label: "Đúng nghĩa của từ", get: (r) => (r.bench.translateOnly ? undefined : r.bench.matchAcc), fmt: (n) => n.toFixed(1), higherIsBetter: true },
-    { label: "Viết câu", get: (r) => (r.bench.translateOnly ? undefined : r.bench.writeScore), fmt: (n) => n.toFixed(1), higherIsBetter: true },
+    ...(task === "translate"
+      ? [
+          { label: "chrF", get: (r: Row) => r.bench.chrf, fmt: (n: number) => n.toFixed(1), higherIsBetter: true },
+          { label: "Thuật ngữ", get: (r: Row) => r.bench.terminology, fmt: (n: number) => n.toFixed(1), higherIsBetter: true },
+          { label: "Đủ ý", get: (r: Row) => r.bench.completeness, fmt: (n: number) => n.toFixed(1), higherIsBetter: true },
+          { label: "Đúng nghĩa của từ", get: (r: Row) => (r.bench.translateOnly ? undefined : r.bench.matchAcc), fmt: (n: number) => n.toFixed(1), higherIsBetter: true },
+        ]
+      : task === "grammar"
+        ? [
+            { label: "Nêu đúng mẫu ngữ pháp", get: (r: Row) => r.bench.grammarHit, fmt: (n: number) => n.toFixed(1), higherIsBetter: true },
+            { label: "Tách từ có chú thích", get: (r: Row) => r.bench.grammarSplit, fmt: (n: number) => n.toFixed(1), higherIsBetter: true },
+            { label: "Có bản dịch", get: (r: Row) => r.bench.grammarTrans, fmt: (n: number) => n.toFixed(1), higherIsBetter: true },
+          ]
+        : []),
     { label: "Điểm tốc độ", get: (r) => r.r?.speed, fmt: (n) => n.toFixed(1), higherIsBetter: true },
     { label: "Độ trễ trung vị", get: (r) => r.bench.latency?.median ?? r.bench.ms, fmt: (n) => `${(n / 1000).toFixed(2)}s`, higherIsBetter: false },
     { label: "Độ trễ lớn nhất", get: (r) => r.bench.latency?.max, fmt: (n) => `${(n / 1000).toFixed(2)}s`, higherIsBetter: false },
@@ -549,22 +670,36 @@ function Verdict({ ok, yes, no }: { ok: boolean; yes: string; no: string }) {
   );
 }
 
-function ResultDetails({ bench, label }: { bench: Bench; label: string }) {
+function ResultDetails({ bench, label, task }: { bench: Bench; label: string; task: BenchTask }) {
   const details = bench.details;
   return (
     <div className="text-xs">
       <p className="font-medium text-[var(--foreground)]">
         Kết quả của {label} · {new Date(bench.at).toLocaleString("vi-VN")} · trả lời {bench.answered}/{bench.items} câu
       </p>
+      {bench.legacy && (
+        <p className="mt-1 text-[#a16207] dark:text-[#fde047]">
+          Điểm này được suy ra từ lần chấm gộp cũ (chưa đo riêng việc này, chưa có lịch sử) — bấm “Chấm lại” để đo riêng.
+        </p>
+      )}
       {bench.ok && (
         <dl className="mt-2 grid grid-cols-2 gap-x-6 gap-y-1 sm:grid-cols-4">
           {(
             [
-              ["chrF", bench.chrf],
-              ["Thuật ngữ", bench.terminology],
-              ["Đủ ý", bench.completeness],
-              ["Đúng nghĩa của từ", bench.translateOnly ? undefined : bench.matchAcc],
-              ["Viết câu", bench.translateOnly ? undefined : bench.writeScore],
+              ...(task === "translate"
+                ? ([
+                    ["chrF", bench.chrf],
+                    ["Thuật ngữ", bench.terminology],
+                    ["Đủ ý", bench.completeness],
+                    ["Đúng nghĩa của từ", bench.translateOnly ? undefined : bench.matchAcc],
+                  ] as [string, number | undefined][])
+                : task === "write"
+                  ? ([["Viết câu", bench.writeScore]] as [string, number | undefined][])
+                  : ([
+                      ["Nêu đúng mẫu ngữ pháp", bench.grammarHit],
+                      ["Tách từ có chú thích", bench.grammarSplit],
+                      ["Có bản dịch", bench.grammarTrans],
+                    ] as [string, number | undefined][])),
               ["Ký tự/giây (tham khảo)", bench.charsPerSec],
             ] as [string, number | undefined][]
           ).map(([k, v]) => (
@@ -641,7 +776,9 @@ function ResultDetails({ bench, label }: { bench: Bench; label: string }) {
                 <tr key={d.id}>
                   <td className="px-2 py-1.5 tabular-nums">{d.id}</td>
                   <td className="px-2 py-1.5">
-                    {d.kind === "translate" ? (
+                    {d.kind === "grammar" ? (
+                      <div lang="ja">{d.source}</div>
+                    ) : d.kind === "translate" ? (
                       <>
                         <div lang="ja">{d.source}</div>
                         <div className="text-[var(--muted-foreground)]">
@@ -658,7 +795,11 @@ function ResultDetails({ bench, label }: { bench: Bench; label: string }) {
                     )}
                   </td>
                   <td className="px-2 py-1.5">
-                    {d.kind === "translate" ? (
+                    {d.kind === "grammar" ? (
+                      <div className="text-[var(--muted-foreground)]">
+                        phải nêu: <span lang="ja">{d.expected}</span>
+                      </div>
+                    ) : d.kind === "translate" ? (
                       <>
                         <div>{d.expected}</div>
                         <div className="text-[var(--muted-foreground)]">
@@ -674,6 +815,13 @@ function ResultDetails({ bench, label }: { bench: Bench; label: string }) {
                   <td className="px-2 py-1.5">
                     {!d.answered ? (
                       <span className="text-[#b91c1c]">✗ Không có câu trả lời đọc được</span>
+                    ) : d.kind === "grammar" ? (
+                      <>
+                        <div>{d.vi}</div>
+                        <div className="text-[var(--muted-foreground)]" lang="ja">
+                          {d.points && d.points.length > 0 ? d.points.join(" · ") : "không nêu mẫu ngữ pháp nào"}
+                        </div>
+                      </>
                     ) : d.kind === "translate" ? (
                       <>
                         <div>{d.vi}</div>
@@ -691,7 +839,13 @@ function ResultDetails({ bench, label }: { bench: Bench; label: string }) {
                     )}
                   </td>
                   <td className="whitespace-nowrap px-2 py-1.5">
-                    {d.kind === "translate" ? (
+                    {d.kind === "grammar" ? (
+                      <>
+                        <div className="tabular-nums">mẫu ngữ pháp {d.hit ?? 0}</div>
+                        <div className="tabular-nums text-[var(--muted-foreground)]">tách từ {d.split ?? 0}</div>
+                        <Verdict ok={(d.hit ?? 0) === 100} yes="đủ mẫu" no="thiếu mẫu" />
+                      </>
+                    ) : d.kind === "translate" ? (
                       <>
                         <div className="tabular-nums">chrF {d.chrf}</div>
                         <div className="tabular-nums text-[var(--muted-foreground)]">
