@@ -40,6 +40,10 @@ export class User {
   @Prop({ type: String, default: "Asia/Ho_Chi_Minh" })
   timezone: string;
 
+  /** Max brand-new cards introduced per deck per local day (spread a deck over days). */
+  @Prop({ type: Number, default: 20, min: 1, max: 500 })
+  newCardsPerDay: number;
+
   @Prop({ type: String, default: "ACTIVE", enum: USER_STATUSES })
   status: UserStatus;
 

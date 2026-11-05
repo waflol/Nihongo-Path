@@ -5,6 +5,7 @@ import {
   HttpCode,
   HttpStatus,
   Param,
+  Patch,
   Post,
   Query,
 } from "@nestjs/common";
@@ -105,6 +106,14 @@ class DeckProgressQuery {
   tz?: string;
 }
 
+class SettingsDto {
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(500)
+  newCardsPerDay!: number;
+}
+
 /**
  * Study queue + review surface (P3-SRS-04/05). Behind the global
  * `AuthGuard`; every call is scoped to the caller's own progress. The
@@ -161,6 +170,31 @@ export class SrsController {
   })
   resetDeck(@CurrentUser() caller: AuthUser, @Param("deckId") deckId: string) {
     return this.srs.resetDeck(caller, deckId);
+  }
+
+  @Get("settings")
+  @ApiOperation({ summary: "My study settings (new cards per day)" })
+  getSettings(@CurrentUser() caller: AuthUser) {
+    return this.srs.getSettings(caller);
+  }
+
+  @Patch("settings")
+  @ApiOperation({ summary: "Set how many new cards to learn per day" })
+  updateSettings(@CurrentUser() caller: AuthUser, @Body() body: SettingsDto) {
+    return this.srs.updateSettings(caller, body);
+  }
+
+  @Get("stats")
+  @ApiOperation({ summary: "Mastery-level distribution of my learned cards" })
+  stats(
+    @CurrentUser() caller: AuthUser,
+    @Query("deckId") deckId?: string,
+    @Query("range") range?: string,
+    @Query("offset") offset?: string,
+  ) {
+    const off = Math.max(-520, Math.min(0, Math.trunc(Number(offset) || 0)));
+    const r = range === "week" || range === "month" || range === "year" ? range : "all";
+    return this.srs.masteryStats(caller, deckId || undefined, r, off);
   }
 
   @Get("decks-progress")

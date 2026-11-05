@@ -50,8 +50,13 @@ function wallClockParts(epochMs: number, timeZone: string): [number, number, num
   return [Number(parts.year), Number(parts.month) - 1, Number(parts.day)];
 }
 
+/** Building an Intl formatter is expensive — keep one per zone. */
+const FORMATTERS = new Map<string, Intl.DateTimeFormat>();
+
 function partsInZone(epochMs: number, timeZone: string): Record<string, string> {
-  const fmt = new Intl.DateTimeFormat("en-US", {
+  let fmt = FORMATTERS.get(timeZone);
+  if (!fmt) {
+    fmt = new Intl.DateTimeFormat("en-US", {
     timeZone,
     year: "numeric",
     month: "2-digit",
@@ -60,7 +65,9 @@ function partsInZone(epochMs: number, timeZone: string): Record<string, string> 
     minute: "2-digit",
     second: "2-digit",
     hourCycle: "h23",
-  });
+    });
+    FORMATTERS.set(timeZone, fmt);
+  }
   const out: Record<string, string> = {};
   for (const { type, value } of fmt.formatToParts(epochMs)) {
     if (type !== "literal") out[type] = value;

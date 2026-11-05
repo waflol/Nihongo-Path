@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { ProgressPanel } from "@/components/learn/progress-panel";
 
 export const metadata: Metadata = {
   title: "Khu học tập",
@@ -69,6 +70,8 @@ export default function LearnPage() {
           </p>
         </div>
       </div>
+
+      <ProgressPanel />
     </div>
   );
 }

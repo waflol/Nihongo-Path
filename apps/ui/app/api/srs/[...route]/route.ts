@@ -64,3 +64,11 @@ export async function POST(
   const { route } = await params;
   return forward(request, route);
 }
+
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ route: string[] }> },
+) {
+  const { route } = await params;
+  return forward(request, route);
+}

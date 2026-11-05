@@ -63,6 +63,11 @@ export interface StudyQueue {
   today: string;
   newCards: CardQueueItem[];
   dueCards: CardQueueItem[];
+  /** Daily cap on brand-new cards, new cards still unseen in the deck, and
+   *  how many were introduced today (counts.new = what is left for today). */
+  newPerDay: number;
+  newTotal: number;
+  newToday: number;
   /** Counts across the whole deck, independent of `limit`. */
   counts: { new: number; due: number; hard: number; mastered: number };
   /** Cards in the deck, whether or not they are queued today. */
@@ -208,6 +213,14 @@ export class SrsService {
 
     const newCards: CardQueueItem[] = [];
     const dueCards: CardQueueItem[] = [];
+    const newPerDay = await this.newCardsPerDay(caller);
+    // Cards first introduced today in this deck use up today's allowance.
+    const introducedToday = await this.progress.countDocuments({
+      user: new Types.ObjectId(caller.sub),
+      card: { $in: cards.map((c) => c._id) },
+      createdAt: { $gte: new Date(localStartOfDay(Date.now(), timezone)) },
+    });
+    const newAllowed = Math.max(0, newPerDay - introducedToday);
     let hardCount = 0;
     let masteredCount = 0;
     let nextDueDay: string | undefined;
@@ -298,10 +311,13 @@ export class SrsService {
     return {
       deckId,
       today,
-      newCards: newCards.slice(0, limit),
+      newCards: newCards.slice(0, Math.min(limit, newAllowed)),
       dueCards: dueCards.slice(0, limit),
+      newPerDay,
+      newTotal: newCards.length,
+      newToday: introducedToday,
       counts: {
-        new: newCards.length,
+        new: Math.min(newCards.length, newAllowed),
         due: dueCards.length,
         hard: hardCount,
         mastered: masteredCount,
@@ -372,6 +388,159 @@ export class SrsService {
       }
     }
     return out;
+  }
+
+  private async newCardsPerDay(caller: AuthUser): Promise<number> {
+    const u = await this.user.findById(caller.sub, { newCardsPerDay: 1 }).exec();
+    return u?.newCardsPerDay ?? 20;
+  }
+
+  async getSettings(caller: AuthUser): Promise<{ newCardsPerDay: number }> {
+    return { newCardsPerDay: await this.newCardsPerDay(caller) };
+  }
+
+  async updateSettings(
+    caller: AuthUser,
+    input: { newCardsPerDay: number },
+  ): Promise<{ newCardsPerDay: number }> {
+    await this.user
+      .updateOne({ _id: caller.sub }, { $set: { newCardsPerDay: input.newCardsPerDay } })
+      .exec();
+    return { newCardsPerDay: input.newCardsPerDay };
+  }
+
+  /**
+   * Mastery distribution of the caller's learned cards across every deck
+   * (optionally one deck), grouped by SM-2 interval, for the progress chart.
+   */
+  async masteryStats(
+    caller: AuthUser,
+    deckId?: string,
+    range: "week" | "month" | "year" | "all" = "all",
+    offset = 0,
+  ): Promise<{
+    label: string;
+    offset: number;
+    total: number;
+    unseen: number;
+    levels: { key: string; count: number }[];
+    newToday: number;
+    newPerDay: number;
+    range: string;
+    /** Reviews + newly learned cards per day (week/month) or per month (year). */
+    series: { key: string; reviews: number; newCards: number }[];
+    reviewsInRange: number;
+    newInRange: number;
+  }> {
+    const timezone = await this.resolveTimezone(caller);
+    const userId = new Types.ObjectId(caller.sub);
+    let deckFilter: Record<string, unknown>;
+    if (deckId) {
+      await this.resolveAccessibleDeck(caller, deckId);
+      deckFilter = { deck: new Types.ObjectId(deckId) };
+    } else {
+      const decks = await this.deck
+        .find({ $or: [{ user: userId }, { shared: true, status: "PUBLISHED" }] }, { _id: 1 })
+        .exec();
+      deckFilter = { deck: { $in: decks.map((d) => d._id) } };
+    }
+    const cards = await this.card.find(deckFilter, { _id: 1 }).lean().exec();
+    const ids = cards.map((c) => c._id);
+    const [progress, perDay] = await Promise.all([
+      ids.length
+        ? this.progress
+            .find({ user: userId, card: { $in: ids } }, { state: 1, createdAt: 1, lastReviewedAtMs: 1 })
+            .lean()
+            .exec()
+        : Promise.resolve([]),
+      this.newCardsPerDay(caller),
+    ]);
+
+    // Calendar periods (week = Mon–Sun, month, year) shifted by `offset`
+    // (0 = current, -1 = previous…). Daily buckets for week/month, monthly for year.
+    const now = Date.now();
+    const bucketOf = (ms: number): string =>
+      range === "year" ? localDayKey(ms, timezone).slice(0, 7) : localDayKey(ms, timezone);
+    const fmt = (d: Date): string =>
+      `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
+    const [ty, tm, td] = localDayKey(now, timezone).split("-").map(Number);
+    const bucketKeys: string[] = [];
+    let label = "Tất cả";
+    if (range === "week") {
+      const dow = new Date(Date.UTC(ty, tm - 1, td)).getUTCDay();
+      const monday = td - ((dow + 6) % 7) + offset * 7;
+      for (let i = 0; i < 7; i++) bucketKeys.push(fmt(new Date(Date.UTC(ty, tm - 1, monday + i))));
+      const dm = (k: string) => `${k.slice(8)}/${k.slice(5, 7)}`;
+      label = `${dm(bucketKeys[0])} – ${dm(bucketKeys[6])}/${bucketKeys[6].slice(0, 4)}`;
+    } else if (range === "month") {
+      const first = new Date(Date.UTC(ty, tm - 1 + offset, 1));
+      const days = new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth() + 1, 0)).getUTCDate();
+      for (let i = 1; i <= days; i++) {
+        bucketKeys.push(fmt(new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth(), i))));
+      }
+      label = `Tháng ${first.getUTCMonth() + 1}/${first.getUTCFullYear()}`;
+    } else if (range === "year") {
+      const y = ty + offset;
+      for (let m = 1; m <= 12; m++) bucketKeys.push(`${y}-${String(m).padStart(2, "0")}`);
+      label = `Năm ${y}`;
+    }
+    const series = new Map(bucketKeys.map((k) => [k, { key: k, reviews: 0, newCards: 0 }]));
+    const inRange = (ms: number): boolean => bucketKeys.length === 0 || series.has(bucketOf(ms));
+
+    if (bucketKeys.length > 0) {
+      const first = bucketKeys[0];
+      const last = bucketKeys[bucketKeys.length - 1];
+      const sessions = await this.session
+        .find({
+          user: userId,
+          day:
+            range === "year"
+              ? { $gte: `${first}-01`, $lte: `${last}-31` }
+              : { $gte: first, $lte: last },
+          ...(deckId ? { deck: new Types.ObjectId(deckId) } : {}),
+        })
+        .lean()
+        .exec();
+      for (const ss of sessions) {
+        const b = series.get(range === "year" ? ss.day.slice(0, 7) : ss.day);
+        if (b) b.reviews += ss.cardsReviewed;
+      }
+    }
+
+    const keys = ["hard", "learning", "young", "known", "mastered"] as const;
+    const counts: Record<(typeof keys)[number], number> = {
+      hard: 0, learning: 0, young: 0, known: 0, mastered: 0,
+    };
+    const startOfToday = localStartOfDay(Date.now(), timezone);
+    let newToday = 0;
+    for (const p of progress) {
+      const s = p.state;
+      if (p.createdAt && p.createdAt.getTime() >= startOfToday) newToday += 1;
+      if (p.createdAt) {
+        const b = series.get(bucketOf(p.createdAt.getTime()));
+        if (b) b.newCards += 1;
+      }
+      // Mastery chart covers the cards reviewed inside the chosen period.
+      if (!inRange(p.lastReviewedAtMs)) continue;
+      if (s.lapses >= 2 || s.ease < 1.8 || s.repetitions === 0) counts.hard += 1;
+      else if (s.intervalDays >= 60) counts.mastered += 1;
+      else if (s.intervalDays >= 21) counts.known += 1;
+      else if (s.intervalDays >= 7) counts.young += 1;
+      else counts.learning += 1;
+    }
+    return {
+      range,
+      label,
+      offset,
+      series: [...series.values()],
+      reviewsInRange: [...series.values()].reduce((a, b) => a + b.reviews, 0),
+      newInRange: [...series.values()].reduce((a, b) => a + b.newCards, 0),
+      total: ids.length,
+      unseen: ids.length - progress.length,
+      levels: keys.map((key) => ({ key, count: counts[key] })),
+      newToday,
+      newPerDay: perDay,
+    };
   }
 
   private dueLabel(state: SrsState): "hard" | "mastered" | "normal" {
