@@ -1,5 +1,6 @@
 "use client";
 
+import { useConfirm } from "@/components/learn/use-confirm";
 import { useCallback, useEffect, useState } from "react";
 
 interface UserRow {
@@ -45,6 +46,7 @@ function ago(iso: string | null): string {
 
 /** Admin user management: status/online overview, filters, suspend / role / force-logout. */
 export function UsersConsole({ meId, meRole }: { meId: string; meRole: string }) {
+  const { confirm, dialog } = useConfirm();
   const [q, setQ] = useState("");
   const [role, setRole] = useState("");
   const [status, setStatus] = useState("");
@@ -78,7 +80,9 @@ export function UsersConsole({ meId, meRole }: { meId: string; meRole: string })
     return () => clearTimeout(t);
   }, [load]);
 
-  async function act(u: UserRow, path: string, method: "PATCH" | "POST", body: unknown, done: string) {
+  async function act(u: UserRow, path: string, method: "PATCH" | "POST", body: unknown, done: string, danger = false) {
+    const who = u.email ?? u.displayName ?? u.id;
+    if (!(await confirm({ title: `${done}?`, message: `Áp dụng cho ${who}.`, confirmLabel: "Xác nhận", tone: danger ? "danger" : "primary" }))) return;
     setBusyId(u.id);
     setError(null);
     setNotice(null);
@@ -110,6 +114,7 @@ export function UsersConsole({ meId, meRole }: { meId: string; meRole: string })
 
   return (
     <div className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6">
+      {dialog}
       <h1 className="text-2xl font-semibold tracking-tight text-[var(--foreground)]">Quản lý người dùng</h1>
       <p className="mt-1 text-sm text-[var(--muted-foreground)]">
         Xem trạng thái hoạt động, khoá / mở khoá, buộc đăng xuất và phân quyền.
@@ -197,19 +202,19 @@ export function UsersConsole({ meId, meRole }: { meId: string; meRole: string })
                         <button
                           className={linkBtn + " text-red-500"}
                           disabled={locked}
-                          onClick={() => { if (confirm(`Khoá ${u.email ?? u.displayName}? Họ sẽ bị đăng xuất.`)) void act(u, "status", "PATCH", { status: "SUSPENDED" }, "Đã khoá"); }}
+                          onClick={() => void act(u, "status", "PATCH", { status: "SUSPENDED" }, "Khoá tài khoản", true)}
                         >
                           Khoá
                         </button>
                       ) : (
-                        <button className={linkBtn + " text-emerald-500"} disabled={locked} onClick={() => void act(u, "status", "PATCH", { status: "ACTIVE" }, "Đã mở khoá")}>
+                        <button className={linkBtn + " text-emerald-500"} disabled={locked} onClick={() => void act(u, "status", "PATCH", { status: "ACTIVE" }, "Mở khoá tài khoản")}>
                           Mở khoá
                         </button>
                       )}
                       <button
                         className={linkBtn + " text-[var(--primary)]"}
                         disabled={locked || u.activeSessions === 0}
-                        onClick={() => void act(u, "revoke-sessions", "POST", null, "Đã buộc đăng xuất")}
+                        onClick={() => void act(u, "revoke-sessions", "POST", null, "Buộc đăng xuất", true)}
                       >
                         Đăng xuất
                       </button>
@@ -217,7 +222,7 @@ export function UsersConsole({ meId, meRole }: { meId: string; meRole: string })
                         <button
                           className={linkBtn + " text-[var(--primary)]"}
                           disabled={locked}
-                          onClick={() => void act(u, "role", "PATCH", { role: u.role === "ADMIN" ? "USER" : "ADMIN" }, u.role === "ADMIN" ? "Đã thu hồi admin" : "Đã cấp admin")}
+                          onClick={() => void act(u, "role", "PATCH", { role: u.role === "ADMIN" ? "USER" : "ADMIN" }, u.role === "ADMIN" ? "Thu hồi quyền admin" : "Cấp quyền admin", u.role === "ADMIN")}
                         >
                           {u.role === "ADMIN" ? "Thu hồi admin" : "Cấp admin"}
                         </button>

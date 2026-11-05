@@ -1,5 +1,6 @@
 "use client";
 
+import { useConfirm } from "@/components/learn/use-confirm";
 import { useCallback, useEffect, useState } from "react";
 
 interface LogRow {
@@ -41,6 +42,7 @@ function fmtTime(iso: string) {
  * Keys are never part of the log. Entries expire after 30 days.
  */
 export function AiCallLogPanel() {
+  const { confirm, dialog } = useConfirm();
   const [rows, setRows] = useState<LogRow[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -116,7 +118,7 @@ export function AiCallLogPanel() {
   }
 
   async function clearAll() {
-    if (!window.confirm("Xoá toàn bộ lịch sử gọi AI?")) return;
+    if (!(await confirm({ title: "Xoá lịch sử gọi AI?", message: "Toàn bộ lịch sử sẽ bị xoá. Không thể hoàn tác.", confirmLabel: "Xoá" }))) return;
     const res = await fetch("/api/flashcards/admin/ai/logs", { method: "DELETE" }).catch(() => null);
     if (!res?.ok) {
       setError("Không xoá được lịch sử");
@@ -135,6 +137,7 @@ export function AiCallLogPanel() {
 
   return (
     <section className="px-4 pb-10 sm:px-6" aria-labelledby="ai-log-title">
+      {dialog}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 id="ai-log-title" className="text-lg font-semibold text-[var(--foreground)]">
           Lịch sử gọi AI

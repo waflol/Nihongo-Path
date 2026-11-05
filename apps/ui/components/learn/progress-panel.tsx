@@ -1,5 +1,6 @@
 "use client";
 
+import { useConfirm } from "@/components/learn/use-confirm";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 interface Stats {
@@ -46,6 +47,7 @@ const UNSEEN_COLOR = "#9ca3af";
 
 /** Daily new-card limit + mastery distribution chart for the learner. */
 export function ProgressPanel() {
+  const { confirm, dialog } = useConfirm();
   const [stats, setStats] = useState<Stats | null>(null);
   const [perDay, setPerDay] = useState("20");
   const [saving, setSaving] = useState(false);
@@ -123,6 +125,7 @@ export function ProgressPanel() {
       setMsg("Nhập số từ 1 đến 500");
       return;
     }
+    if (!(await confirm({ title: "Lưu cài đặt?", message: `Giới hạn thẻ mới mỗi ngày: ${n}.`, confirmLabel: "Lưu", tone: "primary" }))) return;
     setSaving(true);
     setMsg(null);
     try {
@@ -166,6 +169,7 @@ export function ProgressPanel() {
         (loading && stats ? "opacity-60" : "")
       }
     >
+      {dialog}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-sm font-semibold text-[var(--foreground)]">
           Tiến độ ghi nhớ

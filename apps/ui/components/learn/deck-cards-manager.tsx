@@ -1,5 +1,6 @@
 "use client";
 
+import { useConfirm } from "@/components/learn/use-confirm";
 import Link from "next/link";
 import { isJlptLevel } from "@/components/learn/level-select";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
@@ -78,6 +79,7 @@ const splitTags = (v: string) =>
     .filter(Boolean);
 
 export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; deckId: string }) {
+  const { confirm, dialog } = useConfirm();
   const backHref = mode === "admin" ? "/admin/decks" : "/learn/decks";
   const importHref = mode === "admin" ? `/admin/import?deck=${deckId}` : `/learn/import?deck=${deckId}`;
 
@@ -187,6 +189,7 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
   async function saveInfo(event: FormEvent) {
     event.preventDefault();
     if (info.title.trim() === "") return;
+    if (!(await confirm({ title: "Lưu thay đổi?", message: "Thông tin bộ thẻ sẽ được cập nhật.", confirmLabel: "Lưu", tone: "primary" }))) return;
     setInfoBusy(true);
     setError(null);
     const res = await fetch(
@@ -245,6 +248,7 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
   async function runBulk(op: "add" | "remove") {
     const tags = splitTags(bulkTag);
     if (tags.length === 0 || selectedCount === 0) return;
+    if (!(await confirm({ title: "Cập nhật thẻ đã chọn?", message: `${op === "add" ? "Thêm" : "Gỡ"} tag cho ${allMatching ? "mọi thẻ khớp bộ lọc" : `${selectedCount} thẻ đã chọn`}.`, confirmLabel: "Cập nhật", tone: "primary" }))) return;
     setBulkBusy(true);
     setError(null);
     setNotice(null);
@@ -307,7 +311,7 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
   }
 
   async function removeCard(cardId: string) {
-    if (!window.confirm("Xoá thẻ này? Tiến độ học trên thẻ cũng bị xoá.")) return;
+    if (!(await confirm({ title: "Xoá thẻ?", message: "Tiến độ học trên thẻ cũng bị xoá. Không thể hoàn tác.", confirmLabel: "Xoá" }))) return;
     const res = await fetch(`/api/flashcards/cards/${cardId}`, { method: "DELETE" }).catch(() => null);
     if (res?.ok) reload();
     else setError("Xoá thẻ thất bại");
@@ -320,6 +324,7 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
 
   return (
     <div className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6">
+      {dialog}
       <Link href={backHref} className="text-sm text-[var(--primary)] hover:underline">
         ← Về danh sách bộ thẻ
       </Link>

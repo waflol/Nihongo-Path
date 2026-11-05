@@ -12,6 +12,8 @@ export function ConfirmDialog({
   title,
   message,
   confirmLabel,
+  cancelLabel = "Huỷ",
+  tone = "danger",
   busy = false,
   busyLabel = "Đang đặt lại…",
   onConfirm,
@@ -21,6 +23,9 @@ export function ConfirmDialog({
   title: string;
   message: string;
   confirmLabel: string;
+  cancelLabel?: string;
+  /** `danger` = red confirm button (delete); `primary` = brand button (update). */
+  tone?: "danger" | "primary";
   busy?: boolean;
   busyLabel?: string;
   onConfirm: () => void;
@@ -67,13 +72,13 @@ export function ConfirmDialog({
             onClick={onCancel}
             className="rounded-lg border border-[var(--border)] px-4 py-2 text-sm font-medium text-[var(--foreground)] hover:bg-[var(--layer-hover)]"
           >
-            Huỷ
+            {cancelLabel}
           </button>
           <button
             type="button"
             onClick={onConfirm}
             disabled={busy}
-            className="rounded-lg bg-[var(--destructive)] px-4 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-60"
+            className={`rounded-lg ${tone === "danger" ? "bg-[var(--destructive)]" : "bg-[var(--primary)]"} px-4 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-60`}
           >
             {busy ? busyLabel : confirmLabel}
           </button>

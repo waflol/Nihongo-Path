@@ -1,5 +1,6 @@
 "use client";
 
+import { useConfirm } from "@/components/learn/use-confirm";
 import { useCallback, useEffect, useState } from "react";
 
 interface Status {
@@ -84,6 +85,7 @@ function fmtUp(s?: number) {
 
 /** Admin Redis manager: connection status, running tasks, key browser, clearing. */
 export function RedisConsole() {
+  const { confirm, dialog } = useConfirm();
   const [status, setStatus] = useState<Status | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [summary, setSummary] = useState<Summary | null>(null);
@@ -168,7 +170,7 @@ export function RedisConsole() {
   }
 
   async function removeKey(key: string) {
-    if (!window.confirm(`Xoá key "${key}"?`)) return;
+    if (!(await confirm({ title: "Xoá key?", message: `Key "${key}" sẽ bị xoá. Không thể hoàn tác.`, confirmLabel: "Xoá" }))) return;
     const r = await api(`/key?key=${encodeURIComponent(key)}`, { method: "DELETE" });
     if (!r.ok) return setMessage({ kind: "err", text: r.message ?? "Xoá thất bại" });
     setMessage({ kind: "ok", text: `Đã xoá ${key}` });
@@ -179,7 +181,7 @@ export function RedisConsole() {
   async function removePattern() {
     const m = match.trim();
     if (!m || m === "*") return;
-    if (!window.confirm(`Xoá mọi key khớp "${m}"?`)) return;
+    if (!(await confirm({ title: "Xoá nhiều key?", message: `Mọi key khớp "${m}" sẽ bị xoá. Không thể hoàn tác.`, confirmLabel: "Xoá tất cả" }))) return;
     setBusy(true);
     const r = await api<{ deleted: number }>("/delete-pattern", {
       method: "POST",
@@ -194,6 +196,7 @@ export function RedisConsole() {
   }
 
   async function flush() {
+    if (!(await confirm({ title: "Làm trống Redis?", message: "Toàn bộ dữ liệu trong Redis sẽ bị xoá.", confirmLabel: "Làm trống" }))) { setConfirmText(""); return; }
     setBusy(true);
     const r = await api("/flush", {
       method: "POST",
@@ -212,6 +215,7 @@ export function RedisConsole() {
 
   return (
     <div className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6">
+      {dialog}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-semibold tracking-tight text-[var(--foreground)]">Quản lý Redis</h1>
         <button type="button" className={btn} onClick={() => void refreshAll()}>

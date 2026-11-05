@@ -1,5 +1,6 @@
 "use client";
 
+import { useConfirm } from "@/components/learn/use-confirm";
 import Link from "next/link";
 import { useEffect, useState, type FormEvent } from "react";
 import { Icon } from "@/components/learn/icons";
@@ -39,6 +40,7 @@ const inputClass =
   "block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:border-[var(--primary-focus)] focus:outline-none focus:ring-1 focus:ring-[var(--primary-focus)]";
 
 export function SharedDecksConsole() {
+  const { confirm, dialog } = useConfirm();
   const [decks, setDecks] = useState<SharedDeck[]>([]);
   const [loadedFor, setLoadedFor] = useState(-1);
   const [version, setVersion] = useState(0);
@@ -137,6 +139,7 @@ export function SharedDecksConsole() {
     id: string,
     patch: Partial<Pick<SharedDeck, "title" | "summary" | "level" | "status">>,
   ) {
+    if (!(await confirm({ title: "Cập nhật bộ thẻ?", message: patch.status ? (patch.status === "PUBLISHED" ? "Bộ thẻ sẽ được công khai." : "Bộ thẻ sẽ được chuyển về bản nháp.") : "Thay đổi sẽ được lưu.", confirmLabel: "Cập nhật", tone: "primary" }))) return;
     setBusyDeckId(id);
     setError(null);
     const res = await fetch(`/api/flashcards/admin/decks/${id}`, {
@@ -153,6 +156,7 @@ export function SharedDecksConsole() {
   }
 
   async function remove(deckId: string) {
+    if (!(await confirm({ title: "Xoá bộ thẻ?", message: "Bộ thẻ và các thẻ trong đó sẽ bị xoá. Không thể hoàn tác.", confirmLabel: "Xoá" }))) return;
     setBusyDeckId(deckId);
     setError(null);
     const res = await fetch(`/api/flashcards/admin/decks/${deckId}`, {
@@ -169,6 +173,7 @@ export function SharedDecksConsole() {
 
   return (
     <div className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6">
+      {dialog}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-semibold tracking-tight text-[var(--foreground)]">
           Bộ thẻ chia sẻ

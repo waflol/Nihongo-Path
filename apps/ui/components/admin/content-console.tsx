@@ -1,5 +1,6 @@
 "use client";
 
+import { useConfirm } from "@/components/learn/use-confirm";
 import { useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
 
@@ -33,6 +34,7 @@ const inputClass =
   "block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:border-[var(--primary-focus)] focus:outline-none focus:ring-1 focus:ring-[var(--primary-focus)]";
 
 export function AdminContentConsole() {
+  const { confirm, dialog } = useConfirm();
   const [kind, setKind] = useState<ContentKind>("textbooks");
   const [items, setItems] = useState<Item[]>([]);
   // A load has completed for this kind. "Loading" is DERIVED
@@ -101,10 +103,11 @@ export function AdminContentConsole() {
 
   async function submit(event: FormEvent) {
     event.preventDefault();
+    const isUpdate = editingId !== null;
+    if (isUpdate && !(await confirm({ title: "Lưu thay đổi?", message: "Nội dung sẽ được cập nhật.", confirmLabel: "Lưu", tone: "primary" }))) return;
     setSaving(true);
     setError(null);
 
-    const isUpdate = editingId !== null;
     const res = await fetch(
       isUpdate ? `/api/admin/content/${kind}/${editingId}` : `/api/admin/content/${kind}`,
       {
@@ -133,6 +136,7 @@ export function AdminContentConsole() {
   }
 
   async function remove(id: string) {
+    if (!(await confirm({ title: "Xoá mục này?", message: "Không thể hoàn tác.", confirmLabel: "Xoá" }))) return;
     setDeletingId(id);
     setError(null);
     const res = await fetch(`/api/admin/content/${kind}/${id}`, {
@@ -157,6 +161,7 @@ export function AdminContentConsole() {
 
   return (
     <div className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6">
+      {dialog}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-semibold tracking-tight text-[var(--foreground)]">
           Quản trị nội dung

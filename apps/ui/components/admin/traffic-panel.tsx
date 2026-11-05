@@ -1,5 +1,6 @@
 "use client";
 
+import { useConfirm } from "@/components/learn/use-confirm";
 import { ProtectionPanel } from "@/components/admin/protection-panel";
 import { useCallback, useEffect, useState } from "react";
 
@@ -28,6 +29,7 @@ const field =
 
 /** Traffic stats (last 24 h) and the IP deny-list. */
 export function TrafficPanel({ range, date }: { range: "day" | "week" | "month"; date: string }) {
+  const { confirm, dialog } = useConfirm();
   const byHour = Boolean(date) || range === "day";
   const spanLabel = date || (range === "day" ? "24 giờ" : range === "week" ? "7 ngày" : "30 ngày");
   const [traffic, setTraffic] = useState<Traffic | null>(null);
@@ -58,6 +60,7 @@ export function TrafficPanel({ range, date }: { range: "day" | "week" | "month";
   }, [load]);
 
   async function block(target: string, why?: string, mins?: number) {
+    if (!(await confirm({ title: "Chặn IP?", message: `${target} sẽ bị chặn truy cập.`, confirmLabel: "Chặn" }))) return false;
     setError(null);
     const res = await fetch("/api/admin/logs?view=blocked", {
       method: "POST",
@@ -86,11 +89,13 @@ export function TrafficPanel({ range, date }: { range: "day" | "week" | "month";
   }
 
   async function disallow(target: string) {
+    if (!(await confirm({ title: "Gỡ IP khỏi danh sách cho phép?", message: target, confirmLabel: "Gỡ" }))) return;
     await fetch(`/api/admin/logs?view=allowed&ip=${encodeURIComponent(target)}`, { method: "DELETE" }).catch(() => null);
     await load();
   }
 
   async function unblock(target: string) {
+    if (!(await confirm({ title: "Bỏ chặn IP?", message: `${target} sẽ được truy cập lại.`, confirmLabel: "Bỏ chặn", tone: "primary" }))) return;
     await fetch(`/api/admin/logs?view=blocked&ip=${encodeURIComponent(target)}`, { method: "DELETE" }).catch(() => null);
     await load();
   }
@@ -101,6 +106,7 @@ export function TrafficPanel({ range, date }: { range: "day" | "week" | "month";
 
   return (
     <div className="mt-4 space-y-8">
+      {dialog}
       {error && <p role="alert" className="text-sm text-red-500">{error}</p>}
 
       <ProtectionPanel />
@@ -163,7 +169,7 @@ export function TrafficPanel({ range, date }: { range: "day" | "week" | "month";
                     ) : (
                       <button
                         className="text-xs font-semibold text-red-500 hover:underline"
-                        onClick={() => { if (confirm(`Chặn ${r.ip}?`)) void block(r.ip, "Chặn thủ công từ thống kê"); }}
+                        onClick={() => { void block(r.ip, "Chặn thủ công từ thống kê"); }}
                       >
                         Chặn
                       </button>

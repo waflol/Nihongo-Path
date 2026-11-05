@@ -1,5 +1,6 @@
 "use client";
 
+import { useConfirm } from "@/components/learn/use-confirm";
 import { useState, type FormEvent } from "react";
 import { ImageField } from "@/components/learn/image-field";
 import { ReadingFields, type PartOfSpeech } from "@/components/learn/reading-fields";
@@ -39,6 +40,7 @@ export function CardEditForm({
   onCancel: () => void;
   onError: (message: string) => void;
 }) {
+  const { confirm, dialog } = useConfirm();
   const [front, setFront] = useState(card.front);
   const [back, setBack] = useState(card.back);
   const [image, setImage] = useState(card.image ?? "");
@@ -59,6 +61,7 @@ export function CardEditForm({
 
   async function submit(event: FormEvent) {
     event.preventDefault();
+    if (!(await confirm({ title: "Lưu thay đổi thẻ?", message: "Thẻ sẽ được cập nhật.", confirmLabel: "Lưu", tone: "primary" }))) return;
     setSaving(true);
     const res = await fetch(`/api/flashcards/cards/${card._id}`, {
       method: "PATCH",
@@ -86,6 +89,7 @@ export function CardEditForm({
 
   return (
     <form onSubmit={submit} className="w-full">
+      {dialog}
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="block text-sm">
           <span className="text-[var(--muted-foreground)]">Mặt trước (câu hỏi)</span>
