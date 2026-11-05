@@ -77,6 +77,10 @@ export interface DeckView {
   shared: boolean;
   user: string | null;
   cardCount: number;
+  /** Set while example sentences are being generated after an import. */
+  examples: { total: number; done: number } | null;
+  /** The deck stays a draft until the examples are ready, then publishes. */
+  publishWhenReady: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -424,6 +428,11 @@ export class FlashcardsService implements OnModuleInit {
       shared: doc.shared,
       user: doc.user ? String(doc.user) : null,
       cardCount,
+      examples:
+        (doc.exampleTotal ?? 0) > 0
+          ? { total: doc.exampleTotal ?? 0, done: doc.exampleDone ?? 0 }
+          : null,
+      publishWhenReady: doc.publishWhenReady ?? false,
       createdAt: doc.createdAt?.toISOString() ?? "",
       updatedAt: doc.updatedAt?.toISOString() ?? "",
     };

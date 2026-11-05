@@ -46,6 +46,17 @@ export class FlashcardDeck {
   })
   status: DeckStatus;
 
+  /** Example sentences still being generated after an import (progress). */
+  @Prop({ type: Number, default: 0 })
+  exampleTotal?: number;
+
+  @Prop({ type: Number, default: 0 })
+  exampleDone?: number;
+
+  /** Publish the deck once its examples are generated (new deck from an import). */
+  @Prop({ type: Boolean, default: false })
+  publishWhenReady?: boolean;
+
   // Managed by `@Schema({ timestamps: true })` — type-only, see user.schema.ts.
   createdAt: Date;
   updatedAt: Date;

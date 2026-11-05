@@ -11,6 +11,7 @@ import { CardEditForm } from "@/components/learn/card-edit-form";
 import { ReadingFields, type PartOfSpeech } from "@/components/learn/reading-fields";
 import { ImageField } from "@/components/learn/image-field";
 import { CardTile, HanVietToggle } from "@/components/learn/card-tile";
+import { DeckProcessing, useDeckProgressPolling, type DeckExamples } from "@/components/learn/deck-processing";
 import { useHanVietPref } from "@/lib/use-han-viet-pref";
 
 /**
@@ -34,6 +35,7 @@ interface SharedDeck {
   lang: string;
   status: string;
   cardCount: number;
+  examples?: DeckExamples | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -78,6 +80,7 @@ export function SharedDecksConsole() {
   const [busyDeckId, setBusyDeckId] = useState<string | null>(null);
 
   const loading = loadedFor !== version;
+  useDeckProgressPolling(decks, "/api/flashcards/admin/decks", setDecks);
 
   useEffect(() => {
     let cancelled = false;
@@ -423,6 +426,8 @@ export function SharedDecksConsole() {
                   </button>
                 </div>
               </div>
+
+              {deck.examples && <DeckProcessing examples={deck.examples} draft={!published} />}
 
               {/* Card management (expanded) */}
               {isOpen && (

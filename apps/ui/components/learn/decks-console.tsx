@@ -13,6 +13,7 @@ import { ReadingFields, type PartOfSpeech } from "@/components/learn/reading-fie
 import { ImageField } from "@/components/learn/image-field";
 import { CardTile, HanVietToggle } from "@/components/learn/card-tile";
 import { ConfirmDialog } from "@/components/learn/confirm-dialog";
+import { DeckProcessing, useDeckProgressPolling, type DeckExamples } from "@/components/learn/deck-processing";
 import { useHanVietPref } from "@/lib/use-han-viet-pref";
 
 /**
@@ -36,6 +37,7 @@ interface Deck {
   level?: string;
   status: string;
   cardCount: number;
+  examples?: DeckExamples | null;
   createdAt: string;
 }
 
@@ -88,6 +90,7 @@ export function DecksConsole() {
   const [deletingCardId, setDeletingCardId] = useState<string | null>(null);
 
   const loading = loadedFor !== version;
+  useDeckProgressPolling(decks, "/api/flashcards/decks", setDecks);
 
   useEffect(() => {
     let cancelled = false;
@@ -406,6 +409,11 @@ export function DecksConsole() {
                         Chung
                       </span>
                     )}
+                    {deck.status === "DRAFT" && (
+                      <span className="rounded-full bg-[#fef9c3] px-2 py-0.5 text-xs font-medium text-[#a16207] dark:bg-[#3a3210] dark:text-[#fde047]">
+                        Bản nháp
+                      </span>
+                    )}
                     {deck.level && (
                       <span className="rounded-full bg-[var(--layer)] px-2 py-0.5 text-xs font-medium text-[var(--muted-foreground)]">
                         {deck.level}
@@ -493,6 +501,10 @@ export function DecksConsole() {
                   </div>
                 )}
               </dl>
+
+              {deck.examples && (
+                <DeckProcessing examples={deck.examples} draft={deck.status === "DRAFT"} />
+              )}
 
               {/* ── Card list + add-card form (expanded) ───────────────── */}
               {isOpen && (

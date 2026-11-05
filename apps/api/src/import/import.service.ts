@@ -4,6 +4,7 @@ import {
   ConflictException,
   HttpStatus,
   HttpException,
+  type OnApplicationBootstrap,
 } from "@nestjs/common";
 import { InjectModel } from "@nestjs/mongoose";
 import { Model, Types, type Document } from "mongoose";
@@ -21,6 +22,7 @@ import {
 } from "./parsers/types.js";
 import { parseCsv } from "./parsers/csv.js";
 import { parseXlsx } from "./parsers/xlsx.js";
+import { ExampleSuggestService } from "../flashcards/example-suggest.service.js";
 import { parsePdf } from "./parsers/pdf.js";
 
 /** What the multipart upload hands the service (multer, in-memory). */
@@ -118,6 +120,8 @@ export interface ImportConfirmResult {
   overwritten: number;
   /** Rows rejected with a per-row reason (bad mapping values, etc.). */
   errors: { rowNumber: number; error: string }[];
+  /** New cards without an example: one is generated in the background. */
+  examplesQueued: number;
 }
 
 /**
@@ -135,7 +139,7 @@ export interface ImportConfirmResult {
  * 03/11 — "Bỏ PDF ở P3").
  */
 @Injectable()
-export class ImportService {
+export class ImportService implements OnApplicationBootstrap {
   /** Hard cap on data rows per import file (the row-count twin of T-P3-11). */
   static readonly MAX_ROWS = 10000;
 
@@ -145,7 +149,105 @@ export class ImportService {
     @InjectModel("FlashcardDeck")
     private readonly deck: Model<FlashcardDeckDocument>,
     private readonly morph: ReadingService,
+    private readonly exampleSuggest: ExampleSuggestService,
   ) {}
+
+  // ── Background example generation ───────────────────────────────────
+  // Imported cards that arrive without an example get one suggested from
+  // Tatoeba (the same source as adding a single card). Looking up thousands
+  // of words takes far too long for one request, so the import returns at
+  // once and a single in-process worker fills the examples in afterwards.
+  private readonly exampleQueue: {
+    id: Types.ObjectId;
+    deck: Types.ObjectId;
+    term: string;
+    meaning: string;
+    reading: string;
+    partOfSpeech: Pos;
+  }[] = [];
+  private exampleWorkerRunning = false;
+
+  /** After a restart, resume decks whose examples were still being generated. */
+  async onApplicationBootstrap(): Promise<void> {
+    try {
+      const decks = await this.deck.find({ exampleTotal: { $gt: 0 } }).exec();
+      for (const d of decks) {
+        const cards = await this.card
+          .find({ deck: d._id, examples: { $size: 0 } })
+          .select("front back reading partOfSpeech")
+          .exec();
+        await this.deck
+          .updateOne({ _id: d._id }, { $set: { exampleTotal: cards.length, exampleDone: 0 } })
+          .exec();
+        this.enqueueExamples(
+          cards.map((c) => ({
+            id: c._id,
+            deck: d._id,
+            term: c.front,
+            meaning: c.back,
+            reading: c.reading ?? "",
+            partOfSpeech: (c.partOfSpeech ?? "") as Pos,
+          })),
+        );
+        if (cards.length === 0) await this.finishDeckExamples(d._id);
+      }
+    } catch {
+      /* best effort — never block startup */
+    }
+  }
+
+  /** Clear the progress and, for a new import deck, publish it. */
+  private async finishDeckExamples(deckId: Types.ObjectId): Promise<void> {
+    const d = await this.deck.findById(deckId).exec();
+    if (!d) return;
+    const set: Record<string, unknown> = { exampleTotal: 0, exampleDone: 0 };
+    if (d.publishWhenReady) {
+      set.status = "PUBLISHED";
+      set.publishWhenReady = false;
+    }
+    await this.deck.updateOne({ _id: deckId }, { $set: set }).exec();
+  }
+
+  private enqueueExamples(items: typeof this.exampleQueue): void {
+    this.exampleQueue.push(...items);
+    if (this.exampleWorkerRunning || items.length === 0) return;
+    this.exampleWorkerRunning = true;
+    void this.runExampleWorker();
+  }
+
+  private async runExampleWorker(): Promise<void> {
+    try {
+      let job: (typeof this.exampleQueue)[number] | undefined;
+      while ((job = this.exampleQueue.shift())) {
+        const hit = await this.exampleSuggest.suggest({
+          term: job.term,
+          meaning: job.meaning,
+          reading: job.reading,
+          partOfSpeech: job.partOfSpeech,
+        });
+        if (hit) {
+          // Only fill a card that still has no example (never overwrite one
+          // the learner added meanwhile).
+          await this.card
+            .updateOne(
+              { _id: job.id, examples: { $size: 0 } },
+              { $set: { examples: [{ sentence: hit.sentence, translation: hit.translation }] } },
+            )
+            .exec();
+        }
+        // Progress for the deck badge; the last card finishes (and publishes) it.
+        const d = await this.deck
+          .findByIdAndUpdate(job.deck, { $inc: { exampleDone: 1 } }, { new: true })
+          .exec();
+        if (d && (d.exampleDone ?? 0) >= (d.exampleTotal ?? 0)) {
+          await this.finishDeckExamples(job.deck);
+        }
+        await new Promise((r) => setTimeout(r, 250)); // be polite to Tatoeba
+      }
+    } finally {
+      this.exampleWorkerRunning = false;
+    }
+  }
 
   /**
    * Optional card fields of one row: mapped values win; an empty/unmapped
@@ -386,6 +488,7 @@ export class ImportService {
     deckId: string,
     mapping: ColumnMapping,
     policy: DuplicatePolicy,
+    newDeck = false,
   ): Promise<ImportConfirmResult> {
     const targetDeck = await this.resolveWritableDeck(caller, deckId);
     const table = await this.parseTable(file);
@@ -480,6 +583,7 @@ export class ImportService {
     // truly simultaneous second confirm) surfaces as E11000 on the unique
     // index — absorb it as a skip, never crash (P3-IMPORT-04).
     let imported = 0;
+    let insertedDocs: { _id: Types.ObjectId; examples?: unknown[] }[] = [];
     if (toInsert.length > 0) {
       try {
         const res = await this.card.insertMany(
@@ -487,6 +591,7 @@ export class ImportService {
           { ordered: false },
         );
         imported = res.length;
+        insertedDocs = res as unknown as { _id: Types.ObjectId; examples?: unknown[] }[];
       } catch (error) {
         const code = (error as { code?: number }).code;
         if (code === 11000 || code === 11001) {
@@ -498,6 +603,7 @@ export class ImportService {
             writeErrors?: unknown[];
             result?: { insertedCount?: number };
           };
+          insertedDocs = (e.insertedDocs ?? []) as typeof insertedDocs;
           imported = e.insertedDocs?.length ?? e.result?.insertedCount ?? 0;
           skipped += Math.max(1, e.writeErrors?.length ?? toInsert.length - imported);
         } else {
@@ -538,12 +644,46 @@ export class ImportService {
       }
     }
 
+    // New cards that came without an example get one generated in the
+    // background (id order matches the insert order of `toInsert`).
+    const byKey = new Map(toInsert.map((d) => [d.dedupeKey, d]));
+    const pending = insertedDocs
+      .map((doc) => {
+        const src = byKey.get((doc as unknown as { dedupeKey: string }).dedupeKey);
+        return src && src.examples.length === 0
+          ? {
+              id: doc._id,
+              deck: targetDeck._id,
+              term: src.front,
+              meaning: src.back,
+              reading: src.reading,
+              partOfSpeech: src.partOfSpeech,
+            }
+          : null;
+      })
+      .filter((x): x is NonNullable<typeof x> => x !== null);
+    if (pending.length > 0) {
+      // Show "processing examples" on the deck; a brand-new deck stays a
+      // draft until they are ready, then publishes itself.
+      await this.deck
+        .updateOne(
+          { _id: targetDeck._id },
+          {
+            $inc: { exampleTotal: pending.length },
+            ...(newDeck ? { $set: { status: "DRAFT", publishWhenReady: true } } : {}),
+          },
+        )
+        .exec();
+    }
+    this.enqueueExamples(pending);
+
     return {
       deckId,
       imported,
       skipped,
       overwritten,
       errors,
+      examplesQueued: pending.length,
     };
   }
 

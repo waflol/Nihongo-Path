@@ -37,6 +37,8 @@ interface MultipartImportBody {
    */
   mapping?: string;
   duplicatePolicy?: "skip" | "overwrite";
+  /** `"true"` when the wizard created the target deck for this import. */
+  newDeck?: string;
 }
 
 /**
@@ -129,6 +131,7 @@ export class ImportController {
       body.deckId,
       mapping,
       policy,
+      body.newDeck === "true",
     );
   }
 

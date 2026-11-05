@@ -53,6 +53,7 @@ interface ConfirmResult {
   imported: number;
   skipped: number;
   overwritten: number;
+  examplesQueued?: number;
   errors: { rowNumber: number; error: string }[];
 }
 
@@ -175,6 +176,9 @@ export function ImportWizard({ learner = false }: { learner?: boolean }) {
   // Create a new shared deck without leaving the wizard.
   const [newTitle, setNewTitle] = useState("");
   const [creatingDeck, setCreatingDeck] = useState(false);
+  // Decks created inside this wizard session: an import into one stays a draft
+  // (with a progress strip) until its example sentences are generated.
+  const createdDeckIds = useRef<Set<string>>(new Set());
   async function createDeck() {
     if (!newTitle.trim()) return;
     setCreatingDeck(true);
@@ -192,6 +196,7 @@ export function ImportWizard({ learner = false }: { learner?: boolean }) {
       return;
     }
     const created = (await res.json().catch(() => null)) as { _id?: string } | null;
+    if (created?._id) createdDeckIds.current.add(created._id);
     setNewTitle("");
     applyDecks(await fetchDecks(), created?._id);
   }
@@ -279,6 +284,7 @@ export function ImportWizard({ learner = false }: { learner?: boolean }) {
       JSON.stringify(mappingPayload(mapping)),
     );
     form.append("duplicatePolicy", "skip");
+    if (createdDeckIds.current.has(deckId)) form.append("newDeck", "true");
 
     const res = await fetch("/api/import?action=confirm", {
       method: "POST",
@@ -647,6 +653,15 @@ export function ImportWizard({ learner = false }: { learner?: boolean }) {
                 <dt className="inline">Ghi đè: </dt>
                 <dd className="inline font-medium text-[var(--foreground)]">
                   {result.overwritten}
+                </dd>
+              </div>
+            )}
+            {(result.examplesQueued ?? 0) > 0 && (
+              <div>
+                <dt className="inline">Câu ví dụ: </dt>
+                <dd className="inline font-medium text-[var(--foreground)]">
+                  đang tự tạo cho {result.examplesQueued} thẻ chưa có ví dụ (chạy
+                  nền — bộ thẻ mới ở trạng thái bản nháp và tự công khai khi xong; xem tiến độ ở danh sách bộ thẻ)
                 </dd>
               </div>
             )}

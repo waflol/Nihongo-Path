@@ -5,6 +5,7 @@ import { Flashcard, FlashcardSchema } from "../flashcards/schemas/card.schema.js
 import { FlashcardDeck, FlashcardDeckSchema } from "../flashcards/schemas/deck.schema.js";
 import { ImportController } from "./import.controller.js";
 import { ImportService } from "./import.service.js";
+import { ExampleSuggestService } from "../flashcards/example-suggest.service.js";
 import { ReadingModule } from "../flashcards/reading.module.js";
 
 /**
@@ -32,7 +33,7 @@ export function buildImportModule(): DynamicModule {
       ]),
     ],
     controllers: [ImportController],
-    providers: [ImportService],
+    providers: [ImportService, ExampleSuggestService],
   };
 }
 
