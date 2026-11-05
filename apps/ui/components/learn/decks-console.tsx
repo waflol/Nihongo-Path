@@ -47,6 +47,7 @@ interface Card {
   image?: string;
   imageCredit?: string;
   partOfSpeech?: string;
+  hanViet?: string;
   examples?: { sentence: string; translation?: string }[];
   tags?: string[];
   origin: string;

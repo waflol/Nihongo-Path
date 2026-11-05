@@ -289,6 +289,8 @@ export class FlashcardsService implements OnModuleInit {
       "back",
       "reading",
       "partOfSpeech",
+      "hanViet",
+      "order",
       "example",
       "exampleTranslation",
       "tags",
@@ -302,6 +304,8 @@ export class FlashcardsService implements OnModuleInit {
           c.back,
           c.reading ?? "",
           c.partOfSpeech ?? "",
+          c.hanViet ?? "",
+          c.order != null ? String(c.order) : "",
           ex.map((e) => e.sentence).join(" | "),
           ex.map((e) => e.translation ?? "").join(" | "),
           (c.tags ?? []).join(", "),
@@ -333,7 +337,7 @@ export class FlashcardsService implements OnModuleInit {
     await this.getDeck(caller, deckId);
     return this.card
       .find({ deck: new Types.ObjectId(deckId) })
-      .sort({ _id: 1 })
+      .sort({ order: 1, _id: 1 })
       .limit(limit)
       .exec();
   }

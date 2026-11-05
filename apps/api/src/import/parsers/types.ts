@@ -9,8 +9,8 @@ export interface Table {
   columns: string[];
   /** Data records, each a map of column name → string value. */
   rows: Record<string, string>[];
-  /** Which parser produced this (`csv` | `xlsx`). */
-  format: "csv" | "xlsx";
+  /** Which parser produced this (`csv` | `xlsx` | `pdf`). */
+  format: "csv" | "xlsx" | "pdf";
 }
 
 /** A file the import surface cannot parse — mapped to a clean 415/422. */

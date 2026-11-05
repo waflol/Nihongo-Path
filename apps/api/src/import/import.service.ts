@@ -21,6 +21,7 @@ import {
 } from "./parsers/types.js";
 import { parseCsv } from "./parsers/csv.js";
 import { parseXlsx } from "./parsers/xlsx.js";
+import { parsePdf } from "./parsers/pdf.js";
 
 /** What the multipart upload hands the service (multer, in-memory). */
 export interface UploadedImportFile {
@@ -47,6 +48,10 @@ export interface ColumnMapping {
   example?: string;
   /** Translation(s) of the example(s), in the same order. */
   exampleTranslation?: string;
+  /** Âm Hán Việt (e.g. DUY TRÌ). */
+  hanViet?: string;
+  /** Row number in the source (the STT column) — keeps the file's order. */
+  order?: string;
 }
 
 type Pos = "verb" | "noun" | "adjective" | "";
@@ -82,6 +87,9 @@ export interface PreviewRow {
   reading?: string;
   partOfSpeech?: string;
   examples?: number;
+  /** The source's own number (STT column), shown first in the preview. */
+  no?: number;
+  hanViet?: string;
   /** Why the row is unusable, when `status === "error"`. */
   error?: string;
 }
@@ -129,7 +137,7 @@ export interface ImportConfirmResult {
 @Injectable()
 export class ImportService {
   /** Hard cap on data rows per import file (the row-count twin of T-P3-11). */
-  static readonly MAX_ROWS = 5000;
+  static readonly MAX_ROWS = 10000;
 
   constructor(
     @InjectModel("Flashcard")
@@ -148,7 +156,7 @@ export class ImportService {
     row: Record<string, string>,
     mapping: ColumnMapping,
     front: string,
-  ): Promise<{ reading: string; partOfSpeech: Pos; examples: CardExample[] }> {
+  ): Promise<{ reading: string; partOfSpeech: Pos; examples: CardExample[]; hanViet: string; order?: number }> {
     let reading = mapping.reading ? (row[mapping.reading] ?? "").trim() : "";
     let pos: Pos = (mapping.partOfSpeech ? normalizePos(row[mapping.partOfSpeech]) : null) ?? "";
     if (!reading || !pos) {
@@ -166,7 +174,10 @@ export class ImportService {
       sentence,
       translation: translations[i] ?? "",
     }));
-    return { reading, partOfSpeech: pos, examples };
+    const hanViet = mapping.hanViet ? (row[mapping.hanViet] ?? "").trim() : "";
+    const rawNo = mapping.order ? (row[mapping.order] ?? "").trim().replace(/\.$/, "") : "";
+    const order = /^\d{1,6}$/.test(rawNo) ? Number(rawNo) : undefined;
+    return { reading, partOfSpeech: pos, examples, hanViet, order };
   }
 
   /**
@@ -194,7 +205,7 @@ export class ImportService {
    * bytes first (an `.xlsx` is a ZIP: `PK\x03\x04`), then from the
    * extension — MIME types for spreadsheets are unreliable in practice.
    */
-  private parseFile(file: UploadedImportFile): Table {
+  private async parseFile(file: UploadedImportFile): Promise<Table> {
     if (file.size === 0) {
       throw new EmptyTableError("File is empty");
     }
@@ -206,6 +217,11 @@ export class ImportService {
       file.buffer[3] === 0x04;
 
     const ext = file.originalname.toLowerCase().split(".").pop();
+    const looksPdf =
+      file.buffer.length >= 5 && file.buffer.subarray(0, 5).toString("latin1") === "%PDF-";
+    if (looksPdf || ext === "pdf") {
+      return parsePdf(file.buffer);
+    }
     if (looksXlsx || ext === "xlsx") {
       return parseXlsx(file.buffer);
     }
@@ -260,7 +276,7 @@ export class ImportService {
     mapping?: ColumnMapping,
   ): Promise<ImportPreview> {
     await this.resolveWritableDeck(caller, deckId);
-    const table = this.parseTable(file);
+    const table = await this.parseTable(file);
     const targetDeck = await this.resolveWritableDeck(caller, deckId);
 
     // Mapping step 1: no mapping chosen yet — report the columns only.
@@ -343,6 +359,8 @@ export class ImportService {
         reading: extra.reading,
         partOfSpeech: extra.partOfSpeech,
         examples: extra.examples.length,
+        no: extra.order,
+        hanViet: extra.hanViet || undefined,
       });
       ok += 1;
       seenInFile.add(key);
@@ -370,7 +388,7 @@ export class ImportService {
     policy: DuplicatePolicy,
   ): Promise<ImportConfirmResult> {
     const targetDeck = await this.resolveWritableDeck(caller, deckId);
-    const table = this.parseTable(file);
+    const table = await this.parseTable(file);
 
     // Rebuild the exact rows the preview showed, in the same order.
     const extrasByRow = await this.rowExtras(table, mapping);
@@ -404,6 +422,8 @@ export class ImportService {
       reading: string;
       partOfSpeech: Pos;
       examples: CardExample[];
+      hanViet: string;
+      order?: number;
     }
 
     const toInsert: ImportCardDoc[] = [];
@@ -435,6 +455,8 @@ export class ImportService {
         reading: extra.reading,
         partOfSpeech: extra.partOfSpeech,
         examples: extra.examples,
+        hanViet: extra.hanViet,
+        order: extra.order,
       };
 
       if (seenInFile.has(key)) {
@@ -500,6 +522,8 @@ export class ImportService {
                 reading: doc.reading,
                 partOfSpeech: doc.partOfSpeech,
                 examples: doc.examples,
+                hanViet: doc.hanViet,
+                order: doc.order,
               },
               $setOnInsert: {
                 deck: targetDeck._id,
@@ -526,10 +550,10 @@ export class ImportService {
   // ── internals ───────────────────────────────────────────────────────
 
   /** Parse + enforce the row cap (T-P3-11's data-side twin). */
-  private parseTable(file: UploadedImportFile): Table {
+  private async parseTable(file: UploadedImportFile): Promise<Table> {
     let table: Table;
     try {
-      table = this.parseFile(file);
+      table = await this.parseFile(file);
     } catch (error) {
       if (error instanceof UnsupportedFormatError) {
         throw new HttpException(

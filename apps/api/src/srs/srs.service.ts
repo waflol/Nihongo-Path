@@ -39,6 +39,8 @@ export interface CardQueueItem {
   image?: string;
   imageCredit?: string;
   partOfSpeech?: string;
+  /** Âm Hán Việt stored on the card (else the UI derives it). */
+  hanViet?: string;
   examples?: { sentence: string; translation?: string }[];
   kind: Flashcard["kind"];
   /** `new` = never reviewed; `due` = progress past due (label refines it). */
@@ -191,7 +193,7 @@ export class SrsService {
 
     const cards = await this.card
       .find({ deck: new Types.ObjectId(deckId) })
-      .sort({ _id: 1 })
+      .sort({ order: 1, _id: 1 })
       .exec();
 
     // The caller's progress for exactly these cards — one lookup.
@@ -223,6 +225,7 @@ export class SrsService {
           image: c.image || undefined,
           imageCredit: c.imageCredit || undefined,
           partOfSpeech: c.partOfSpeech || undefined,
+          hanViet: c.hanViet || undefined,
           examples: c.examples?.length ? c.examples.map((e) => ({ sentence: e.sentence, translation: e.translation })) : undefined,
           kind: c.kind,
           bucket: "new",
@@ -253,6 +256,7 @@ export class SrsService {
             image: c.image || undefined,
             imageCredit: c.imageCredit || undefined,
             partOfSpeech: c.partOfSpeech || undefined,
+          hanViet: c.hanViet || undefined,
             examples: c.examples?.length ? c.examples.map((e) => ({ sentence: e.sentence, translation: e.translation })) : undefined,
             kind: c.kind,
             bucket: "due",
@@ -275,6 +279,7 @@ export class SrsService {
         image: c.image || undefined,
         imageCredit: c.imageCredit || undefined,
         partOfSpeech: c.partOfSpeech || undefined,
+          hanViet: c.hanViet || undefined,
         examples: c.examples?.length ? c.examples.map((e) => ({ sentence: e.sentence, translation: e.translation })) : undefined,
         kind: c.kind,
         bucket: "due",

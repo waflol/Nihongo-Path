@@ -9,7 +9,7 @@ import { useEffect, useRef, useState } from "react";
  * lỗi, phát hiện trùng lặp và xác nhận trước khi nhập").
  *
  * Four steps over a single screen:
- *   1. Chọn file + bộ thẻ đích (CSV/XLSX, ≤ 10 MB)
+ *   1. Chọn file + bộ thẻ đích (CSV/XLSX/PDF, ≤ 10 MB)
  *   2. Ánh xạ cột (câu hỏi / đáp án / tags) — từ danh sách cột API trả về
  *   3. Xem trước từng dòng (ok / lỗi / trùng) + chính sách trùng
  *   4. Xác nhận nhập (idempotent — gửi lại không tạo bản ghi đôi)
@@ -34,6 +34,8 @@ interface PreviewRow {
   reading?: string;
   partOfSpeech?: string;
   examples?: number;
+  no?: number;
+  hanViet?: string;
   error?: string;
 }
 
@@ -59,6 +61,8 @@ const inputClass =
 
 /** Optional columns the wizard can map (the API derives hiragana/POS when blank). */
 const OPTIONAL_COLUMNS = [
+  ["order", "STT (số thứ tự)"],
+  ["hanViet", "Âm Hán Việt"],
   ["reading", "Hiragana (trống → tự tạo)"],
   ["partOfSpeech", "Từ loại (trống → tự nhận)"],
   ["example", "Câu ví dụ"],
@@ -98,6 +102,8 @@ function mappingPayload(m: Record<string, string>) {
     front: m.front,
     back: m.back,
     reading: m.reading || undefined,
+    order: m.order || undefined,
+    hanViet: m.hanViet || undefined,
     partOfSpeech: m.partOfSpeech || undefined,
     example: m.example || undefined,
     exampleTranslation: m.exampleTranslation || undefined,
@@ -240,8 +246,10 @@ export function ImportWizard({ learner = false }: { learner?: boolean }) {
           return hit ?? "";
         };
         return {
-          front: m.front || guess("front", ["front", "term", "word", "câu hỏi"]),
+          front: m.front || guess("front", ["front", "term", "word", "câu hỏi", "chữ hán", "từ vựng", "kanji", "漢字"], /âm hán|hán việt/),
           back: m.back || guess("back", ["back", "meaning", "nghĩa", "đáp án"]),
+          order: m.order || guess("order", ["stt", "số thứ tự"]),
+          hanViet: m.hanViet || guess("hanViet", ["âm hán", "hán việt", "am han"]),
           tags: m.tags || guess("tags", ["tag"]),
           reading: m.reading || guess("reading", ["reading", "hiragana", "kana", "cách đọc", "furigana"]),
           partOfSpeech: m.partOfSpeech || guess("pos", ["partofspeech", "part_of_speech", "pos", "từ loại", "loại từ", "wordtype"]),
@@ -308,7 +316,7 @@ export function ImportWizard({ learner = false }: { learner?: boolean }) {
         </Link>
       </div>
       <p className="mt-1 text-sm text-[var(--muted-foreground)]">
-        CSV hoặc XLSX, ≤ 10 MB. Nhập chỉ ghi vào bộ thẻ khi bạn bấm{" "}
+        CSV, XLSX hoặc PDF (bảng có cột STT), ≤ 10 MB. Nhập chỉ ghi vào bộ thẻ khi bạn bấm{" "}
         <strong>Xác nhận</strong> — xem trước không chạm database.
       </p>
 
@@ -350,7 +358,7 @@ export function ImportWizard({ learner = false }: { learner?: boolean }) {
           <div>
             <div className="flex items-center justify-between gap-2">
               <label className="block text-sm font-medium text-[var(--foreground)]">
-                File CSV / XLSX
+                File CSV / XLSX / PDF
               </label>
               <button
                 type="button"
@@ -363,7 +371,7 @@ export function ImportWizard({ learner = false }: { learner?: boolean }) {
             <input
               ref={fileRef}
               type="file"
-              accept=".csv,.xlsx,text/csv"
+              accept=".csv,.xlsx,.pdf,text/csv,application/pdf"
               onChange={(e) => {
                 setFile(e.target.files?.[0] ?? null);
                 setPreview(null);
@@ -453,6 +461,14 @@ export function ImportWizard({ learner = false }: { learner?: boolean }) {
         </div>
       </section>
 
+      {file?.name.toLowerCase().endsWith(".pdf") && (
+        <p className="mt-4 rounded-lg bg-[#fef9c3] px-4 py-3 text-sm text-[#a16207] dark:bg-[#3a3210] dark:text-[#fde047]">
+          Chỉ nhập PDF do bạn tự soạn hoặc có quyền sử dụng — không nhập giáo
+          trình có bản quyền. PDF phải có lớp văn bản (không phải ảnh scan) và
+          bảng có cột STT.
+        </p>
+      )}
+
       {/* ── Step 2: column mapping ─────────────────────────────────── */}
       {preview && preview.columns.length > 0 && !result && (
         <section className="mt-6 rounded-2xl border border-[var(--border)] bg-[var(--background-1)] p-5">
@@ -528,11 +544,12 @@ export function ImportWizard({ learner = false }: { learner?: boolean }) {
               <table className="min-w-full text-sm">
                 <thead className="bg-[var(--layer)] text-left text-xs text-[var(--muted-foreground)]">
                   <tr>
-                    <th className="px-3 py-2 font-medium">#</th>
+                    <th className="px-3 py-2 font-medium">STT</th>
                     <th className="px-3 py-2 font-medium">Trạng thái</th>
                     <th className="px-3 py-2 font-medium">Câu hỏi</th>
                     <th className="px-3 py-2 font-medium">Đáp án</th>
                     <th className="px-3 py-2 font-medium">Hiragana</th>
+                    <th className="px-3 py-2 font-medium">Hán Việt</th>
                     <th className="px-3 py-2 font-medium">Từ loại</th>
                     <th className="px-3 py-2 font-medium">Ví dụ</th>
                     <th className="px-3 py-2 font-medium">Lỗi</th>
@@ -542,7 +559,7 @@ export function ImportWizard({ learner = false }: { learner?: boolean }) {
                   {preview.rows.slice(0, ROW_LIMIT).map((r) => (
                     <tr key={r.rowNumber}>
                       <td className="px-3 py-2 text-[var(--muted-foreground)]">
-                        {r.rowNumber}
+                        {r.no ?? r.rowNumber}
                       </td>
                       <td className="px-3 py-2">
                         {r.status === "ok" && (
@@ -569,6 +586,9 @@ export function ImportWizard({ learner = false }: { learner?: boolean }) {
                       </td>
                       <td lang="ja" className="px-3 py-2 text-[var(--muted-foreground)]">
                         {r.reading || "—"}
+                      </td>
+                      <td className="px-3 py-2 text-[var(--muted-foreground)]">
+                        {r.hanViet || "—"}
                       </td>
                       <td className="px-3 py-2 text-[var(--muted-foreground)]">
                         {r.partOfSpeech ? POS_LABEL[r.partOfSpeech] ?? r.partOfSpeech : "—"}

@@ -87,6 +87,14 @@ export class Flashcard {
   })
   examples: CardExample[];
 
+  /** Âm Hán Việt supplied by the source (e.g. "DUY TRÌ"); empty = derive. */
+  @Prop({ type: String, trim: true, default: "" })
+  hanViet?: string;
+
+  /** Position in the source list (STT) — keeps an imported file's order. */
+  @Prop({ type: Number })
+  order?: number;
+
   @Prop({ type: [String], default: [] })
   tags: string[];
 

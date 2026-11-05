@@ -111,6 +111,7 @@ interface QueueItem {
   image?: string;
   imageCredit?: string;
   partOfSpeech?: string;
+  hanViet?: string;
   examples?: { sentence: string; translation?: string }[];
   bucket: "new" | "due";
   label?: "hard" | "mastered" | "normal";
@@ -898,6 +899,7 @@ function StudySessionInner() {
               image={current.image}
               imageCredit={current.imageCredit}
               partOfSpeech={current.partOfSpeech}
+              hanVietText={current.hanViet}
               examples={current.examples}
               showReading={showReading}
               showExamples={showExamples}
@@ -1083,6 +1085,7 @@ function LearnCard({
   image,
   imageCredit,
   partOfSpeech,
+  hanVietText,
   examples,
   showReading,
   showExamples,
@@ -1097,6 +1100,7 @@ function LearnCard({
   image?: string;
   imageCredit?: string;
   partOfSpeech?: string;
+  hanVietText?: string;
   examples?: { sentence: string; translation?: string }[];
   showReading: boolean;
   showExamples: boolean;
@@ -1128,9 +1132,9 @@ function LearnCard({
         <p lang="ja" className="break-words text-5xl font-semibold text-white sm:text-7xl">
           {term}
         </p>
-        {showHanViet && hanViet(term) ? (
+        {showHanViet && (hanVietText || hanViet(term)) ? (
           <p className="mt-2 text-sm font-semibold tracking-[0.22em] text-white/75 sm:text-base">
-            {hanViet(term)}
+            {hanVietText || hanViet(term)}
           </p>
         ) : null}
       </div>
