@@ -121,3 +121,8 @@
   .stage-ring { animation: none; --stage-pct: var(--target, 100); }
 }
 
+
+/* Reserve the scrollbar's width so pages whose height changes don't shift sideways. */
+html {
+  scrollbar-gutter: stable;
+}

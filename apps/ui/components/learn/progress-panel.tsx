@@ -13,6 +13,13 @@ interface Stats {
   newInRange: number;
   label: string;
   offset: number;
+  overview?: {
+    heatmap: { key: string; reviews: number }[];
+    streak: number;
+    bestStreak: number;
+    totalReviews: number;
+    studyDays: number;
+  };
 }
 
 type Range = "week" | "month" | "year" | "all";
@@ -46,40 +53,69 @@ export function ProgressPanel() {
   const [range, setRange] = useState<Range>("week");
   const [shift, setShift] = useState(0); // 0 = current period, -1 = previous…
 
-  // Per-period cache + latest-request guard: revisiting a period is instant,
-  // and a slow earlier response can never overwrite a newer selection.
+  // Per-period cache + in-flight dedupe: every range is prefetched in the
+  // background, so switching tabs / periods is instant. `latest` stops a slow
+  // earlier response from overwriting a newer selection.
   const cache = useRef(new Map<string, Stats>());
+  const inflight = useRef(new Map<string, Promise<Stats | null>>());
   const latest = useRef(0);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(false);
+
+  const fetchOne = useCallback((r: Range, sh: number, force = false): Promise<Stats | null> => {
+    const key = `${r}:${sh}`;
+    const hit = cache.current.get(key);
+    if (hit && !force) return Promise.resolve(hit);
+    const pending = inflight.current.get(key);
+    if (pending) return pending;
+    const p = fetch(`/api/srs/stats?range=${r}&offset=${sh}`, { cache: "no-store" })
+      .then(async (res) => {
+        if (!res.ok) return null;
+        const data = (await res.json()) as Stats;
+        cache.current.set(key, data);
+        return data;
+      })
+      .catch(() => null)
+      .finally(() => inflight.current.delete(key));
+    inflight.current.set(key, p);
+    return p;
+  }, []);
+
+  /** Warm the cache: all ranges for now, then the previous period of each. */
+  const prefetch = useCallback(async () => {
+    await Promise.all(RANGES.map((r) => fetchOne(r.key, 0)));
+    await Promise.all(RANGES.filter((r) => r.key !== "all").map((r) => fetchOne(r.key, -1)));
+  }, [fetchOne]);
 
   const load = useCallback(async (force = false) => {
-    const key = `${range}:${shift}`;
     const id = ++latest.current;
-    const hit = cache.current.get(key);
+    const hit = cache.current.get(`${range}:${shift}`);
     if (hit && !force) {
       setStats(hit);
       setLoading(false);
+      setError(false);
       return;
     }
     setLoading(true);
-    try {
-      const res = await fetch(`/api/srs/stats?range=${range}&offset=${shift}`, { cache: "no-store" });
-      if (!res.ok || id !== latest.current) return;
-      const data = (await res.json()) as Stats;
-      if (id !== latest.current) return;
-      cache.current.set(key, data);
-      setStats(data);
-      setPerDay(String(data.newPerDay));
-    } catch {
-      /* keep the previous data on screen */
-    } finally {
-      if (id === latest.current) setLoading(false);
+    setError(false);
+    const data = await fetchOne(range, shift, force);
+    if (id !== latest.current) return;
+    setLoading(false);
+    if (!data) {
+      setError(true);
+      return;
     }
-  }, [range, shift]);
+    setStats(data);
+    setPerDay(String(data.newPerDay));
+  }, [range, shift, fetchOne]);
 
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    void prefetch();
+  }, [prefetch]);
 
   async function save() {
     const n = Math.round(Number(perDay));
@@ -99,6 +135,7 @@ export function ProgressPanel() {
       if (res.ok) {
         cache.current.clear();
         await load(true);
+        void prefetch();
       }
     } catch {
       setMsg("Không lưu được");
@@ -157,8 +194,17 @@ export function ProgressPanel() {
         </div>
       </div>
 
+      {error && (
+        <p className="mt-3 text-sm text-[#dc2626]">
+          Không tải được thống kê.{" "}
+          <button type="button" className="underline" onClick={() => void load(true)}>
+            Thử lại
+          </button>
+        </p>
+      )}
+
       {!stats ? (
-        <p className="mt-3 text-sm text-[var(--muted-foreground)]">Đang tải…</p>
+        <p className="mt-3 text-sm text-[var(--muted-foreground)]">{error ? "" : "Đang tải…"}</p>
       ) : (
         <div className="mt-4 grid gap-6 sm:grid-cols-[180px_1fr]">
           <div className="relative mx-auto h-44 w-44">
@@ -211,8 +257,11 @@ export function ProgressPanel() {
         </div>
       )}
 
-      {range !== "all" && (
-        <div className="mt-4 flex items-center justify-center gap-3 text-sm">
+      {(
+        <div
+          aria-hidden={range === "all"}
+          className={"mt-4 flex items-center justify-center gap-3 text-sm " + (range === "all" ? "invisible" : "")}
+        >
           <button
             type="button"
             onClick={() => setShift((o) => o - 1)}
@@ -245,41 +294,207 @@ export function ProgressPanel() {
         </div>
       )}
 
+      {/* Roughly the height of the "Tất cả" overview, so switching tabs doesn't jolt. */}
+      <div className="min-h-[22rem]">
       {stats && range !== "all" && stats.series.length > 0 && (() => {
-        const max = Math.max(1, ...stats.series.map((b) => b.reviews));
+        const series = stats.series;
+        const max = Math.max(1, ...series.map((b) => b.reviews));
+        // Round the axis top to a tidy number.
+        const pow = 10 ** Math.floor(Math.log10(max));
+        const top = Math.max(4, Math.ceil(max / pow / 2) * 2 * pow);
         const step = range === "month" ? 5 : 1;
+        const d = new Date();
+        const todayKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+        const isNow = (k: string) => (range === "year" ? k === todayKey.slice(0, 7) : k === todayKey);
+        const activeDays = series.filter((b) => b.reviews > 0).length;
+        const avg = activeDays ? Math.round(stats.reviewsInRange / activeDays) : 0;
+        const unit = range === "year" ? "tháng" : "ngày";
+        const tiles = [
+          { v: stats.reviewsInRange, l: "Lượt ôn", c: "#3b82f6" },
+          { v: stats.newInRange, l: "Từ mới", c: "#10b981" },
+          { v: `${activeDays}/${series.length}`, l: `${unit[0].toUpperCase()}${unit.slice(1)} có học`, c: "#8b5cf6" },
+          { v: avg, l: `TB mỗi ${unit} học`, c: "#f59e0b" },
+        ];
         return (
-          <div className="mt-6 border-t border-[var(--border)] pt-4">
-            <p className="text-sm font-medium text-[var(--foreground)]">
-              Hoạt động học
-              <span className="ml-2 text-xs font-normal text-[var(--muted-foreground)]">
-                {stats.reviewsInRange} lượt ôn · {stats.newInRange} từ mới
-              </span>
-            </p>
-            <div className="mt-3 flex h-28 items-end gap-1" role="img" aria-label="Số lượt ôn theo thời gian">
-              {stats.series.map((b) => (
-                <div
-                  key={b.key}
-                  className="flex h-full min-w-0 flex-1 items-end"
-                  title={`${b.key}: ${b.reviews} lượt ôn, ${b.newCards} từ mới`}
-                >
-                  <div
-                    className="w-full rounded-t bg-[#3b82f6]"
-                    style={{ height: `${(b.reviews / max) * 100}%`, minHeight: b.reviews ? 2 : 0 }}
-                  />
+          <div className="mt-5">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              {tiles.map((t) => (
+                <div key={t.l} className="rounded-xl border border-[var(--border)] px-3 py-2.5">
+                  <p className="text-xl font-semibold tabular-nums" style={{ color: t.c }}>{t.v}</p>
+                  <p className="text-xs text-[var(--muted-foreground)]">{t.l}</p>
                 </div>
               ))}
             </div>
-            <div className="mt-1 flex gap-1">
-              {stats.series.map((b, i) => (
-                <span key={b.key} className="min-w-0 flex-1 text-center text-[10px] text-[var(--muted-foreground)]">
-                  {i % step === 0 || i === stats.series.length - 1 ? barLabel(b.key, range) : ""}
+
+            <div className="mt-5 flex items-center justify-between">
+              <p className="text-sm font-medium text-[var(--foreground)]">Hoạt động học</p>
+              <div className="flex items-center gap-3 text-[11px] text-[var(--muted-foreground)]">
+                <span className="inline-flex items-center gap-1"><span className="size-2 rounded-sm bg-[#93c5fd]" />Lượt ôn</span>
+                <span className="inline-flex items-center gap-1"><span className="size-2 rounded-sm bg-[#10b981]" />Từ mới</span>
+              </div>
+            </div>
+
+            <div className="mt-3 flex gap-2">
+              <div className="flex h-40 w-6 shrink-0 flex-col justify-between text-right text-[10px] tabular-nums text-[var(--muted-foreground)]">
+                <span>{top}</span>
+                <span>{top / 2}</span>
+                <span>0</span>
+              </div>
+              <div className="relative h-40 min-w-0 flex-1">
+                {[0, 50, 100].map((p) => (
+                  <div key={p} className="absolute inset-x-0 border-t border-dashed border-[var(--border)]" style={{ bottom: `${p}%` }} />
+                ))}
+                <div className="absolute inset-0 flex items-end gap-[3px]" role="img" aria-label="Số lượt ôn theo thời gian">
+                  {series.map((b) => {
+                    const h = (b.reviews / top) * 100;
+                    const nh = (Math.min(b.newCards, b.reviews) / top) * 100;
+                    return (
+                      <div
+                        key={b.key}
+                        className="group relative flex h-full min-w-0 flex-1 items-end"
+                        title={`${b.key}: ${b.reviews} lượt ôn, ${b.newCards} từ mới`}
+                      >
+                        {range === "week" && b.reviews > 0 && (
+                          <span
+                            className="absolute left-0 right-0 text-center text-[10px] font-medium tabular-nums text-[var(--foreground)]"
+                            style={{ bottom: `calc(${h}% + 2px)` }}
+                          >
+                            {b.reviews}
+                          </span>
+                        )}
+                        <div
+                          className={"relative w-full overflow-hidden rounded-t-md transition-opacity group-hover:opacity-80 " + (isNow(b.key) ? "bg-[#3b82f6]" : "bg-[#93c5fd]")}
+                          style={{ height: `${h}%`, minHeight: b.reviews ? 3 : 0 }}
+                        >
+                          {b.newCards > 0 && (
+                            <div className="absolute inset-x-0 bottom-0 bg-[#10b981]" style={{ height: `${h ? (nh / h) * 100 : 0}%` }} />
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+            <div className="ml-[calc(0.5rem+1.5rem)] mt-1.5 flex gap-[3px]">
+              {series.map((b, i) => (
+                <span
+                  key={b.key}
+                  className={"min-w-0 flex-1 text-center text-[10px] " + (isNow(b.key) ? "font-semibold text-[var(--foreground)]" : "text-[var(--muted-foreground)]")}
+                >
+                  {i % step === 0 || i === series.length - 1 ? barLabel(b.key, range) : ""}
                 </span>
               ))}
+            </div>
+            {stats.reviewsInRange === 0 && (
+              <p className="mt-3 text-center text-xs text-[var(--muted-foreground)]">
+                Chưa có hoạt động học trong kỳ này.
+              </p>
+            )}
+          </div>
+        );
+      })()}
+
+      {stats?.overview && range === "all" && (() => {
+        const o = stats.overview;
+        const total = Math.max(1, stats.total);
+        const lv = Object.fromEntries(stats.levels.map((l) => [l.key, l.count]));
+        const solid = (lv.known ?? 0) + (lv.mastered ?? 0);
+        const journey = [
+          { key: "unseen", label: "Chưa học", count: stats.unseen, color: UNSEEN_COLOR },
+          ...["hard", "learning", "young", "known", "mastered"].map((k) => ({
+            key: k,
+            label: LEVELS[k].label,
+            count: lv[k] ?? 0,
+            color: LEVELS[k].color,
+          })),
+        ];
+        const shade = (n: number) =>
+          n === 0 ? 0 : n < 10 ? 1 : n < 25 ? 2 : n < 50 ? 3 : 4;
+        const cellBg = [
+          "var(--border)",
+          "color-mix(in srgb, #10b981 30%, var(--border))",
+          "color-mix(in srgb, #10b981 55%, var(--border))",
+          "color-mix(in srgb, #10b981 80%, var(--border))",
+          "#047857",
+        ];
+        const tiles = [
+          { v: o.streak, u: "ngày", l: "Chuỗi hiện tại", accent: o.streak > 0 },
+          { v: o.bestStreak, u: "ngày", l: "Chuỗi dài nhất" },
+          { v: o.totalReviews, u: "lượt", l: "Tổng lượt ôn" },
+          { v: o.studyDays, u: "ngày", l: "Đã học" },
+        ];
+        return (
+          <div className="mt-6 space-y-6 border-t border-[var(--border)] pt-4">
+            <div>
+              <div className="flex items-baseline justify-between">
+                <p className="text-sm font-medium text-[var(--foreground)]">Hành trình ghi nhớ</p>
+                <p className="text-xs text-[var(--muted-foreground)]">
+                  <span className="text-base font-semibold text-[var(--foreground)]">
+                    {Math.round((solid / total) * 100)}%
+                  </span>{" "}
+                  đã thuộc vững
+                </p>
+              </div>
+              <div className="mt-2 flex h-3 overflow-hidden rounded-full bg-[var(--border)]" role="img" aria-label="Hành trình ghi nhớ">
+                {journey.map((j) =>
+                  j.count > 0 ? (
+                    <div
+                      key={j.key}
+                      title={`${j.label}: ${j.count}`}
+                      style={{ width: `${(j.count / total) * 100}%`, background: j.color }}
+                    />
+                  ) : null,
+                )}
+              </div>
+              <div className="mt-1 flex justify-between text-[10px] text-[var(--muted-foreground)]">
+                <span>Chưa học</span>
+                <span>Thuộc sâu</span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              {tiles.map((t) => (
+                <div key={t.l} className="rounded-xl border border-[var(--border)] px-3 py-2.5">
+                  <p className={"text-xl font-semibold tabular-nums " + (t.accent ? "text-[#f59e0b]" : "text-[var(--foreground)]")}>
+                    {t.accent ? "🔥 " : ""}
+                    {t.v}
+                    <span className="ml-1 text-xs font-normal text-[var(--muted-foreground)]">{t.u}</span>
+                  </p>
+                  <p className="text-xs text-[var(--muted-foreground)]">{t.l}</p>
+                </div>
+              ))}
+            </div>
+
+            <div>
+              <p className="text-sm font-medium text-[var(--foreground)]">
+                Lịch học 26 tuần gần đây
+              </p>
+              <div className="mt-2 overflow-x-auto pb-1">
+                <div className="grid w-max grid-flow-col grid-rows-7 gap-[3px]">
+                  {o.heatmap.map((c) => (
+                    <div
+                      key={c.key}
+                      title={`${c.key}: ${c.reviews} lượt ôn`}
+                      className="size-3 rounded-[3px]"
+                      style={{ background: cellBg[shade(c.reviews)] }}
+                    />
+                  ))}
+                </div>
+              </div>
+              <div className="mt-1 flex items-center justify-end gap-1 text-[10px] text-[var(--muted-foreground)]">
+                Ít
+                {cellBg.map((c, i) => (
+                  <span key={i} className="size-3 rounded-[3px]" style={{ background: c }} />
+                ))}
+                Nhiều
+              </div>
             </div>
           </div>
         );
       })()}
+
+      </div>
 
       <div className="mt-6 border-t border-[var(--border)] pt-4">
         <label htmlFor="new-per-day" className="text-sm font-medium text-[var(--foreground)]">

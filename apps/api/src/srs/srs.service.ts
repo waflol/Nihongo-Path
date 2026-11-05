@@ -192,22 +192,52 @@ export class SrsService {
     tz?: string,
     limit = 20,
   ): Promise<StudyQueue> {
-    await this.resolveAccessibleDeck(caller, deckId);
+    // `all` = the review hub: every card the caller has already learned, from
+    // any deck they can read — no new cards, no deck distinction.
+    const reviewAll = deckId === "all";
+    if (!reviewAll) await this.resolveAccessibleDeck(caller, deckId);
     const timezone = await this.resolveTimezone(caller, tz);
     const today = localDayKey(Date.now(), timezone);
+    const userId = new Types.ObjectId(caller.sub);
 
-    const cards = await this.card
-      .find({ deck: new Types.ObjectId(deckId) })
-      .sort({ order: 1, _id: 1 })
-      .exec();
-
-    // The caller's progress for exactly these cards — one lookup.
-    const progressDocs = await this.progress
-      .find({
-        user: new Types.ObjectId(caller.sub),
-        card: cards.map((c) => c._id),
-      })
-      .exec();
+    let cards: FlashcardDocument[];
+    let progressDocs: UserCardProgressDocument[];
+    if (reviewAll) {
+      progressDocs = await this.progress.find({ user: userId }).exec();
+      const decks = await this.deck
+        .find({ $or: [{ user: userId }, { shared: true, status: "PUBLISHED" }] }, { _id: 1 })
+        .lean()
+        .exec();
+      cards = await this.card
+        .find({
+          _id: { $in: progressDocs.map((p) => p.card) },
+          deck: { $in: decks.map((d) => d._id) },
+        })
+        .sort({ order: 1, _id: 1 })
+        .exec();
+      // The same word in several decks counts as one card: keep the copy
+      // reviewed most recently (its state is the freshest).
+      const lastMs = new Map(progressDocs.map((p) => [String(p.card), p.lastReviewedAtMs ?? 0]));
+      const best = new Map<string, FlashcardDocument>();
+      for (const c of cards) {
+        const k = cardDupKey(c.front, c.reading);
+        const cur = best.get(k);
+        if (!cur || (lastMs.get(String(c._id)) ?? 0) > (lastMs.get(String(cur._id)) ?? 0)) {
+          best.set(k, c);
+        }
+      }
+      const keep = new Set([...best.values()].map((c) => String(c._id)));
+      cards = cards.filter((c) => keep.has(String(c._id)));
+    } else {
+      cards = await this.card
+        .find({ deck: new Types.ObjectId(deckId) })
+        .sort({ order: 1, _id: 1 })
+        .exec();
+      // The caller's progress for exactly these cards — one lookup.
+      progressDocs = await this.progress
+        .find({ user: userId, card: cards.map((c) => c._id) })
+        .exec();
+    }
     const byCard = new Map<string, UserCardProgressDocument>();
     for (const p of progressDocs) byCard.set(String(p.card), p);
 
@@ -216,11 +246,11 @@ export class SrsService {
     const newPerDay = await this.newCardsPerDay(caller);
     // Cards first introduced today in this deck use up today's allowance.
     const introducedToday = await this.progress.countDocuments({
-      user: new Types.ObjectId(caller.sub),
+      user: userId,
       card: { $in: cards.map((c) => c._id) },
       createdAt: { $gte: new Date(localStartOfDay(Date.now(), timezone)) },
     });
-    const newAllowed = Math.max(0, newPerDay - introducedToday);
+    const newAllowed = reviewAll ? 0 : Math.max(0, newPerDay - introducedToday);
     let hardCount = 0;
     let masteredCount = 0;
     let nextDueDay: string | undefined;
@@ -431,36 +461,22 @@ export class SrsService {
     series: { key: string; reviews: number; newCards: number }[];
     reviewsInRange: number;
     newInRange: number;
+    /** Only for range "all": study habit overview (heatmap, streaks, totals). */
+    overview?: {
+      heatmap: { key: string; reviews: number }[];
+      streak: number;
+      bestStreak: number;
+      totalReviews: number;
+      studyDays: number;
+    };
   }> {
     const timezone = await this.resolveTimezone(caller);
     const userId = new Types.ObjectId(caller.sub);
-    let deckFilter: Record<string, unknown>;
-    if (deckId) {
-      await this.resolveAccessibleDeck(caller, deckId);
-      deckFilter = { deck: new Types.ObjectId(deckId) };
-    } else {
-      const decks = await this.deck
-        .find({ $or: [{ user: userId }, { shared: true, status: "PUBLISHED" }] }, { _id: 1 })
-        .exec();
-      deckFilter = { deck: { $in: decks.map((d) => d._id) } };
-    }
-    const cards = await this.card.find(deckFilter, { _id: 1 }).lean().exec();
-    const ids = cards.map((c) => c._id);
-    const [progress, perDay] = await Promise.all([
-      ids.length
-        ? this.progress
-            .find({ user: userId, card: { $in: ids } }, { state: 1, createdAt: 1, lastReviewedAtMs: 1 })
-            .lean()
-            .exec()
-        : Promise.resolve([]),
-      this.newCardsPerDay(caller),
-    ]);
+    if (deckId) await this.resolveAccessibleDeck(caller, deckId);
 
     // Calendar periods (week = Mon–Sun, month, year) shifted by `offset`
     // (0 = current, -1 = previous…). Daily buckets for week/month, monthly for year.
     const now = Date.now();
-    const bucketOf = (ms: number): string =>
-      range === "year" ? localDayKey(ms, timezone).slice(0, 7) : localDayKey(ms, timezone);
     const fmt = (d: Date): string =>
       `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
     const [ty, tm, td] = localDayKey(now, timezone).split("-").map(Number);
@@ -485,49 +501,119 @@ export class SrsService {
       label = `Năm ${y}`;
     }
     const series = new Map(bucketKeys.map((k) => [k, { key: k, reviews: 0, newCards: 0 }]));
-    const inRange = (ms: number): boolean => bucketKeys.length === 0 || series.has(bucketOf(ms));
+    const first = bucketKeys[0];
+    const last = bucketKeys[bucketKeys.length - 1];
+    const dayFmt = range === "year" ? "%Y-%m" : "%Y-%m-%d";
+    const startOfToday = new Date(localStartOfDay(now, timezone));
 
-    if (bucketKeys.length > 0) {
-      const first = bucketKeys[0];
-      const last = bucketKeys[bucketKeys.length - 1];
-      const sessions = await this.session
-        .find({
-          user: userId,
-          day:
-            range === "year"
-              ? { $gte: `${first}-01`, $lte: `${last}-31` }
-              : { $gte: first, $lte: last },
-          ...(deckId ? { deck: new Types.ObjectId(deckId) } : {}),
-        })
-        .lean()
-        .exec();
-      for (const ss of sessions) {
-        const b = series.get(range === "year" ? ss.day.slice(0, 7) : ss.day);
-        if (b) b.reviews += ss.cardsReviewed;
-      }
+    // Which cards count: one deck, or every deck the caller can read.
+    const deckObjId = deckId ? new Types.ObjectId(deckId) : null;
+    const deckFilterP: Promise<Record<string, unknown>> = deckObjId
+      ? Promise.resolve({ deck: deckObjId })
+      : this.deck
+          .find({ $or: [{ user: userId }, { shared: true, status: "PUBLISHED" }] }, { _id: 1 })
+          .lean()
+          .exec()
+          .then((ds) => ({ deck: { $in: ds.map((d) => d._id) } }));
+    const deckFilter = await deckFilterP;
+
+    // A single deck needs its card ids; "all decks" matches progress by user
+    // alone (index prefix) so no big `$in` list is built.
+    const cardMatch: Record<string, unknown> = deckObjId
+      ? {
+          card: {
+            $in: (await this.card.find(deckFilter, { _id: 1 }).lean().exec()).map((c) => c._id),
+          },
+        }
+      : {};
+    const bucketOfField = (field: unknown) => ({
+      $dateToString: { format: dayFmt, date: field, timezone },
+    });
+    const inPeriod = bucketKeys.length > 0 ? { $in: [bucketOfField({ $toDate: "$lastReviewedAtMs" }), bucketKeys] } : { $literal: true };
+
+    const [agg, totalCards, sessions, perDay] = await Promise.all([
+      this.progress
+        .aggregate<{
+          levels: { _id: string; n: number }[];
+          created: { _id: string; n: number }[];
+          total: { n: number }[];
+          today: { n: number }[];
+        }>([
+          { $match: { user: userId, ...cardMatch } },
+          {
+            $facet: {
+              levels: [
+                { $match: { $expr: inPeriod } },
+                {
+                  $group: {
+                    _id: {
+                      $switch: {
+                        branches: [
+                          {
+                            case: {
+                              $or: [
+                                { $gte: ["$state.lapses", 2] },
+                                { $lt: ["$state.ease", 1.8] },
+                                { $eq: ["$state.repetitions", 0] },
+                              ],
+                            },
+                            then: "hard",
+                          },
+                          { case: { $gte: ["$state.intervalDays", 60] }, then: "mastered" },
+                          { case: { $gte: ["$state.intervalDays", 21] }, then: "known" },
+                          { case: { $gte: ["$state.intervalDays", 7] }, then: "young" },
+                        ],
+                        default: "learning",
+                      },
+                    },
+                    n: { $sum: 1 },
+                  },
+                },
+              ],
+              created:
+                bucketKeys.length > 0
+                  ? [
+                      { $group: { _id: bucketOfField("$createdAt"), n: { $sum: 1 } } },
+                      { $match: { _id: { $in: bucketKeys } } },
+                    ]
+                  : [{ $match: { $expr: { $literal: false } } }],
+              total: [{ $count: "n" }],
+              today: [{ $match: { createdAt: { $gte: startOfToday } } }, { $count: "n" }],
+            },
+          },
+        ])
+        .exec(),
+      this.card.countDocuments(deckFilter).exec(),
+      bucketKeys.length > 0
+        ? this.session
+            .find({
+              user: userId,
+              day:
+                range === "year"
+                  ? { $gte: `${first}-01`, $lte: `${last}-31` }
+                  : { $gte: first, $lte: last },
+              ...(deckObjId ? { deck: deckObjId } : {}),
+            })
+            .lean()
+            .exec()
+        : Promise.resolve([]),
+      this.newCardsPerDay(caller),
+    ]);
+
+    const overview =
+      range === "all" ? await this.studyOverview(userId, deckObjId, localDayKey(now, timezone)) : undefined;
+    for (const ss of sessions) {
+      const b = series.get(range === "year" ? ss.day.slice(0, 7) : ss.day);
+      if (b) b.reviews += ss.cardsReviewed;
     }
-
+    const r = agg[0];
+    for (const c of r?.created ?? []) {
+      const b = series.get(c._id);
+      if (b) b.newCards += c.n;
+    }
     const keys = ["hard", "learning", "young", "known", "mastered"] as const;
-    const counts: Record<(typeof keys)[number], number> = {
-      hard: 0, learning: 0, young: 0, known: 0, mastered: 0,
-    };
-    const startOfToday = localStartOfDay(Date.now(), timezone);
-    let newToday = 0;
-    for (const p of progress) {
-      const s = p.state;
-      if (p.createdAt && p.createdAt.getTime() >= startOfToday) newToday += 1;
-      if (p.createdAt) {
-        const b = series.get(bucketOf(p.createdAt.getTime()));
-        if (b) b.newCards += 1;
-      }
-      // Mastery chart covers the cards reviewed inside the chosen period.
-      if (!inRange(p.lastReviewedAtMs)) continue;
-      if (s.lapses >= 2 || s.ease < 1.8 || s.repetitions === 0) counts.hard += 1;
-      else if (s.intervalDays >= 60) counts.mastered += 1;
-      else if (s.intervalDays >= 21) counts.known += 1;
-      else if (s.intervalDays >= 7) counts.young += 1;
-      else counts.learning += 1;
-    }
+    const counts = new Map((r?.levels ?? []).map((l) => [l._id, l.n]));
+    const learned = r?.total[0]?.n ?? 0;
     return {
       range,
       label,
@@ -535,11 +621,66 @@ export class SrsService {
       series: [...series.values()],
       reviewsInRange: [...series.values()].reduce((a, b) => a + b.reviews, 0),
       newInRange: [...series.values()].reduce((a, b) => a + b.newCards, 0),
-      total: ids.length,
-      unseen: ids.length - progress.length,
-      levels: keys.map((key) => ({ key, count: counts[key] })),
-      newToday,
+      total: totalCards,
+      unseen: Math.max(0, totalCards - learned),
+      levels: keys.map((key) => ({ key, count: counts.get(key) ?? 0 })),
+      newToday: r?.today[0]?.n ?? 0,
       newPerDay: perDay,
+      overview,
+    };
+  }
+
+  /** Heatmap of the last 26 weeks + streaks, from the per-day session tallies. */
+  private async studyOverview(
+    userId: Types.ObjectId,
+    deckId: Types.ObjectId | null,
+    todayKey: string,
+  ): Promise<NonNullable<Awaited<ReturnType<SrsService["masteryStats"]>>["overview"]>> {
+    const rows = await this.session
+      .aggregate<{ _id: string; n: number }>([
+        { $match: { user: userId, ...(deckId ? { deck: deckId } : {}) } },
+        { $group: { _id: "$day", n: { $sum: "$cardsReviewed" } } },
+      ])
+      .exec();
+    const byDay = new Map(rows.filter((r) => r.n > 0).map((r) => [r._id, r.n]));
+    const fmt = (d: Date): string =>
+      `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
+    const [y, m, d] = todayKey.split("-").map(Number);
+    const today = Date.UTC(y, m - 1, d);
+
+    // Heatmap: whole weeks (Mon–Sun) ending with the current one, up to today.
+    const dow = new Date(today).getUTCDay();
+    const start = today - (((dow + 6) % 7) + 25 * 7) * DAY_MS;
+    const heatmap: { key: string; reviews: number }[] = [];
+    for (let t = start; t <= today; t += DAY_MS) {
+      const key = fmt(new Date(t));
+      heatmap.push({ key, reviews: byDay.get(key) ?? 0 });
+    }
+
+    // Current streak: consecutive study days ending today (or yesterday).
+    let streak = 0;
+    let t = byDay.has(todayKey) ? today : today - DAY_MS;
+    while (byDay.has(fmt(new Date(t)))) {
+      streak += 1;
+      t -= DAY_MS;
+    }
+    // Best streak over the whole history.
+    let bestStreak = 0;
+    let run = 0;
+    let prev = 0;
+    for (const key of [...byDay.keys()].sort()) {
+      const [ky, km, kd] = key.split("-").map(Number);
+      const cur = Date.UTC(ky, km - 1, kd);
+      run = prev && cur - prev === DAY_MS ? run + 1 : 1;
+      prev = cur;
+      bestStreak = Math.max(bestStreak, run);
+    }
+    return {
+      heatmap,
+      streak,
+      bestStreak,
+      totalReviews: [...byDay.values()].reduce((a, b) => a + b, 0),
+      studyDays: byDay.size,
     };
   }
 
@@ -738,6 +879,38 @@ export class SrsService {
       ),
     );
 
+    // The same word in another deck is the same word: mirror the new state
+    // onto the caller's existing progress of its duplicates (no new rows).
+    const keyOf = (id: string): string | undefined => {
+      const c = byId.get(id);
+      return c ? cardDupKey(c.front, c.reading) : undefined;
+    };
+    const wanted = new Map<string, string>(); // dupKey → reviewed cardId
+    for (const id of writes.keys()) {
+      const k = keyOf(id);
+      if (k) wanted.set(k, id);
+    }
+    if (wanted.size > 0) {
+      const fronts = [...new Set([...writes.keys()].map((id) => byId.get(id)?.front).filter((f): f is string => !!f))];
+      const twins = await this.card.find({ front: { $in: fronts } }, { _id: 1, front: 1, reading: 1 }).lean().exec();
+      await Promise.all(
+        twins.flatMap((t) => {
+          const src = wanted.get(cardDupKey(t.front, t.reading));
+          if (!src || writes.has(String(t._id))) return [];
+          const w = writes.get(src);
+          if (!w) return [];
+          return [
+            this.progress
+              .updateOne(
+                { user: keyUser, card: t._id },
+                { $set: { state: w.state, dueAt: w.dueAt, dueDay: w.dueDay, lastReviewedAtMs: now } },
+              )
+              .exec(),
+          ];
+        }),
+      );
+    }
+
     // Aggregate into today's session, once per deck (P3-SRS-04 / P3-UI-03).
     const sessionDay = localDayKey(now, timezone);
     const device = detectDevice(input.userAgent);
@@ -771,6 +944,17 @@ export class SrsService {
 
     return results;
   }
+}
+
+/**
+ * Identity of a word across decks: kanji words match on written form + reading;
+ * kana-only words (empty reading) match on the kana itself, so hiragana and
+ * katakana spellings stay distinct.
+ */
+function cardDupKey(front: string, reading?: string): string {
+  const f = front.trim();
+  const r = (reading ?? "").trim();
+  return r && r !== f ? `${f}|${r}` : f;
 }
 
 /** Light user-agent heuristic for the session's `device` field (spec §4.4). */
