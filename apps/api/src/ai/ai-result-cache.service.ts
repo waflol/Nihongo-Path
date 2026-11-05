@@ -24,6 +24,20 @@ export function taskKey(task: AiTask): string {
   return createHash("sha1").update(raw.join("\u0001")).digest("hex");
 }
 
+/** Keep a key segment readable and free of `:` / glob characters (so SCAN patterns stay exact). */
+function seg(s: string | undefined, max = 40): string {
+  return (s ?? "").normalize("NFKC").trim().replace(/[\s:*?[\]\\]+/g, "_").slice(0, max) || "-";
+}
+
+/**
+ * Searchable Redis key of a saved answer:
+ * `ai:res:<word>:<kind>:<fingerprint>:<service>:<model>` — so `*犬*` finds a
+ * word and `*:Gemini:*` / `*:gemini-2.5-flash` finds what a service or model did.
+ */
+export function resKey(hash: string, about: { term?: string; kind?: string }, service?: string, model?: string): string {
+  return `ai:res:${seg(about.term)}:${seg(about.kind, 10)}:${hash.slice(0, 12)}:${seg(service)}:${seg(model)}`;
+}
+
 /** Saved AI answers. Best effort: without a database it simply never hits. */
 @Injectable()
 export class AiResultCacheService {
@@ -36,26 +50,38 @@ export class AiResultCacheService {
 
   /** Redis first (fast, shared), then the database (permanent); a database hit refills Redis. */
   async get(key: string): Promise<AiResult | null> {
-    const hot = await this.redis?.getJson<AiResult>(`ai:res:${key}`);
+    // `ai:ref:<fingerprint>` points at the readable `ai:res:…` key.
+    const ref = await this.redis?.getJson<string>(`ai:ref:${key}`);
+    const hot = ref ? await this.redis?.getJson<AiResult>(ref) : null;
     if (hot) return { ja: hot.ja, vi: hot.vi, matches: hot.matches };
     if (!this.model) return null;
     try {
       const d = await this.model.findOne({ key }).lean().exec();
       if (!d) return null;
       const r = { ja: d.ja, vi: d.vi, matches: d.matches };
-      void this.redis?.setJson(`ai:res:${key}`, { ...r, term: d.term, kind: d.kind }, REDIS_TTL_S);
+      this.putHot(key, { ...r, term: d.term, kind: d.kind, service: d.serviceLabel, model: d.modelName });
       return r;
     } catch {
       return null;
     }
   }
 
+  private putHot(
+    key: string,
+    v: AiResult & { term?: string; kind?: string; service?: string; model?: string },
+  ): void {
+    if (!this.redis) return;
+    const rk = resKey(key, v, v.service, v.model);
+    void this.redis.setJson(rk, v, REDIS_TTL_S);
+    void this.redis.setJson(`ai:ref:${key}`, rk, REDIS_TTL_S);
+  }
+
   async set(key: string, r: AiResult, serviceLabel = "", about?: { term: string; kind: string }): Promise<void> {
-    void this.redis?.setJson(`ai:res:${key}`, { ...r, ...about }, REDIS_TTL_S);
+    this.putHot(key, { ...r, ...about, service: r.service || serviceLabel, model: r.model });
     if (!this.model) return;
     try {
       await this.model
-        .updateOne({ key }, { $setOnInsert: { key, ja: r.ja, vi: r.vi, matches: r.matches, serviceLabel, term: about?.term, kind: about?.kind } }, { upsert: true })
+        .updateOne({ key }, { $setOnInsert: { key, ja: r.ja, vi: r.vi, matches: r.matches, serviceLabel: r.service || serviceLabel, modelName: r.model, term: about?.term, kind: about?.kind } }, { upsert: true })
         .exec();
     } catch {
       /* a lost cache write only means one repeated call */

@@ -31,6 +31,10 @@ export class AiResultCache {
   @Prop({ type: String, default: "" })
   serviceLabel: string;
 
+  /** Model that produced it (provenance only). */
+  @Prop({ type: String })
+  modelName?: string;
+
   createdAt: Date;
 }
 

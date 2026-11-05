@@ -99,6 +99,8 @@ export function RedisConsole() {
   const [message, setMessage] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
   const [confirmText, setConfirmText] = useState("");
   const [busy, setBusy] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [opening, setOpening] = useState<string | null>(null);
 
   const loadStatus = useCallback(async () => {
     const r = await api<Status>("/status");
@@ -121,10 +123,12 @@ export function RedisConsole() {
   const scan = useCallback(
     async (from: string, reset: boolean) => {
       setScanning(true);
+      setLoadingMore(!reset);
       const r = await api<{ cursor: string; keys: KeyInfo[] }>(
         `/keys?match=${encodeURIComponent(match)}&cursor=${from}&count=200`,
       );
       setScanning(false);
+      setLoadingMore(false);
       if (!r.ok || !r.data) {
         setMessage({ kind: "err", text: r.message ?? "Không quét được key" });
         return;
@@ -163,8 +167,10 @@ export function RedisConsole() {
   }, [status?.connected, loadTasks, loadSummary]);
 
   async function open(key: string) {
-    setDetail(null);
+    // Keep the old value on screen (no layout jump); a spinner shows while loading.
+    setOpening(key);
     const r = await api<KeyDetail>(`/key?key=${encodeURIComponent(key)}`);
+    setOpening((cur) => (cur === key ? null : cur));
     if (r.ok && r.data) setDetail(r.data);
     else setMessage({ kind: "err", text: r.message ?? "Không đọc được key" });
   }
@@ -382,15 +388,20 @@ export function RedisConsole() {
             </form>
 
             <div className="mt-3 grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-              <div className="overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--background-1)]">
-                <ul className="max-h-[28rem] divide-y divide-[var(--border)] overflow-y-auto">
-                  {keys.length === 0 && !scanning && (
+              <div className="relative min-h-[30rem] overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--background-1)]">
+                {scanning && !loadingMore ? (
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <span role="status" aria-label="Đang tải" className="h-8 w-8 animate-spin rounded-full border-[3px] border-[var(--border)] border-t-[var(--foreground)]" />
+                  </div>
+                ) : (
+                <ul className="max-h-[28rem] min-h-[28rem] divide-y divide-[var(--border)] overflow-y-auto">
+                  {keys.length === 0 && (
                     <li className="px-3 py-5 text-center text-sm text-[var(--muted-foreground)]">Không có key nào khớp.</li>
                   )}
                   {keys.map((k) => (
                     <li
                       key={k.key}
-                      className={"flex items-center gap-2 px-3 py-2 text-sm " + (detail?.key === k.key ? "bg-[var(--layer-hover)]" : "")}
+                      className={"flex items-center gap-2 px-3 py-2 text-sm " + ((opening ?? detail?.key) === k.key ? "bg-[var(--layer-hover)]" : "")}
                     >
                       <button type="button" onClick={() => void open(k.key)} className="min-w-0 flex-1 text-left" title={k.key}>
                         <span className="flex items-center gap-2">
@@ -418,8 +429,11 @@ export function RedisConsole() {
                     </li>
                   ))}
                 </ul>
+                )}
                 <div className="flex items-center justify-between border-t border-[var(--border)] px-3 py-2 text-xs text-[var(--muted-foreground)]">
-                  <span>{scanning ? "Đang quét…" : `${keys.length} key`}</span>
+                  <span className="inline-flex h-5 items-center gap-2">
+                    {scanning && !loadingMore ? "" : `${keys.length} key`}
+                  </span>
                   {more && (
                     <button type="button" className={btn} disabled={scanning} onClick={() => void scan(cursor, false)}>
                       Tải thêm
@@ -428,8 +442,12 @@ export function RedisConsole() {
                 </div>
               </div>
 
-              <div className="rounded-2xl border border-[var(--border)] bg-[var(--background-1)] p-3">
-                {!detail ? (
+              <div className="relative min-h-[16rem] rounded-2xl border border-[var(--border)] bg-[var(--background-1)] p-3">
+                {opening ? (
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <span role="status" aria-label="Đang tải" className="h-8 w-8 animate-spin rounded-full border-[3px] border-[var(--border)] border-t-[var(--foreground)]" />
+                  </div>
+                ) : !detail ? (
                   <p className="p-4 text-center text-sm text-[var(--muted-foreground)]">Chọn một key để xem giá trị.</p>
                 ) : (
                   <>

@@ -27,6 +27,9 @@ export interface AiResult {
   vi: string;
   /** `translate` only: the word really has the card's meaning in this sentence. */
   matches?: boolean;
+  /** Service label / model that produced it (kept in the saved result and its Redis key). */
+  service?: string;
+  model?: string;
 }
 
 interface Pending {
@@ -267,7 +270,7 @@ export class AiExampleService {
           : this.parse(await this.call(svc, this.prompt(items), "example", this.wordsOf(items)), items);
         if (out.size === 0) throw new AiFailure("transient", "empty or unreadable answer");
         void this.services.reportOk(svc.id);
-        for (const [id, r] of out) results.set(id, r);
+        for (const [id, r] of out) results.set(id, { ...r, service: svc.label, model: svc.model });
         if (!translator) return results;
         remaining = remaining.filter((p) => !results.has(p.id));
         if (remaining.length === 0) return results;
