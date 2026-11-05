@@ -230,7 +230,8 @@ chặn route, CRUD nội dung. Test case: `T-P2-01` … `T-P2-10`.
 
 > **Gate:** Q-03 (thuật toán SRS) **✅ đã chốt 03/11/2026** — SM-2 + state
 > versioned dự phòng FSRS (ADR-srs, `Accepted`). Q-12 (quyền nội dung)
-> **vẫn ⏸** → P3-IMPORT-05 (PDF) hoãn `[—]`; CSV/XLSX đầy đủ.
+> đã duyệt 05/11 (chỉ PDF tự soạn/có quyền) → P3-IMPORT-05 (PDF) đã làm `[~]`;
+> CSV/XLSX ≤ 10 MB, PDF ≤ 50 MB (06/11/2026).
 
 | ID | Task | Phụ thuộc | File/module | Hoàn thành khi | Kiểm thử | TT |
 |---|---|---|---|---|---|---|
@@ -300,7 +301,11 @@ chặn route, CRUD nội dung. Test case: `T-P2-01` … `T-P2-10`.
 >   dồn (đã thấy 1 doc có `seenCount: 5`), không fork.
 > - `studysessions`: 5 phiên, grades histogram + tz + device ghi đúng.
 >
-> **Chưa làm (còn mở):** P3-IMPORT-05 (parser PDF) — hoãn do Q-12.
+> **Chưa làm (còn mở):** P3-IMPORT-05 còn `[~]` (chưa bấm Xác nhận trên PDF thật).
+> **Bổ sung sau Sprint 3 (ngoài checklist gốc, 05–06/11/2026):** nhật ký/chặn IP,
+> dịch vụ AI do admin quản lý + benchmark + nhật ký gọi, cache kết quả AI, Redis console,
+> chỉ mục Tatoeba cục bộ, quản lý thẻ trong deck, giới hạn thẻ mới/ngày, thống kê
+> tiến độ, ôn chéo deck. Xem `architecture.md` §8.
 > Thao tác tay trong trình duyệt cho P3-UI-01/02/03 (build xanh + API đã
 > verify live, nhưng chưa bấm chuột) — sẽ bổ sung khi có môi trường
 > duyệt; **không tick `[x]` cho tới khi đó**.

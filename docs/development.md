@@ -3,7 +3,7 @@
 > Tài liệu cho dev local. Chạy 2 app trong monorepo pnpm, cấu hình env, bật
 > MongoDB thật, và các lưu ý kỹ thuật (ESM, Preline, port, Swagger).
 >
-> **Ngày cập nhật:** 30/10/2026 (kèm hoàn thành Phase P1).
+> **Ngày cập nhật:** 06/11/2026 (thêm env AI/Redis, nhập PDF, Tatoeba, admin AI/Redis).
 
 ## 1. Yêu cầu tối thiểu
 
@@ -85,8 +85,14 @@ WEB_ORIGIN=http://localhost:3001
 MONGODB_URL=
 MONGODB_URL_REQUIRED=false
 
-# Redis (dùng ở các sprint sau: queue/worker)
+# Redis (tuỳ chọn): cache kết quả AI dùng chung + xem task ở /admin/redis
 REDIS_URL=
+
+# AI tạo câu ví dụ (tuỳ chọn) — xem §4.1.2
+AI_KEY_SECRET=
+GEMINI_API_KEY=
+GEMINI_MODEL=
+GEMINI_RPM=10
 
 # Auth (dùng từ Phase P2)
 JWT_ACCESS_SECRET=
@@ -121,6 +127,23 @@ nút **Xuất CSV** theo bộ lọc hiện tại, tối đa 10.000 dòng).
 Lưu ý: IP nội bộ (127.x, 10.x, 192.168.x, 172.16–31.x…) không bao giờ bị tự
 chặn; IP trong allowlist cũng vậy. Chặn ở tầng ứng dụng chỉ chống flood nhỏ —
 DDoS thật cần chặn ở hạ tầng (Cloudflare / nginx / firewall).
+
+#### 4.1.2. AI, Tatoeba, Redis & nhập file
+
+- **Dịch vụ AI** (Gemini/Groq/OpenRouter/NVIDIA) được admin thêm ở `/admin/ai`:
+  khoá API được mã hoá AES-256-GCM bằng `AI_KEY_SECRET` (mặc định dùng
+  `JWT_ACCESS_SECRET` — **đổi secret này sẽ làm các khoá đã lưu không giải mã được**).
+  Có benchmark chấm điểm/xếp hạng, thử theo `priority`, tự nghỉ khi 429; các
+  request chạy song song giữa các dịch vụ. Nhật ký gọi AI xem ở `/admin/ai`
+  (lưu 30 ngày). `GEMINI_*` chỉ là dịch vụ dự phòng qua env.
+- **Chỉ mục Tatoeba cục bộ** (ví dụ nhanh, không gọi API ngoài):
+  ```bash
+  pnpm --filter @nihongo/api tatoeba:import -- --write
+  ```
+  Cần `MONGODB_URL`; ~35 MB dữ liệu / ~80 MB cả chỉ mục. Chưa nạp → fallback gọi API Tatoeba.
+- **Redis** (`REDIS_URL`, tuỳ chọn): không bắt buộc; thiếu thì bỏ qua. Console ở `/admin/redis`.
+- **Giới hạn file nhập:** CSV/XLSX ≤ **10 MB**, PDF ≤ **50 MB** (vượt → 413). PDF cần bảng có
+  cột STT; file scan (không có text) bị từ chối sớm sau 5 trang đầu.
 
 ### 4.2. UI — `apps/ui/.env`
 

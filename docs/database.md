@@ -16,7 +16,7 @@
 ### Identity
 | Collection | Trạng thái | Ghi chú |
 |---|---|---|
-| `users` | **Tạo Sprint 2 ✅** | `role` (USER/ADMIN/SUPER_ADMIN), `lang`, `status` (ACTIVE/SUSPENDED), `passwordHash` (scrypt `salt$hash`), `authAccounts[]`. Owner: admin. Index: `{email: 1}` sparse. |
+| `users` | **Tạo Sprint 2 ✅** | `role` (USER/ADMIN/SUPER_ADMIN), `lang`, `timezone` (mặc định `Asia/Ho_Chi_Minh`), `newCardsPerDay` (mặc định 20, 1–500: số thẻ **mới** tối đa mỗi deck mỗi ngày — chia nhỏ deck lớn ra nhiều ngày; chỉnh qua `PATCH /srs/settings`), `status` (ACTIVE/SUSPENDED), `passwordHash` (scrypt `salt$hash`), `authAccounts[]`. Owner: admin. Index: `{email: 1}` sparse. |
 | `auth_accounts` | **Tạo Sprint 2 ✅** | Liện kết 1:1 giữa user và provider (google/email; `provider: "github"` đã có trong enum nhưng chưa bật). `providerAccountId` = Google `sub` / email. Index: `{provider: 1, providerAccountId: 1}` **unique**. |
 | `auth_sessions` | **Tạo Sprint 2 ✅** | Refresh token opaque (128-bit, unique) + `expiresAt` (TTL theo `JWT_REFRESH_EXPIRES_IN`), `revokedAt` khi rotation/logout. Index: `{token: 1}` unique, `{user: 1, expiresAt: 1}`, `{expiresAt: 1}` TTL (xoá session hết hạn). |
 
@@ -30,6 +30,8 @@
 | `flashcard_decks` | **Tạo Sprint 3 ✅** | `title`, `summary`, `user` (ObjectId, **null cho deck chia sẻ**), `shared` (bool — admin viết, mọi user đã auth đọc), `level`, `lang`, `status` (DRAFT/PUBLISHED), `exampleTotal`/`exampleDone`/`examplePaused` (tiến độ tạo câu ví dụ nền sau khi nhập; 0 = không xử lý), `publishWhenReady` (deck mới tạo từ wizard nhập: giữ DRAFT đến khi tạo xong ví dụ rồi tự PUBLISHED). Index: `{user: 1, shared: 1, status: 1}`. |
 | `aiservices` | **Dịch vụ AI do admin quản lý ✅** | `provider` (preset: gemini/groq/openrouter/nvidia), `label`, `modelName`, `keyBox` (khoá API **mã hoá AES-256-GCM**, khoá giải mã từ `AI_KEY_SECRET` hoặc `JWT_ACCESS_SECRET`; không bao giờ trả về client), `keyHint` (4 ký tự cuối), `rpm`, `enabled`, `priority` (nhỏ = thử trước), `status` (ok/cooldown/invalid/error), `lastError`, `lastOkAt`, `cooldownUntil`. Quản lý ở `/admin/ai`; thử lần lượt theo `priority`, dịch vụ lỗi/hết hạn mức được nghỉ rồi tự chuyển sang dịch vụ kế. |
 | `tatoebasentences` | **Chỉ mục ví dụ cục bộ ✅** | `_id` (id câu Tatoeba), `ja` (câu tiếng Nhật ≤ 40 ký tự — toàn bộ ~244k câu), `vi` (bản dịch Việt của người, chỉ ~6k câu), `hasVi`, `tokens[]` (dạng từ điển của từ nội dung, bỏ trợ từ/trợ động từ/ký hiệu). Index `{tokens: 1, hasVi: -1}`. Nạp bằng `pnpm --filter api tatoeba:import -- --write` (~35 MB dữ liệu, ~80 MB cả chỉ mục); nguồn Tatoeba CC BY 2.0 FR. Tạo ví dụ cho thẻ: (1) cặp Nhật–Việt thật, (2) câu Nhật thật + AI dịch (Gemini), (3) AI viết, kuromoji kiểm tra; ví dụ lưu `source` = `tatoeba` / `ai-translated` / `ai`. Nếu chỉ mục rỗng, gọi API Tatoeba như cũ. |
+| `aicalllogs` | **Nhật ký gọi AI ✅** | Mỗi lần gọi một dịch vụ AI: `purpose` (example/test), `serviceId`/`serviceLabel`/`provider`/`modelName`, `endpoint`, `words[]`, `request`/`response` (đã cắt), `ok`, `status`, `ms`. **TTL 30 ngày** theo `createdAt`. Index: `{purpose}`, `{serviceId}`, `{ok}`, `{createdAt: -1}`. Xem/xoá ở `/admin/ai` (`GET/DELETE /flashcards/admin/ai/logs`). |
+| `airesultcache` | **Cache kết quả AI ✅** | `key` (**unique**), `ja`, `vi`, `matches`, `term`, `kind`, `serviceLabel`. Lưu bền kết quả dịch/ví dụ đã có để không gọi lại AI; Redis (nếu có `REDIS_URL`) là lớp cache nhanh dùng chung phía trước. |
 | `flashcards` | **Tạo Sprint 3 ✅** | `deck` (ref), `kind` (VOCABULARY/GRAMMAR/CUSTOM), `vocabulary`/`grammar` (ref, provenance khi wrap content — front/back được snapshot lên card để engine học tự chứa), `front`, `back`, `reading` (hiragana), `image`, `imageCredit`, `partOfSpeech`, `hanViet` (âm Hán Việt từ nguồn), `order` (STT trong file nhập, dùng để sắp xếp), `examples[]`, `tags[]`, `origin` (manual/import/saved), `dedupeKey` (sha256 của (front, back, reading) chuẩn hoá — reading rỗng thì trùng khoá cũ (front, back) — **máy tính server-side**; trùng = giống cả kanji, hiragana và nghĩa; lúc API khởi động các thẻ có reading được tính lại khoá một lần). Index: `{deck: 1}`, `{deck: 1, dedupeKey: 1}` **unique** (idempotent save/import, trùng lặp preview). |
 
 ### Progress
@@ -112,6 +114,21 @@ bắt buộc + unique (vd `user_subscriptions(userId, status)` unique một gói
 | `blockedips` | `BlockedIp` | `{ ip: 1 }` | **unique** | IP bị chặn (thủ công hoặc tự động) |
 | `blockedips` | `BlockedIp` | `{ expiresAt: 1 }` | TTL theo `expiresAt` | Hết hạn chặn → tự gỡ (không có `expiresAt` = vĩnh viễn) |
 | `allowedips` | `AllowedIp` | `{ ip: 1 }` | **unique** | IP không bao giờ bị chặn (allowlist) |
+
+### 3.4. Đã tạo (AI — `apps/api/src/ai/`)
+
+| Collection (actual) | Model | Index | Loại | Mục đích |
+|---|---|---|---|---|
+| `aicalllogs` | `AiCallLog` | `{ createdAt: -1 }`, `{ purpose: 1 }`, `{ serviceId: 1 }`, `{ ok: 1 }` | — | Lọc nhật ký gọi AI |
+| `aicalllogs` | `AiCallLog` | `{ createdAt: 1 }` | **TTL 30 ngày** | Tự xoá log cũ |
+| `airesultcache` | `AiResultCache` | `{ key: 1 }` | **unique** | Tra cứu cache theo khoá |
+
+### 3.5. Redis (tuỳ chọn — `REDIS_URL`)
+
+Không phải collection. Mọi khoá của app nằm dưới tiền tố `np:`:
+`np:ai:task:*` (request AI đang chạy), `np:ai:queue` (thẻ đang đợi),
+`np:ai:res:*` (kết quả đã lưu). Quản lý/xem/xoá ở `/admin/redis`
+(`/admin/redis/*`, chỉ ADMIN). Thiếu `REDIS_URL` → bỏ qua, chỉ dùng Mongo.
 
 Các module log chỉ có khi có `MONGODB_URL`. Truy vấn qua `GET /admin/logs*`
 (ADMIN / SUPER_ADMIN), UI ở `/admin/logs`.

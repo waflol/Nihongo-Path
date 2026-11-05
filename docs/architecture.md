@@ -1,6 +1,7 @@
 # Kiến trúc — Nihongo Path
 
-> Tài liệu kỹ thuật nội bộ. Phản ánh trạng thái đã quyết định đến Sprint 0/1. Mọi mục "chưa chốt"
+> Tài liệu kỹ thuật nội bộ. Phản ánh trạng thái đến Sprint 3 (flashcard/SRS/nhập file/AI, 06/11/2026);
+> §3–§4 là thiết kế bootstrap gốc, phần hiện trạng thực tế nằm ở **§8**. Mọi mục "chưa chốt"
 > đều gắn nhãn rõ. Không coi đây là cam kết phát hành.
 
 ## 1. Nguyên tắc tổng thể
@@ -120,11 +121,11 @@ src/
 | Lớp | Trạng thái | Ghi chú |
 |---|---|---|
 | Provider AI/STT (transcript, Kaiwa, speech eval) | **Chưa quyết định** | Trừu tượng hóa theo nhiệm vụ; benchmark trước khi chọn (spec §10) |
-| Redis / queue-worker | Chưa bật | Bổ sung khi tác vụ dài thực sự cần (import/STT/video) |
+| Redis / queue-worker | **Redis tuỳ chọn đã có** (cache kết quả AI, `/admin/redis`); queue-worker thật chưa | Worker riêng khi tác vụ dài thực sự cần (STT/video) |
 | Object storage | Trừu tượng, chưa chọn | Không lưu binary lớn trong Mongo |
 | Thanh toán provider + tiền tệ + gói | **Chưa quyết định** | spec §6; không bật giao dịch thật |
 | Google AdSense | Cờ tắt theo env (mặc định) | spec §7; chỉ bật sau khi Tôi có tài khoản/domain/chính sách |
-| Thuật toán spaced repetition | **Chưa quyết định** | So sánh trước khi chốt (spec §4.4) |
+| Thuật toán spaced repetition | **Đã chốt SM-2** (ADR-srs, Q-03) | State versioned, dự phòng FSRS |
 | Bộ phân tích hình thái (Kuromoji/Sudachi…) | **Chưa quyết định** | spec §4.7 |
 | Domain production + tên thương hiệu | **Chưa chốt** | Ảnh hưởng canonical/SEO (spec §17) |
 
@@ -148,3 +149,39 @@ apps/api (NestJS) ── REST + Swagger
 - RBAC + least privilege; audit log cho thao tác quản trị (khi có admin thật).
 - Webhook: chữ ký, idempotency, retry, quota (khi bật payment).
 - Monitoring/logging/alert cho API + worker + STT/AI + storage (khi có hạ tầng thật).
+
+## 8. Hiện trạng triển khai (06/11/2026)
+
+### 8.1. Backend — module `apps/api/src`
+
+| Module | Vai trò |
+|---|---|
+| `auth`, `users` | Đăng nhập email/Google, JWT access + refresh xoay vòng, vai trò USER/ADMIN/SUPER_ADMIN |
+| `content` | Giáo trình, bài, từ vựng, ngữ pháp (CRUD admin, đọc công khai) |
+| `flashcards` | Deck (cá nhân/chia sẻ), card, trùng lặp (`dedupeKey`), đọc hiragana, gợi ý ví dụ/ảnh |
+| `import` | Nhập CSV/XLSX (≤ 10 MB) và PDF bảng STT (≤ 50 MB): preview → confirm idempotent |
+| `srs` | SM-2, hàng đợi ôn theo ngày tz user, giới hạn thẻ mới/ngày (`newCardsPerDay`), thống kê tiến độ (Mongo aggregation), ôn chéo deck |
+| `ai` | Dịch vụ AI do admin quản lý (key mã hoá), benchmark, gọi song song, cache kết quả, nhật ký gọi |
+| `redis` | Kết nối tuỳ chọn + console quản trị; khoá tiền tố `np:` |
+| `logs` | Log request/ứng dụng/audit, thống kê truy cập, chặn IP & rate-block |
+| `health`, `config`, `database` | Liveness/readiness, validate env, Mongo graceful-degrade |
+
+### 8.2. Frontend — route `apps/ui/app`
+
+- Công khai: `/`, `/login`, `/register`.
+- Học viên: `/learn` (tiến độ), `/learn/decks`, `/learn/decks/[id]` (quản lý thẻ), `/learn/study`, `/learn/import`, `/learn/exercises`.
+- Admin (`/admin/(panel)`): `content`, `decks`, `decks/[id]`, `import`, `users`, `ai`, `ai-activity`, `ai-playground`, `redis`, `logs`.
+- UI gọi API qua route handler proxy `app/api/*` (trình duyệt không gọi thẳng API).
+
+### 8.3. Luồng nhập & tạo ví dụ
+
+```
+File (CSV/XLSX/PDF) → preview (không ghi DB) → confirm (idempotent)
+   → deck + card → nền: tạo câu ví dụ cho từng thẻ
+        1) Tatoeba cục bộ (cặp Nhật–Việt thật)
+        2) câu Nhật Tatoeba + AI dịch
+        3) AI viết, kuromoji kiểm tra
+   → cache (Mongo `airesultcache` + Redis) → deck tự PUBLISHED khi xong
+```
+
+Chi tiết schema: `database.md`; env & lệnh: `development.md`.
