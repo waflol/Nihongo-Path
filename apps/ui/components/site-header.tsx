@@ -91,7 +91,7 @@ export function SiteHeader() {
           </button>
 
           <Link
-            href="/login"
+            href="/learn"
             className="hidden md:inline-flex rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-semibold text-[var(--primary-foreground)] hover:bg-[var(--primary-hover)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--primary-focus)]"
           >
             Bắt đầu học

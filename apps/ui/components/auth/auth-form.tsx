@@ -2,6 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
+import { isSafeFrom } from "@/lib/safe-path";
 import { emitSessionChanged } from "@/lib/session-events";
 
 interface AuthFormProps {
@@ -68,7 +69,7 @@ export function AuthForm({ mode, admin }: AuthFormProps) {
     // in the learning area (both still honour `?from=` when it is a real
     // same-site path).
     const home = admin ? "/admin" : "/learn";
-    router.push(from && from.startsWith("/") ? from : home);
+    router.push(isSafeFrom(from) ? from : home);
     router.refresh();
   }
 

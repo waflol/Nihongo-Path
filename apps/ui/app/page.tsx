@@ -7,6 +7,7 @@ import SpotlightCard from "@/components/reactbits/SpotlightCard";
 import StarBorder from "@/components/reactbits/StarBorder";
 import ShinyText from "@/components/reactbits/ShinyText";
 import FadeContent from "@/components/reactbits/FadeContent";
+import { LoginCta } from "@/components/auth/login-cta";
 import { HeroScene } from "@/components/hero-scene";
 
 export const metadata: Metadata = {
@@ -69,12 +70,14 @@ export default function Home() {
               >
                 Vào khu học tập
               </StarBorder>
-              <Link
+              <LoginCta>
+                <Link
                 href="/login"
                 className="inline-flex h-12 items-center justify-center rounded-lg border border-white/50 bg-white/10 px-6 text-sm font-semibold text-white backdrop-blur-sm transition-colors hover:bg-white/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
               >
                 Đăng nhập
               </Link>
+              </LoginCta>
             </div>
           </div>
         </div>

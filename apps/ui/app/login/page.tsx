@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { redirectIfAuthenticated } from "@/lib/auth-redirect";
 import { AuthForm } from "@/components/auth/auth-form";
 import { GoogleSignIn } from "@/components/auth/google-sign-in";
 
@@ -15,7 +16,12 @@ export const metadata: Metadata = {
  * The form is a client component that POSTs to the `/api/auth/*` route
  * handlers, which own the httpOnly session cookie (P2-UI-05).
  */
-export default function LoginPage() {
+export default async function LoginPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ from?: string | string[] }>;
+}) {
+  await redirectIfAuthenticated(searchParams);
   return (
     <div className="mx-auto w-full max-w-md px-4 py-16 sm:px-6">
       <h1 className="text-2xl font-semibold tracking-tight text-[var(--foreground)]">

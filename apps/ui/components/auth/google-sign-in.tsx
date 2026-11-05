@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { isSafeFrom } from "@/lib/safe-path";
 import { emitSessionChanged } from "@/lib/session-events";
 
 const GIS_SRC = "https://accounts.google.com/gsi/client";
@@ -60,7 +61,7 @@ export function GoogleSignIn({ fromHref }: GoogleSignInProps) {
         target = fromHref;
       } else {
         const from = new URLSearchParams(window.location.search).get("from");
-        target = from && from.startsWith("/") ? from : "/learn";
+        target = isSafeFrom(from) ? from : "/learn";
       }
 
       const res = await fetch("/api/auth/login", {
