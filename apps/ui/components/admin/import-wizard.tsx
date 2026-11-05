@@ -10,7 +10,7 @@ import { DuplicatesPanel, type DuplicateInfo } from "@/components/admin/duplicat
  * lỗi, phát hiện trùng lặp và xác nhận trước khi nhập").
  *
  * Four steps over a single screen:
- *   1. Chọn file + bộ thẻ đích (CSV/XLSX/PDF, ≤ 10 MB)
+ *   1. Chọn file + bộ thẻ đích (CSV/XLSX ≤ 10 MB, PDF ≤ 50 MB)
  *   2. Ánh xạ cột (câu hỏi / đáp án / tags) — từ danh sách cột API trả về
  *   3. Xem trước từng dòng (ok / lỗi / trùng) + chính sách trùng
  *   4. Xác nhận nhập (idempotent — gửi lại không tạo bản ghi đôi)

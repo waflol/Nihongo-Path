@@ -211,14 +211,14 @@ export function RedisConsole() {
   const connected = status?.connected === true;
 
   return (
-    <div className="px-4 py-8 sm:px-6">
+    <div className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-semibold tracking-tight text-[var(--foreground)]">Quản lý Redis</h1>
         <button type="button" className={btn} onClick={() => void refreshAll()}>
           ↻ Làm mới
         </button>
       </div>
-      <p className="mt-2 max-w-3xl text-sm text-[var(--muted-foreground)]">
+      <p className="mt-1 max-w-3xl text-sm text-[var(--muted-foreground)]">
         Redis giữ kết quả AI đã tạo (để không hỏi lại) và các tác vụ AI đang chạy. Dữ liệu ở đây chỉ là bộ nhớ đệm: xoá
         đi thì hệ thống tự dựng lại từ cơ sở dữ liệu, không mất thẻ hay ví dụ đã lưu.
       </p>

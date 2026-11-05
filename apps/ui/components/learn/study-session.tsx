@@ -651,7 +651,7 @@ function StudySessionInner() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-4xl px-4 py-8 sm:px-6">
+    <div className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6">
       <ConfirmDialog
         open={confirmReset}
         title="Đặt lại tiến độ?"

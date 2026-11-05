@@ -67,7 +67,7 @@ export function BackupConsole() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-3xl px-4 py-8 sm:px-6">
+    <div className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6">
       <h1 className="text-2xl font-semibold tracking-tight text-[var(--foreground)]">Sao lưu dữ liệu</h1>
       <p className="mt-1 text-sm text-[var(--muted-foreground)]">
         Chọn nhóm dữ liệu rồi tải về một file <code>.json.gz</code> (Extended JSON, nén gzip). Mỗi lần tải được ghi vào “Thao tác admin”.

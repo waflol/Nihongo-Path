@@ -446,9 +446,9 @@ export function AiServicesConsole() {
   const ownCount = services.filter((s) => !s.readOnly).length;
 
   return (
-    <div className="px-4 py-8 sm:px-6">
+    <div className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6">
       <h1 className="text-2xl font-semibold tracking-tight text-[var(--foreground)]">Dịch vụ AI</h1>
-      <p className="mt-2 max-w-3xl text-sm text-[var(--muted-foreground)]">
+      <p className="mt-1 max-w-3xl text-sm text-[var(--muted-foreground)]">
         Dùng để dịch và viết câu ví dụ khi nhập thẻ. Hệ thống thử từng dịch vụ <strong>theo thứ tự từ trên xuống</strong>;
         nếu một dịch vụ hết hạn mức, bị lỗi hoặc từ chối thì tự chuyển sang dịch vụ kế tiếp (dịch vụ lỗi được nghỉ một lúc
         rồi mới thử lại). Khoá API được mã hoá khi lưu và không bao giờ hiển thị lại.
