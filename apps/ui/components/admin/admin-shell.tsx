@@ -107,17 +107,6 @@ const NAV: NavItem[] = [
     ),
   },
   {
-    href: "/admin/backup",
-    label: "Sao lưu dữ liệu",
-    desc: "Tải bản sao lưu (.json.gz)",
-    icon: (
-      <svg {...iconProps}>
-        <ellipse cx="12" cy="6" rx="8" ry="3" />
-        <path d="M4 6v6c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6" />
-      </svg>
-    ),
-  },
-  {
     href: "/admin/logs",
     label: "Nhật ký hệ thống",
     desc: "Theo dõi request tới backend",

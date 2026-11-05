@@ -13,7 +13,6 @@ import { buildContentModule } from "./content/content.module.js";
 import { buildFlashcardsModule } from "./flashcards/flashcards.module.js";
 import { buildSrsModule } from "./srs/srs.module.js";
 import { buildImportModule } from "./import/import.module.js";
-import { buildBackupModule } from "./backup/backup.module.js";
 import { buildLogsModule } from "./logs/logs.module.js";
 
 /**
@@ -53,8 +52,6 @@ import { buildLogsModule } from "./logs/logs.module.js";
     buildImportModule(),
     // Admin request-log viewer (GET /admin/logs).
     buildLogsModule(),
-    // Admin data backup (POST /admin/backup).
-    buildBackupModule(),
   ],
   controllers: [AppController],
   providers: [AppService],
