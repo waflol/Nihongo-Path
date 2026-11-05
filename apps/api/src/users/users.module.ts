@@ -1,5 +1,7 @@
 import { Module, type DynamicModule } from "@nestjs/common";
 import { buildAuthModule } from "../auth/auth.module.js";
+import { AdminUsersController } from "./admin-users.controller.js";
+import { AdminUsersService } from "./admin-users.service.js";
 import { UsersController } from "./users.controller.js";
 import { UsersService } from "./users.service.js";
 
@@ -19,8 +21,8 @@ export function buildUsersModule(): DynamicModule {
   return {
     module: UsersModule,
     imports: [buildAuthModule()],
-    controllers: [UsersController],
-    providers: [UsersService],
+    controllers: [UsersController, AdminUsersController],
+    providers: [UsersService, AdminUsersService],
   };
 }
 

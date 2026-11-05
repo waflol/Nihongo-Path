@@ -65,6 +65,28 @@ const NAV: NavItem[] = [
     ),
   },
   {
+    href: "/admin/users",
+    label: "Người dùng",
+    desc: "Tài khoản, trạng thái, phân quyền",
+    icon: (
+      <svg {...iconProps}>
+        <circle cx="9" cy="8" r="3.5" />
+        <path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 4.6a3.5 3.5 0 0 1 0 6.8M18 14.2a6.5 6.5 0 0 1 3.5 5.8" />
+      </svg>
+    ),
+  },
+  {
+    href: "/admin/backup",
+    label: "Sao lưu dữ liệu",
+    desc: "Tải bản sao lưu (.json.gz)",
+    icon: (
+      <svg {...iconProps}>
+        <ellipse cx="12" cy="6" rx="8" ry="3" />
+        <path d="M4 6v6c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6" />
+      </svg>
+    ),
+  },
+  {
     href: "/admin/logs",
     label: "Nhật ký hệ thống",
     desc: "Theo dõi request tới backend",
