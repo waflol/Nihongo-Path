@@ -1,13 +1,8 @@
-<svg width="224" height="56" viewBox="0 0 224 56" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Nihongo Path">
-  <!-- Placeholder logo: open book + progress path. Replace with approved brand (spec §17.2). -->
-  <g>
-    <!-- open book -->
-    <path d="M10 44 C24 36, 34 36, 40 40 C46 36, 56 36, 70 44 L70 14 C56 6, 46 6, 40 10 C34 6, 24 6, 10 14 Z" fill="currentColor" fill-opacity="0.12" stroke="currentColor" stroke-width="3" stroke-linejoin="round"/>
-    <path d="M40 10 L40 40" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
-    <!-- progress path -->
-    <path d="M84 40 L100 40 M108 40 L124 32 M132 30 L148 24" stroke="currentColor" stroke-width="3" stroke-linecap="round" opacity="0.9"/>
-    <circle cx="108" cy="40" r="4" fill="currentColor"/>
-    <circle cx="152" cy="22" r="5" fill="currentColor"/>
-  </g>
-  <text x="176" y="34" font-family="ui-sans-serif, system-ui, sans-serif" font-size="22" font-weight="700" fill="currentColor">Nihongo Path</text>
+<svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Nihongo Path">
+  <!-- Mark: Mt. Fuji with a rising vermilion sun; the snowcap's zig-zag reads as the path. Matches the hero scene. -->
+  <rect width="64" height="64" rx="14" fill="#4f46e5"/>
+  <circle cx="32" cy="27" r="13" fill="#ff5a3c"/>
+  <path d="M6 54 C16 51 25 38 28 30 C30.5 28.6 33.5 28.6 36 30 C39 38 48 51 58 54Z" fill="#fff"/>
+  <path d="M28 30 C30.5 28.6 33.5 28.6 36 30 L34.6 33.6 L32 31.4 L29.4 33.6Z" fill="#fff"/>
+  <path d="M25.5 38.5 L28.5 35.2 L31 38 L33.2 35 L36.2 38.3 L39 36" stroke="#4f46e5" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
 </svg>

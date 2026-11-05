@@ -7,6 +7,7 @@ import SpotlightCard from "@/components/reactbits/SpotlightCard";
 import StarBorder from "@/components/reactbits/StarBorder";
 import ShinyText from "@/components/reactbits/ShinyText";
 import FadeContent from "@/components/reactbits/FadeContent";
+import { HeroScene } from "@/components/hero-scene";
 
 export const metadata: Metadata = {
   title: "Học tiếng Nhật mỗi ngày",
@@ -40,40 +41,43 @@ export default function Home() {
   return (
     <div>
       {/* Hero */}
-      <section className="border-b border-[var(--border)] bg-[var(--background-1)]">
-        <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
+      <section className="relative min-h-[460px] overflow-hidden border-b border-[var(--border)] bg-gradient-to-b from-[#1e1b4b] via-[#4f46e5] to-[#fed7aa]">
+        <HeroScene className="pointer-events-none absolute inset-0" />
+        <div className="relative mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8">
+          <div className="grid items-center gap-8 lg:grid-cols-2">
           <div className="max-w-2xl">
             <h1 className="sr-only">{siteConfig.name}</h1>
             <BlurText
               text={siteConfig.name}
               animateBy="words"
-              className="text-4xl font-bold tracking-tight text-[var(--foreground)] sm:text-5xl"
+              className="text-4xl font-bold tracking-tight text-white sm:text-5xl"
             />
-            <p className="mt-4 text-lg text-[var(--muted-foreground)]">
-              <ShinyText text={siteConfig.tagline} color="var(--muted-foreground)" shineColor="var(--primary)" />
+            <p className="mt-4 text-lg text-white/80">
+              <ShinyText text={siteConfig.tagline} color="rgba(255,255,255,0.8)" shineColor="#ffffff" />
             </p>
-            <p className="mt-4 text-base text-[var(--foreground)]">
+            <p className="mt-4 text-base text-white/90">
               {siteConfig.defaultDescription}
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
               <StarBorder
                 as="a"
                 href="/learn"
-                color="var(--primary)"
-                backgroundColor="var(--primary)"
-                textColor="var(--primary-foreground)"
-                className="text-sm font-semibold"
+                color="#ffffff"
+                backgroundColor="#ff5a3c"
+                textColor="#ffffff"
+                className="h-12 px-6! py-0! text-sm font-semibold"
               >
                 Vào khu học tập
               </StarBorder>
               <Link
                 href="/login"
-                className="rounded-lg border border-[var(--border)] px-5 py-2.5 text-sm font-semibold text-[var(--foreground)] hover:bg-[var(--layer-hover)]"
+                className="inline-flex h-12 items-center justify-center rounded-lg border border-white/50 bg-white/10 px-6 text-sm font-semibold text-white backdrop-blur-sm transition-colors hover:bg-white/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
               >
                 Đăng nhập
               </Link>
             </div>
           </div>
+        </div>
         </div>
       </section>
 
