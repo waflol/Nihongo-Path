@@ -158,7 +158,8 @@ export function StudyComplete({
   grades: GradeCounts;
   resetting: boolean;
   onBack?: () => void;
-  onReset: () => void;
+  /** Omitted for the cross-deck review, which has no single deck to reset. */
+  onReset?: () => void;
   onRestart?: () => void;
   restartLabel?: string;
 }) {
@@ -272,15 +273,17 @@ export function StudyComplete({
               ← Quay lại thẻ cuối cùng
             </button>
           )}
-          <button
-            type="button"
-            onClick={onReset}
-            disabled={resetting}
-            className="hover:text-white disabled:opacity-50"
-            title="Xoá tiến độ của bộ thẻ — mọi thẻ thành thẻ mới (thẻ vẫn giữ nguyên)"
-          >
-            {resetting ? "Đang đặt lại…" : "Đặt lại thẻ ghi nhớ"}
-          </button>
+          {onReset && (
+            <button
+              type="button"
+              onClick={onReset}
+              disabled={resetting}
+              className="hover:text-white disabled:opacity-50"
+              title="Xoá tiến độ của bộ thẻ — mọi thẻ thành thẻ mới (thẻ vẫn giữ nguyên)"
+            >
+              {resetting ? "Đang đặt lại…" : "Đặt lại thẻ ghi nhớ"}
+            </button>
+          )}
           <Link href="/learn/decks" className="hover:text-white">
             Về danh sách bộ thẻ
           </Link>

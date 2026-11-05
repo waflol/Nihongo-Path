@@ -139,6 +139,9 @@ interface DeckRef {
   shared: boolean;
 }
 
+/** Cross-deck review: every card already learned, whichever deck it is in. */
+const ALL_DECKS: DeckRef = { _id: "all", title: "Tất cả thẻ đã học", shared: false };
+
 interface BatchResult {
   cardId: string;
   state: SrsState;
@@ -370,8 +373,8 @@ function StudySessionInner() {
       setDecks(list);
 
       const target = deckParam
-        ? list.find((d) => d._id === deckParam) ?? list[0]
-        : list[0];
+        ? list.find((d) => d._id === deckParam) ?? ALL_DECKS
+        : ALL_DECKS;
       if (!target) {
         setQueue(null);
         setLoading(false);
@@ -686,11 +689,15 @@ function StudySessionInner() {
               <select
                 value={deck?._id ?? ""}
                 onChange={(e) => {
-                  const next = decks.find((d) => d._id === e.target.value);
+                  const next =
+                    e.target.value === ALL_DECKS._id
+                      ? ALL_DECKS
+                      : decks.find((d) => d._id === e.target.value);
                   if (next) void switchDeck(next);
                 }}
                 className="ml-1 rounded-lg border border-[var(--border)] bg-[var(--background)] px-2 py-1 text-sm text-[var(--foreground)]"
               >
+                <option value={ALL_DECKS._id}>{ALL_DECKS.title}</option>
                 {decks.map((d) => (
                   <option key={d._id} value={d._id}>
                     {d.title}
@@ -725,7 +732,7 @@ function StudySessionInner() {
             setIndex(Math.max(0, sessionList.length - 1));
             setFlipped(false);
           }}
-          onReset={() => setConfirmReset(true)}
+          onReset={deck?._id === ALL_DECKS._id ? undefined : () => setConfirmReset(true)}
           onRestart={restartWeak}
           restartLabel={weakCards.length === 0 ? "Đặt lại" : "Học lại phiên này"}
         />
@@ -733,7 +740,9 @@ function StudySessionInner() {
 
       {!loading && queue && !merged.length && queue.total === 0 && (
         <div className="mt-8 rounded-2xl border border-dashed border-[var(--border)] p-8 text-center text-sm text-[var(--muted-foreground)]">
-          Chưa có thẻ nào trong bộ này. Tạo thẻ tại{" "}
+          {deck?._id === ALL_DECKS._id
+            ? "Bạn chưa học thẻ nào để ôn tập. Hãy học thẻ mới từ một bộ thẻ tại"
+            : "Chưa có thẻ nào trong bộ này. Tạo thẻ tại"}{" "}
           <Link href="/learn/decks" className="font-medium text-[var(--primary)] hover:underline">
             danh sách bộ thẻ
           </Link>{" "}
@@ -749,7 +758,7 @@ function StudySessionInner() {
           reviews={0}
           grades={queue.grades ?? { AGAIN: 0, HARD: 0, GOOD: 0, EASY: 0 }}
           resetting={resetting}
-          onReset={() => setConfirmReset(true)}
+          onReset={deck?._id === ALL_DECKS._id ? undefined : () => setConfirmReset(true)}
           onRestart={restartWeak}
           restartLabel={weakCards.length === 0 ? "Đặt lại" : "Học lại phiên này"}
         />
