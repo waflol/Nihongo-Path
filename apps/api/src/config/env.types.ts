@@ -43,6 +43,9 @@ export interface Env {
   /** Initial password for `ADMIN_EMAIL` (used only on the create path, min 8 chars). */
   ADMIN_PASS?: string;
 
+  /** Redis connection URL (optional): shared AI-result cache + task view in the admin. */
+  REDIS_URL?: string;
+
   // --- AI example sentences (optional, free Google AI Studio tier). ---
   /** Secret that encrypts AI keys stored by the admin page (default: JWT_ACCESS_SECRET). */
   AI_KEY_SECRET?: string;

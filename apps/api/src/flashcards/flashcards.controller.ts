@@ -14,7 +14,7 @@ import {
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from "@nestjs/swagger";
 import { Type } from "class-transformer";
 import type { Response } from "express";
-import { IsInt, IsOptional, Max, Min } from "class-validator";
+import { IsArray, IsInt, IsOptional, IsString, Max, Min, ValidateNested } from "class-validator";
 import { ContentAdmin } from "../auth/decorators/roles.decorator.js";
 import { CurrentUser } from "../auth/decorators/current-user.decorator.js";
 import type { AuthUser } from "../auth/auth.types.js";
@@ -39,6 +39,28 @@ class ListCardsQuery {
   @Min(1)
   @Max(500)
   limit?: number;
+}
+
+/** Query for the paged card manager list. */
+class PageCardsQuery {
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) page?: number;
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(100) pageSize?: number;
+  @IsOptional() @IsString() q?: string;
+  @IsOptional() @IsString() tag?: string;
+  @IsOptional() @IsString() missing?: string;
+}
+
+class CardFilterDto {
+  @IsOptional() @IsString() q?: string;
+  @IsOptional() @IsString() tag?: string;
+  @IsOptional() missing?: boolean;
+}
+
+class BulkTagsDto {
+  @IsOptional() @IsArray() @IsString({ each: true }) ids?: string[];
+  @IsOptional() @ValidateNested() @Type(() => CardFilterDto) filter?: CardFilterDto;
+  @IsOptional() @IsArray() @IsString({ each: true }) add?: string[];
+  @IsOptional() @IsArray() @IsString({ each: true }) remove?: string[];
 }
 
 /**
@@ -130,6 +152,33 @@ export class FlashcardsController {
     @Query() query: ListCardsQuery,
   ) {
     return this.flashcards.listCards(caller, id, query.limit ?? 100);
+  }
+
+  @Get("decks/:id/cards/page")
+  @ApiOperation({ summary: "Paged + filtered cards of a deck, with its tag list" })
+  pageCards(
+    @CurrentUser() caller: AuthUser,
+    @Param("id") id: string,
+    @Query() query: PageCardsQuery,
+  ) {
+    return this.flashcards.pageCards(caller, id, {
+      page: query.page ?? 1,
+      pageSize: query.pageSize ?? 30,
+      q: query.q,
+      tag: query.tag,
+      missing: query.missing === "1" || query.missing === "true",
+    });
+  }
+
+  @Post("decks/:id/cards/tags")
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: "Add / remove tags on many cards (ids or a filter)" })
+  bulkTags(
+    @CurrentUser() caller: AuthUser,
+    @Param("id") id: string,
+    @Body() body: BulkTagsDto,
+  ) {
+    return this.flashcards.bulkTags(caller, id, body);
   }
 
   @Post("cards")

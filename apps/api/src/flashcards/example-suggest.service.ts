@@ -2,6 +2,7 @@ import { Injectable, Logger, Optional } from "@nestjs/common";
 import { InjectModel } from "@nestjs/mongoose";
 import type { Model } from "mongoose";
 import type { TatoebaSentenceDocument } from "./schemas/tatoeba.schema.js";
+import { AiExampleService } from "../ai/ai-example.service.js";
 import {
   ReadingService,
   toHiragana,
@@ -11,8 +12,13 @@ import {
 
 export interface ExampleSuggestion {
   sentence: string;
-  /** Vietnamese translation (Tatoeba contributors). */
+  /** Vietnamese translation (Tatoeba contributors, or AI — see `source`). */
   translation: string;
+  /**
+   * Where it came from: a real Tatoeba pair, a real Tatoeba sentence translated
+   * by AI, or a sentence written by AI.
+   */
+  source?: "tatoeba" | "ai-translated" | "ai";
 }
 
 export interface ExampleSuggestInput {
@@ -61,6 +67,7 @@ export class ExampleSuggestService {
     @Optional()
     @InjectModel("TatoebaSentence")
     private readonly local?: Model<TatoebaSentenceDocument>,
+    @Optional() private readonly ai?: AiExampleService,
   ) {}
 
   private localReadyAt = 0;
@@ -149,10 +156,8 @@ export class ExampleSuggestService {
     reading: string,
     meanings: string[],
   ): Promise<ExampleSuggestion | null> {
-    const base = (t: { surface_form: string; basic_form: string }) =>
-      t.basic_form && t.basic_form !== "*" ? t.basic_form : t.surface_form;
     const docs = await this.local!
-      .find({ tokens: { $all: [...new Set(termTokens.map(base))] } })
+      .find({ tokens: { $all: this.contentForms(termTokens) }, hasVi: true })
       .limit(60)
       .lean()
       .exec();
@@ -160,16 +165,96 @@ export class ExampleSuggestService {
     for (const d of docs) {
       const sentence = d.ja.trim();
       if (!sentence || sentence === term || sentence.length > 40) continue;
-      if (meanings.length > 0 && !this.mentionsMeaning(d.vi, meanings)) continue;
+      if (meanings.length > 0 && !this.mentionsMeaning(d.vi ?? "", meanings)) continue;
       if (!(await this.usesWord(sentence, termTokens, pos, reading))) continue;
       let score = -Math.abs(sentence.length - 12);
       if (/[。！？]$/.test(sentence)) score += 2;
       if (sentence.length < 5) score -= 6;
       if (!best || score > best.score) {
-        best = { score, value: { sentence, translation: d.vi.trim() } };
+        best = { score, value: { sentence, translation: (d.vi ?? "").trim(), source: "tatoeba" } };
       }
     }
     return best?.value ?? null;
+  }
+
+  /**
+   * Dictionary forms of a word's content tokens (particles / auxiliaries /
+   * symbols dropped) — the same rule `scripts/import-tatoeba.mjs` uses when it
+   * builds the `tokens` index.
+   */
+  private contentForms(
+    termTokens: { surface_form: string; basic_form: string; pos: string }[],
+  ): string[] {
+    const base = (t: { surface_form: string; basic_form: string }) =>
+      t.basic_form && t.basic_form !== "*" ? t.basic_form : t.surface_form;
+    const skip = new Set(["記号", "助詞", "助動詞"]);
+    const kept = termTokens.filter((t) => !skip.has(t.pos));
+    return [...new Set((kept.length > 0 ? kept : termTokens).map(base))];
+  }
+
+  /**
+   * Best-effort example for a card, in three steps (first hit wins):
+   *  1. a real Tatoeba pair with a human Vietnamese translation;
+   *  2. a real Tatoeba sentence that uses the word, translated by AI;
+   *  3. a sentence written by AI, kept only if kuromoji confirms it really
+   *     uses the word (same checks as the Tatoeba sentences).
+   * Without an AI key, step 2 keeps the Japanese sentence untranslated and
+   * step 3 is skipped. Used by the import worker; `suggest` stays the quick
+   * path for adding a single card.
+   */
+  async suggestFull(input: ExampleSuggestInput): Promise<ExampleSuggestion | null> {
+    const first = await this.suggest(input);
+    if (first || !(await this.hasLocalIndex())) return first;
+
+    const term = input.term.replace(/[（(][^）)]*[）)]/g, "").trim();
+    if (!term || term.length > 30 || !HAS_JAPANESE.test(term)) return null;
+    try {
+      const termTokens = (await this.morph.tokens(term)).filter((t) => t.pos !== "記号");
+      if (termTokens.length === 0) return null;
+      const pos = input.partOfSpeech || tokenPos(termTokens[termTokens.length - 1]) || null;
+      const reading = (input.reading ?? "").trim();
+      const meaning = (input.meaning ?? "").trim();
+
+      // 2. a real sentence without a Vietnamese translation.
+      const docs = await this.local!
+        .find({ tokens: { $all: this.contentForms(termTokens) }, hasVi: { $ne: true } })
+        .limit(150)
+        .lean()
+        .exec();
+      let best: { score: number; sentence: string } | null = null;
+      for (const d of docs) {
+        const sentence = d.ja.trim();
+        if (!sentence || sentence === term || sentence.length > 40) continue;
+        if (!(await this.usesWord(sentence, termTokens, pos, reading))) continue;
+        let score = -Math.abs(sentence.length - 12);
+        if (/[。！？]$/.test(sentence)) score += 2;
+        if (sentence.length < 5) score -= 6;
+        if (!best || score > best.score) best = { score, sentence };
+      }
+      if (best) {
+        if (!this.ai || !(await this.ai.isEnabled())) {
+          return { sentence: best.sentence, translation: "", source: "tatoeba" };
+        }
+        const r = await this.ai.run({ kind: "translate", ja: best.sentence, term, meaning });
+        if (r && r.matches !== false) {
+          return { sentence: best.sentence, translation: r.vi, source: "ai-translated" };
+        }
+        // `matches === false` → a different sense of the word: write our own.
+      }
+
+      // 3. a sentence written by AI, verified like the others.
+      if (this.ai && (await this.ai.isEnabled())) {
+        const r = await this.ai.run({ kind: "write", term, reading, meaning, pos: pos ?? "" });
+        const sentence = r?.ja?.trim() ?? "";
+        if (r && sentence && sentence.length <= 40 && (await this.usesWord(sentence, termTokens, pos, reading))) {
+          return { sentence, translation: r.vi, source: "ai" };
+        }
+      }
+      return null;
+    } catch (err) {
+      this.logger.warn(`Full example suggestion failed: ${(err as Error).message}`);
+      return null;
+    }
   }
 
   /** Words of the card's meaning ("ăn (động từ)" → ["ăn"]). */

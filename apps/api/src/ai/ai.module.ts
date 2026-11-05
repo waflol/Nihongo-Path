@@ -1,6 +1,10 @@
 import { Module, type DynamicModule } from "@nestjs/common";
 import { MongooseModule } from "@nestjs/mongoose";
 import { buildDatabaseModule } from "../database/database.module.js";
+import { AiResultCacheService } from "./ai-result-cache.service.js";
+import { AiResultCacheSchema } from "./ai-result-cache.schema.js";
+import { AiCallLogService } from "./ai-call-log.service.js";
+import { AiCallLogSchema } from "./ai-call-log.schema.js";
 import { AiExampleService } from "./ai-example.service.js";
 import { AiServicesController } from "./ai-services.controller.js";
 import { AiServiceConfig, AiServiceSchema } from "./ai-service.schema.js";
@@ -20,11 +24,14 @@ export function buildAiModule(): DynamicModule {
     module: AiModule,
     imports: [
       buildDatabaseModule(),
-      MongooseModule.forFeature([{ name: "AiService", schema: AiServiceSchema }]),
+      MongooseModule.forFeature([{ name: "AiService", schema: AiServiceSchema },
+        { name: "AiCallLog", schema: AiCallLogSchema },
+        { name: "AiResultCache", schema: AiResultCacheSchema },
+      ]),
     ],
     controllers: [AiServicesController],
-    providers: [AiServicesService, AiExampleService],
-    exports: [AiServicesService, AiExampleService],
+    providers: [AiServicesService, AiExampleService, AiCallLogService, AiResultCacheService],
+    exports: [AiServicesService, AiExampleService, AiCallLogService, AiResultCacheService],
   };
 }
 

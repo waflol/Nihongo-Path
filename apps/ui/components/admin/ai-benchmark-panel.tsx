@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useMemo, useState } from "react";
+import { Icon } from "@/components/learn/icons";
 import { bestOf, DEFAULT_SPEED_WEIGHT, MIN_ACCURACY, rankServices, speedScore, type Ranked } from "@/lib/ai-benchmark-score";
 
 export interface BenchRun {
@@ -67,6 +68,8 @@ export interface BenchService {
 
 const API = "/api/flashcards/admin/ai";
 /** Same look as the buttons on the service rows: one height, no wrapping. */
+const iconBtn =
+  "inline-flex size-9 items-center justify-center rounded-lg border border-[var(--border)] text-[var(--foreground)] hover:bg-[var(--layer-hover)] disabled:opacity-60";
 const btn =
   "inline-flex h-8 min-w-[5.5rem] items-center justify-center whitespace-nowrap rounded-lg border border-[var(--border)] px-3 text-xs font-medium text-[var(--foreground)] hover:bg-[var(--layer-hover)] disabled:opacity-50";
 /** The two main actions share one width. */
@@ -421,12 +424,26 @@ export function AiBenchmarkPanel({
                           </td>
                         )}
                         <td className="px-3 py-2 text-right">
-                          <div className="flex flex-col items-end gap-1.5">
-                            <button type="button" className={btn} aria-expanded={openId === s.id} onClick={() => setOpenId(openId === s.id ? null : s.id)}>
-                              {openId === s.id ? "Ẩn kết quả" : "Xem kết quả"}
+                          <div className="flex items-center justify-end gap-1.5">
+                            <button
+                              type="button"
+                              className={iconBtn}
+                              aria-expanded={openId === s.id}
+                              aria-label={openId === s.id ? "Ẩn kết quả" : "Xem kết quả"}
+                              title={openId === s.id ? "Ẩn kết quả" : "Xem kết quả"}
+                              onClick={() => setOpenId(openId === s.id ? null : s.id)}
+                            >
+                              <Icon name={openId === s.id ? "chevron-up" : "eye"} />
                             </button>
-                            <button type="button" className={btn} disabled={running.has(s.id)} onClick={() => void run([s.id])}>
-                              {running.has(s.id) ? "Đang chấm…" : "Chấm lại"}
+                            <button
+                              type="button"
+                              className={iconBtn}
+                              disabled={running.has(s.id)}
+                              aria-label="Chấm lại"
+                              title={running.has(s.id) ? "Đang chấm…" : "Chấm lại"}
+                              onClick={() => void run([s.id])}
+                            >
+                              <Icon name="refresh" className={"size-4" + (running.has(s.id) ? " animate-spin" : "")} />
                             </button>
                           </div>
                         </td>

@@ -8,10 +8,13 @@
  *
  * Downloads three small official exports (~4 MB) from downloads.tatoeba.org:
  * Japanese sentences, Vietnamese sentences and their jpn↔vie links. Keeps
- * only Japanese sentences (≤ 40 chars) that have a Vietnamese translation —
- * the same filter the live lookup applies — tokenises each with kuromoji and
- * stores `{ ja, vi, tokens }`. `tokens` are the sentence's dictionary forms,
- * so a card's word is found by one indexed query.
+ * EVERY Japanese sentence of ≤ 40 chars (~244k), tokenises each with kuromoji
+ * and stores `{ ja, vi?, hasVi, tokens }`. `vi` is the human Vietnamese
+ * translation when one exists (~6k sentences); the rest get translated by AI
+ * when a card needs them. `tokens` are the sentence's content-word dictionary
+ * forms (particles / auxiliaries / symbols dropped), so a card's word is found
+ * by one indexed query. Keep the token rule in sync with `contentForms()` in
+ * example-suggest.service.ts.
  *
  * Idempotent (upsert by Tatoeba id); re-run to refresh. The data is CC BY 2.0
  * FR (Tatoeba contributors).
@@ -48,28 +51,33 @@ const jpn = new Map(jpnRows.filter((r) => r.length >= 3).map((r) => [r[0], r[2]]
 const vie = new Map(vieRows.filter((r) => r.length >= 3).map((r) => [r[0], r[2]]));
 
 // One Japanese sentence may have several Vietnamese translations: keep the first.
-const pairs = new Map();
+const viOf = new Map();
 for (const [a, b] of linkRows) {
-  const ja = jpn.get(a);
   const vi = vie.get(b);
-  if (ja && vi && ja.length <= MAX_LEN && !pairs.has(a)) pairs.set(a, { ja, vi });
+  if (vi && !viOf.has(a)) viOf.set(a, vi);
 }
-console.log(`jpn ${jpn.size}, vie ${vie.size}, links ${linkRows.length} → ${pairs.size} usable pairs`);
+const pairs = new Map();
+for (const [id, ja] of jpn) {
+  if (ja.length <= MAX_LEN) pairs.set(id, { ja, vi: viOf.get(id) ?? null });
+}
+console.log(`jpn ${jpn.size}, vie ${vie.size}, links ${linkRows.length} → ${pairs.size} sentences ≤ ${MAX_LEN} chars (${[...pairs.values()].filter((p) => p.vi).length} with Vietnamese)`);
 
 const dicPath = join(dirname(require.resolve("kuromoji/package.json")), "dict");
 const tk = await new Promise((resolve, reject) =>
   kuromoji.builder({ dicPath }).build((e, t) => (e ? reject(e) : resolve(t))),
 );
 
+const SKIP_POS = new Set(["記号", "助詞", "助動詞"]);
 const docs = [...pairs].map(([id, { ja, vi }]) => ({
   _id: Number(id),
   ja,
-  vi,
+  ...(vi ? { vi } : {}),
+  hasVi: Boolean(vi),
   tokens: [
     ...new Set(
       tk
         .tokenize(ja)
-        .filter((t) => t.pos !== "記号")
+        .filter((t) => !SKIP_POS.has(t.pos))
         .map((t) => (t.basic_form && t.basic_form !== "*" ? t.basic_form : t.surface_form)),
     ),
   ],
@@ -86,7 +94,8 @@ const url = process.env.MONGODB_URL?.trim();
 if (!url) throw new Error("MONGODB_URL is not set");
 await mongoose.connect(url);
 const col = mongoose.connection.collection("tatoebasentences");
-await col.createIndex({ tokens: 1 });
+await col.createIndex({ tokens: 1, hasVi: -1 });
+await col.dropIndex("tokens_1").catch(() => {}); // superseded by the compound index
 for (let i = 0; i < docs.length; i += 500) {
   await col.bulkWrite(
     docs.slice(i, i + 500).map((d) => ({

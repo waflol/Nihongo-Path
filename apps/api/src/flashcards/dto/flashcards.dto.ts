@@ -73,6 +73,12 @@ export class CreateDeckDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
+  @MaxLength(60)
+  category?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
   @MaxLength(10)
   lang?: string;
 
@@ -107,6 +113,12 @@ export class UpdateDeckDto {
   @IsString()
   @MaxLength(20)
   level?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(60)
+  category?: string;
 
   @ApiPropertyOptional()
   @IsOptional()

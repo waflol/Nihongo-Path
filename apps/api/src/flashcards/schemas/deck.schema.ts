@@ -36,6 +36,10 @@ export class FlashcardDeck {
   @Prop({ type: String, trim: true })
   level?: string;
 
+  /** Free-form grouping label (e.g. "Từ vựng", "Kanji", "Ngữ pháp"). */
+  @Prop({ type: String, trim: true, default: "" })
+  category?: string;
+
   @Prop({ type: String, default: "vi", lowercase: true })
   lang: string;
 
@@ -52,6 +56,10 @@ export class FlashcardDeck {
 
   @Prop({ type: Number, default: 0 })
   exampleDone?: number;
+
+  /** Example generation paused by the user (resume to continue). */
+  @Prop({ type: Boolean, default: false })
+  examplePaused?: boolean;
 
   /** Publish the deck once its examples are generated (new deck from an import). */
   @Prop({ type: Boolean, default: false })

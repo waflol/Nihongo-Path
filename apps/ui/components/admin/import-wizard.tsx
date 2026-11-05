@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import { DuplicatesPanel, type DuplicateInfo } from "@/components/admin/duplicates-panel";
 
 /**
  * Bulk-import wizard (P3-UI-02, spec §4.2 "preview, ánh xạ cột, kiểm tra
@@ -46,6 +47,7 @@ interface Preview {
   okRows: number;
   errorRows: number;
   duplicateRows: number;
+  duplicates?: DuplicateInfo[];
   rows: PreviewRow[];
 }
 
@@ -54,6 +56,7 @@ interface ConfirmResult {
   skipped: number;
   overwritten: number;
   examplesQueued?: number;
+  duplicates?: DuplicateInfo[];
   errors: { rowNumber: number; error: string }[];
 }
 
@@ -617,6 +620,8 @@ export function ImportWizard({ learner = false }: { learner?: boolean }) {
             )}
           </div>
 
+          <DuplicatesPanel duplicates={preview.duplicates ?? []} total={preview.duplicateRows} />
+
           <div className="mt-4">
             <button
               type="button"
@@ -678,6 +683,7 @@ export function ImportWizard({ learner = false }: { learner?: boolean }) {
               </div>
             )}
           </dl>
+          <DuplicatesPanel duplicates={result.duplicates ?? []} total={result.skipped} />
           <div className="mt-4 flex gap-2">
             <button
               type="button"

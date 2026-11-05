@@ -17,6 +17,8 @@ export interface CardExample {
   sentence: string;
   /** Translation (e.g. Vietnamese); may be empty. */
   translation?: string;
+  /** Provenance of a generated example: Tatoeba pair, AI-translated, or AI-written. */
+  source?: "tatoeba" | "ai-translated" | "ai";
 }
 
 /**
@@ -81,6 +83,7 @@ export class Flashcard {
         _id: false,
         sentence: { type: String, required: true, trim: true },
         translation: { type: String, trim: true, default: "" },
+        source: { type: String, enum: ["tatoeba", "ai-translated", "ai"] },
       },
     ],
     default: [],

@@ -3,6 +3,7 @@ import {
   Controller,
   HttpCode,
   HttpStatus,
+  Param,
   Post,
   UnprocessableEntityException,
   UploadedFile,
@@ -76,6 +77,22 @@ function withUploadLimits() {
 @Controller("flashcards/import")
 export class ImportController {
   constructor(private readonly imports: ImportService) {}
+
+  @Post("examples/:deckId/:action")
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: "Pause / resume / stop the background example generation of a deck",
+  })
+  async controlExamples(
+    @CurrentUser() caller: AuthUser,
+    @Param("deckId") deckId: string,
+    @Param("action") action: string,
+  ) {
+    if (action !== "pause" && action !== "resume" && action !== "stop" && action !== "retry") {
+      throw new UnprocessableEntityException("action must be pause|resume|stop|retry");
+    }
+    return this.imports.controlExamples(caller, deckId, action);
+  }
 
   @Post("preview")
   @ApiConsumes("multipart/form-data")

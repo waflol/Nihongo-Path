@@ -1,4 +1,4 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { Injectable, Logger, Optional } from "@nestjs/common";
 import {
   aggregateRuns,
   BENCH_ITEMS,
@@ -8,6 +8,11 @@ import {
   type BenchAttempt,
   type BenchResult,
 } from "./ai-benchmark.js";
+import { RedisService } from "../redis/redis.service.js";
+import { randomUUID } from "node:crypto";
+import { AiResultCacheService, taskKey, taskTerm } from "./ai-result-cache.service.js";
+import { AiCallLogService } from "./ai-call-log.service.js";
+import type { AiLogPurpose } from "./ai-call-log.schema.js";
 import { AiServicesService, type FailureKind, type RuntimeAiService } from "./ai-services.service.js";
 
 /** One thing the model is asked to do for a card. */
@@ -62,68 +67,204 @@ export class AiExampleService {
   private readonly queue: Pending[] = [];
   private nextId = 1;
   private timer: ReturnType<typeof setTimeout> | null = null;
-  private flushing = false;
+  private pumping = false;
+  /** Services with a request in flight right now (one batch per service at a time). */
+  private readonly busy = new Set<string>();
   private readonly lastCall = new Map<string, number>();
 
-  constructor(private readonly services: AiServicesService) {}
+  constructor(
+    private readonly services: AiServicesService,
+    @Optional() private readonly callLog?: AiCallLogService,
+    @Optional() private readonly cache?: AiResultCacheService,
+    @Optional() private readonly redis?: RedisService,
+  ) {}
+
+  /** Answers served from the saved results since start (no AI call made). */
+  reused = 0;
+
+  /** Ids of the services with a request in flight right now. */
+  runningIds(): string[] {
+    return [...this.busy];
+  }
+
+  /** Cards waiting for a service. */
+  queued(): number {
+    return this.queue.length;
+  }
+
+  private queueTimer: ReturnType<typeof setTimeout> | null = null;
+
+  /**
+   * Mirror what is waiting into Redis (`np:ai:queue`) at most once a second,
+   * so the admin Redis page can show the waiting cards. The queue itself stays
+   * in memory; this key is only a view of it.
+   */
+  private publishQueue(): void {
+    if (!this.redis || this.queueTimer) return;
+    this.queueTimer = setTimeout(() => {
+      this.queueTimer = null;
+      if (this.queue.length === 0) {
+        void this.redis?.del("ai:queue");
+        return;
+      }
+      void this.redis?.setJson(
+        "ai:queue",
+        {
+          count: this.queue.length,
+          words: this.queue.slice(0, 30).map((p) => p.task.term),
+          updatedAt: new Date().toISOString(),
+        },
+        30,
+      );
+      // Keep it fresh while the queue is still draining.
+      this.publishQueue();
+    }, 1000);
+    this.queueTimer.unref?.();
+  }
+
+  /** Write one request/response to the admin call history. */
+  private logCall(
+    svc: RuntimeAiService,
+    purpose: AiLogPurpose,
+    url: string,
+    words: string[],
+    request: string,
+    t0: number,
+    out: { ok: true; response: string; status?: number } | { ok: false; error: string },
+  ): void {
+    const status = out.ok ? (out.status ?? 200) : Number(/HTTP (\d{3})/.exec(out.error)?.[1] ?? 0);
+    void this.callLog?.record(
+      {
+        purpose,
+        serviceId: svc.id,
+        serviceLabel: svc.label,
+        provider: svc.provider.id,
+        modelName: svc.model,
+        url,
+        words,
+        request,
+        response: out.ok ? out.response : out.error,
+        ok: out.ok,
+        status,
+        ms: Date.now() - t0,
+      },
+      svc.key,
+    );
+  }
 
   /** True when at least one service could take work now or soon. */
   async isEnabled(): Promise<boolean> {
     return (await this.services.active()).length > 0;
   }
 
+  /**
+   * Answer one task. A task already answered successfully before is served
+   * from the saved results; otherwise it is queued, and a successful answer
+   * is saved so it is never asked again.
+   */
+  async run(task: AiTask): Promise<AiResult | null> {
+    const key = taskKey(task);
+    const saved = await this.cache?.get(key);
+    if (saved) {
+      this.reused++;
+      return saved;
+    }
+    const r = await this.enqueue(task);
+    if (r) void this.cache?.set(key, r, "", taskTerm(task));
+    return r;
+  }
+
   /** Queue one task; resolves when its batch has been answered (or failed). */
-  run(task: AiTask): Promise<AiResult | null> {
+  private enqueue(task: AiTask): Promise<AiResult | null> {
     return new Promise((resolve) => {
       this.queue.push({ id: this.nextId++, task, resolve });
-      if (this.queue.length >= BATCH) void this.flush();
-      else if (!this.timer) this.timer = setTimeout(() => void this.flush(), FLUSH_MS);
+      this.publishQueue();
+      if (this.queue.length >= BATCH) void this.pump();
+      else if (!this.timer) this.timer = setTimeout(() => void this.pump(), FLUSH_MS);
     });
   }
 
-  private async flush(): Promise<void> {
+  /**
+   * Hand queued tasks to every idle service at once. Each batch claims one
+   * service for the length of its call, so several services work in parallel
+   * and a service that is already busy is skipped — the next batch goes to
+   * the next ready service instead of waiting. When a batch finishes the
+   * pump runs again, so a long queue keeps every ready service occupied.
+   */
+  private async pump(): Promise<void> {
     if (this.timer) {
       clearTimeout(this.timer);
       this.timer = null;
     }
-    if (this.flushing) {
-      this.timer = setTimeout(() => void this.flush(), FLUSH_MS);
-      return;
-    }
-    const batch = this.queue.splice(0, BATCH);
-    if (batch.length === 0) return;
-    this.flushing = true;
+    if (this.pumping) return;
+    this.pumping = true;
     try {
-      const answers = await this.dispatch(batch);
+      while (this.queue.length > 0) {
+        const list = await this.services.available();
+        if (list.length === 0) {
+          // Nothing can take work now (all cooling down / none set up): leave the cards without an example.
+          for (const p of this.queue.splice(0)) p.resolve(null);
+          break;
+        }
+        if (list.every((s) => this.busy.has(s.id))) break; // a finishing batch pumps again
+        const batch = this.queue.splice(0, BATCH);
+        // `dispatch` claims its service before its first await, so the next
+        // loop turn already sees it as busy.
+        void this.runBatch(batch, list);
+      }
+    } finally {
+      this.pumping = false;
+    }
+  }
+
+  private async runBatch(batch: Pending[], list: RuntimeAiService[]): Promise<void> {
+    try {
+      const answers = await this.dispatch(batch, list);
       for (const p of batch) p.resolve(answers.get(p.id) ?? null);
     } catch (err) {
       this.logger.warn(`AI batch failed: ${(err as Error).message}`);
       for (const p of batch) p.resolve(null);
     } finally {
-      this.flushing = false;
-      if (this.queue.length > 0 && !this.timer) {
-        this.timer = setTimeout(() => void this.flush(), 0);
-      }
+      if (this.queue.length > 0) void this.pump();
     }
   }
 
   /**
-   * Try the services in priority order. A chat model answers the whole batch
-   * and ends the search. A translate-only model answers just the translate items
-   * and the rest (sentences to write) moves on to the next service.
+   * Try the services in priority order, skipping any that is busy with
+   * another batch. A chat model answers the whole batch and ends the search.
+   * A translate-only model answers just the translate items and the rest
+   * (sentences to write) moves on to the next service.
    */
-  private async dispatch(batch: Pending[]): Promise<Map<number, AiResult>> {
+  private async dispatch(batch: Pending[], preList?: RuntimeAiService[]): Promise<Map<number, AiResult>> {
     const results = new Map<number, AiResult>();
     let remaining = batch;
-    for (const svc of await this.services.available()) {
+    for (const svc of preList ?? (await this.services.available())) {
+      if (this.busy.has(svc.id)) continue;
       const translator = this.isTranslator(svc);
       const items = translator ? remaining.filter((p) => p.task.kind === "translate") : remaining;
       if (items.length === 0) continue;
+      this.busy.add(svc.id);
+      // Visible in the admin Redis page while the request is in flight.
+      const taskId = randomUUID();
+      void this.redis?.setJson(
+        `ai:task:${taskId}`,
+        {
+          id: taskId,
+          serviceId: svc.id,
+          service: svc.label,
+          model: svc.model,
+          kind: translator ? "translate" : "example",
+          words: this.wordsOf(items).slice(0, 20),
+          items: items.length,
+          startedAt: new Date().toISOString(),
+        },
+        180,
+      );
       try {
         await this.pace(svc);
         const out = translator
           ? await this.translate(svc, items)
-          : this.parse(await this.call(svc, this.prompt(items)), items);
+          : this.parse(await this.call(svc, this.prompt(items), "example", this.wordsOf(items)), items);
         if (out.size === 0) throw new AiFailure("transient", "empty or unreadable answer");
         void this.services.reportOk(svc.id);
         for (const [id, r] of out) results.set(id, r);
@@ -134,10 +275,17 @@ export class AiExampleService {
         const f =
           err instanceof AiFailure ? err : new AiFailure("transient", (err as Error).message ?? "request failed");
         await this.services.reportFailure(svc.id, f.kind, f.message, f.retryAfterMs);
-        // → next service
+        // → next ready service
+      } finally {
+        this.busy.delete(svc.id);
+        void this.redis?.del(`ai:task:${taskId}`);
       }
     }
     return results;
+  }
+
+  private wordsOf(items: Pending[]): string[] {
+    return items.map((p) => p.task.term);
   }
 
   /** Respect the service's own requests-per-minute. */
@@ -166,7 +314,34 @@ export class AiExampleService {
   }
 
   /** One HTTP call to a service; returns the model's text or throws `AiFailure`. */
-  private async call(svc: RuntimeAiService, prompt: string): Promise<string> {
+  private async call(
+    svc: RuntimeAiService,
+    prompt: string,
+    purpose: AiLogPurpose = "example",
+    words: string[] = [],
+  ): Promise<string> {
+    const t0 = Date.now();
+    const url = this.endpointOf(svc);
+    try {
+      const text = await this.callRaw(svc, prompt);
+      this.logCall(svc, purpose, url, words, prompt, t0, { ok: true, response: text });
+      return text;
+    } catch (err) {
+      this.logCall(svc, purpose, url, words, prompt, t0, { ok: false, error: (err as Error).message });
+      throw err;
+    }
+  }
+
+  private endpointOf(svc: RuntimeAiService): string {
+    const p = svc.provider;
+    return p.kind === "gemini"
+      ? `${p.baseUrl}/models/${encodeURIComponent(svc.model)}:generateContent`
+      : p.kind === "anthropic"
+        ? `${p.baseUrl}/messages`
+        : `${p.baseUrl}/chat/completions`;
+  }
+
+  private async callRaw(svc: RuntimeAiService, prompt: string): Promise<string> {
     const p = svc.provider;
     const isGemini = p.kind === "gemini";
     const isAnthropic = p.kind === "anthropic";
@@ -263,7 +438,21 @@ export class AiExampleService {
   }
 
   /** One Japanese sentence → Vietnamese through Cloudflare's native `ai/run` endpoint. */
-  private async translateOne(svc: RuntimeAiService, ja: string): Promise<string> {
+  private async translateOne(svc: RuntimeAiService, ja: string, purpose: AiLogPurpose = "example"): Promise<string> {
+    const t0 = Date.now();
+    const url = `${svc.provider.baseUrl.replace(/\/ai\/v1$/, "")}/ai/run/${svc.model}`;
+    const request = JSON.stringify({ text: ja, source_lang: "ja", target_lang: "vi" });
+    try {
+      const vi = await this.translateOneRaw(svc, ja);
+      this.logCall(svc, purpose, url, [ja], request, t0, { ok: true, response: vi });
+      return vi;
+    } catch (err) {
+      this.logCall(svc, purpose, url, [ja], request, t0, { ok: false, error: (err as Error).message });
+      throw err;
+    }
+  }
+
+  private async translateOneRaw(svc: RuntimeAiService, ja: string): Promise<string> {
     const url = `${svc.provider.baseUrl.replace(/\/ai\/v1$/, "")}/ai/run/${svc.model}`;
     let res: Response;
     try {
@@ -289,10 +478,14 @@ export class AiExampleService {
    * (`matches` stays undefined, which the importer accepts). Fails as a whole
    * only when every request failed.
    */
-  private async translate(svc: RuntimeAiService, items: Pending[]): Promise<Map<number, AiResult>> {
+  private async translate(
+    svc: RuntimeAiService,
+    items: Pending[],
+    purpose: AiLogPurpose = "example",
+  ): Promise<Map<number, AiResult>> {
     const out = new Map<number, AiResult>();
     const jobs = items.filter((p) => p.task.kind === "translate");
-    const settled = await Promise.allSettled(jobs.map((p) => this.translateOne(svc, (p.task as { ja: string }).ja)));
+    const settled = await Promise.allSettled(jobs.map((p) => this.translateOne(svc, (p.task as { ja: string }).ja, purpose)));
     let firstError: unknown;
     settled.forEach((r, i) => {
       if (r.status === "fulfilled" && r.value.length <= 250) out.set(jobs[i].id, { vi: r.value });
@@ -373,10 +566,10 @@ export class AiExampleService {
     try {
       let answers: Map<number, AiResult>;
       if (translator) {
-        answers = await this.translate(svc, batch);
+        answers = await this.translate(svc, batch, "test");
         text = JSON.stringify([...answers].map(([id, r]) => ({ id, vi: r.vi })), null, 1);
       } else {
-        text = await this.call(svc, this.prompt(batch));
+        text = await this.call(svc, this.prompt(batch), "test", this.wordsOf(batch));
         answers = this.parse(text, batch);
       }
       const ms = Date.now() - t0;
@@ -399,8 +592,8 @@ export class AiExampleService {
     ];
     try {
       const out = this.isTranslator(svc)
-        ? await this.translate(svc, batch)
-        : this.parse(await this.call(svc, this.prompt(batch)), batch);
+        ? await this.translate(svc, batch, "test")
+        : this.parse(await this.call(svc, this.prompt(batch), "test", this.wordsOf(batch)), batch);
       const r = out.get(1);
       if (!r) throw new AiFailure("transient", "the answer could not be read");
       void this.services.reportOk(svc.id);

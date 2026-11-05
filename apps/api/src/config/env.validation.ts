@@ -85,6 +85,7 @@ export function validateEnv(config: Record<string, unknown>): Env {
     // AdminBootstrapService to act; either alone is a no-op.
     ADMIN_EMAIL: toOptionalString(config.ADMIN_EMAIL),
     ADMIN_PASS: toOptionalString(config.ADMIN_PASS),
+    REDIS_URL: toOptionalString(config.REDIS_URL),
     // AI example sentences (optional).
     AI_KEY_SECRET: toOptionalString(config.AI_KEY_SECRET),
     GEMINI_API_KEY: toOptionalString(config.GEMINI_API_KEY),

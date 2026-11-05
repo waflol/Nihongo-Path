@@ -86,6 +86,17 @@ const NAV: NavItem[] = [
     ),
   },
   {
+    href: "/admin/redis",
+    label: "Redis",
+    desc: "Key, tác vụ đang chạy, xoá dữ liệu",
+    icon: (
+      <svg {...iconProps}>
+        <path d="M12 3 3 7.5 12 12l9-4.5L12 3Z" />
+        <path d="M3 12l9 4.5 9-4.5M3 16.5 12 21l9-4.5" />
+      </svg>
+    ),
+  },
+  {
     href: "/admin/backup",
     label: "Sao lưu dữ liệu",
     desc: "Tải bản sao lưu (.json.gz)",

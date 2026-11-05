@@ -8,9 +8,12 @@ import {
   Param,
   Patch,
   Post,
+  Query,
+  NotFoundException,
 } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { ContentAdmin } from "../auth/decorators/roles.decorator.js";
+import { AiCallLogService } from "./ai-call-log.service.js";
 import { AiExampleService } from "./ai-example.service.js";
 import { AiServicesService } from "./ai-services.service.js";
 
@@ -26,6 +29,7 @@ export class AiServicesController {
   constructor(
     private readonly services: AiServicesService,
     private readonly examples: AiExampleService,
+    private readonly callLog: AiCallLogService,
   ) {}
 
   @Get("providers")
@@ -125,5 +129,93 @@ export class AiServicesController {
   @ApiOperation({ summary: "Send one tiny request to check the key and model" })
   async test(@Param("id") id: string) {
     return this.examples.probe(await this.services.runtimeOf(id));
+  }
+
+  // ── Live activity ───────────────────────────────────────────────────
+
+  @Get("activity")
+  @ContentAdmin()
+  @ApiOperation({ summary: "Which AI keys are running / idle / cooling down / failing, with the last 24 h counts" })
+  async activity() {
+    const [services, stats] = await Promise.all([
+      this.services.list(),
+      this.callLog.stats(new Date(Date.now() - 24 * 3600_000)),
+    ]);
+    const byId = new Map(stats.map((r) => [r._id, r]));
+    const running = new Set(this.examples.runningIds());
+    const now = Date.now();
+    return {
+      queued: this.examples.queued(),
+      reused: this.examples.reused,
+      services: services.map((s) => {
+        const st = byId.get(s.id);
+        const cooling = s.cooldownUntil ? new Date(s.cooldownUntil).getTime() > now : false;
+        const state = !s.enabled
+          ? "disabled"
+          : running.has(s.id)
+            ? "running"
+            : s.status === "invalid" || s.status === "error"
+              ? "error"
+              : cooling
+                ? "cooldown"
+                : "ready";
+        return {
+          id: s.id,
+          label: s.label,
+          providerName: s.providerName,
+          model: s.model,
+          keyHint: s.keyHint,
+          priority: s.priority,
+          state,
+          lastError: s.lastError,
+          cooldownUntil: s.cooldownUntil,
+          lastOkAt: s.lastOkAt,
+          ok: st?.ok ?? 0,
+          failed: st?.failed ?? 0,
+          cards: st?.cards ?? 0,
+          lastCallAt: st?.lastAt ?? null,
+          lastCallError: st?.lastError ?? null,
+        };
+      }),
+    };
+  }
+
+  // ── Call history ────────────────────────────────────────────────────
+
+  @Get("logs")
+  @ContentAdmin()
+  @ApiOperation({ summary: "History of requests sent to AI services and their answers" })
+  logs(
+    @Query("page") page?: string,
+    @Query("pageSize") pageSize?: string,
+    @Query("serviceId") serviceId?: string,
+    @Query("ok") ok?: string,
+    @Query("purpose") purpose?: string,
+    @Query("q") q?: string,
+  ) {
+    return this.callLog.list({
+      page: Math.max(1, Number(page) || 1),
+      pageSize: Math.min(100, Math.max(1, Number(pageSize) || 25)),
+      serviceId: serviceId || undefined,
+      ok: ok === "1" ? true : ok === "0" ? false : undefined,
+      purpose: purpose === "example" || purpose === "test" ? purpose : undefined,
+      q,
+    });
+  }
+
+  @Get("logs/:id")
+  @ContentAdmin()
+  @ApiOperation({ summary: "One logged call with its full request and response" })
+  async logOne(@Param("id") id: string) {
+    const row = await this.callLog.get(id);
+    if (!row) throw new NotFoundException("Log entry not found");
+    return row;
+  }
+
+  @Delete("logs")
+  @ContentAdmin()
+  @ApiOperation({ summary: "Clear the AI call history" })
+  clearLogs() {
+    return this.callLog.clear();
   }
 }

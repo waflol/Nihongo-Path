@@ -1,3 +1,4 @@
+import { buildRedisModule } from "./redis/redis.module.js";
 import "./bootstrap/env.js";
 import { Module } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
@@ -34,6 +35,7 @@ import { buildLogsModule } from "./logs/logs.module.js";
       validate: validateEnv,
     }),
     buildDatabaseModule(),
+    buildRedisModule(),
     HealthModule,
     // Phase P2 (Identity & Content). Each builder degrades to an empty
     // module when `MONGODB_URL` is unset, so the app still boots without a

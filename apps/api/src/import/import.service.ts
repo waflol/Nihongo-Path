@@ -96,6 +96,29 @@ export interface PreviewRow {
   error?: string;
 }
 
+/** A skipped row, shown side by side with the card it duplicates. */
+export interface DuplicateInfo {
+  rowNumber: number;
+  /** The row's own STT / number in the file. */
+  no?: number;
+  front: string;
+  reading: string;
+  back: string;
+  /** What it duplicates: a card already in the deck, or an earlier row of the file. */
+  of: {
+    source: "deck" | "file";
+    front: string;
+    reading: string;
+    back: string;
+    /** For `file`: the earlier row's STT / row number. */
+    no?: number;
+    rowNumber?: number;
+  };
+}
+
+/** Cap on the duplicates listed back (the count stays exact). */
+const MAX_DUPLICATES_LISTED = 1000;
+
 export interface ImportPreview {
   deckId: string;
   format: Table["format"];
@@ -105,6 +128,8 @@ export interface ImportPreview {
   okRows: number;
   errorRows: number;
   duplicateRows: number;
+  /** The duplicate rows with the card each one matches (capped). */
+  duplicates: DuplicateInfo[];
   rows: PreviewRow[];
 }
 
@@ -122,6 +147,8 @@ export interface ImportConfirmResult {
   errors: { rowNumber: number; error: string }[];
   /** New cards without an example: one is generated in the background. */
   examplesQueued: number;
+  /** The skipped duplicates with the card each one matches (capped). */
+  duplicates: DuplicateInfo[];
 }
 
 /**
@@ -170,7 +197,9 @@ export class ImportService implements OnApplicationBootstrap {
   /** After a restart, resume decks whose examples were still being generated. */
   async onApplicationBootstrap(): Promise<void> {
     try {
-      const decks = await this.deck.find({ exampleTotal: { $gt: 0 } }).exec();
+      const decks = await this.deck
+        .find({ exampleTotal: { $gt: 0 }, examplePaused: { $ne: true } })
+        .exec();
       for (const d of decks) {
         const cards = await this.card
           .find({ deck: d._id, examples: { $size: 0 } })
@@ -196,11 +225,120 @@ export class ImportService implements OnApplicationBootstrap {
     }
   }
 
+  /**
+   * Pause / resume / stop the background example generation of a deck.
+   * - pause: drop the deck's queued jobs (cards in flight finish), keep the
+   *   progress; nothing runs until resume.
+   * - resume: re-queue the cards that still have no example.
+   * - stop: abandon the rest. The progress is cleared and a new import deck
+   *   (draft) is published with the examples generated so far.
+   */
+  async controlExamples(
+    caller: AuthUser,
+    deckId: string,
+    action: "pause" | "resume" | "stop" | "retry",
+  ): Promise<{ deckId: string; action: string; remaining: number }> {
+    const deck = await this.resolveWritableDeck(caller, deckId);
+    if (action !== "retry" && (deck.exampleTotal ?? 0) <= 0) {
+      throw new ConflictException("This deck is not generating examples");
+    }
+    const drop = () => {
+      for (let i = this.exampleQueue.length - 1; i >= 0; i--) {
+        if (String(this.exampleQueue[i].deck) === String(deck._id)) {
+          this.exampleQueue.splice(i, 1);
+        }
+      }
+    };
+
+    if (action === "retry") {
+      // Re-run generation for every card that still has no example.
+      drop();
+      const missing = await this.card
+        .find({ deck: deck._id, examples: { $size: 0 } })
+        .select("front back reading partOfSpeech")
+        .exec();
+      if (missing.length === 0) {
+        await this.finishDeckExamples(deck._id);
+        return { deckId, action, remaining: 0 };
+      }
+      await this.deck
+        .updateOne(
+          { _id: deck._id },
+          { $set: { exampleTotal: missing.length, exampleDone: 0, examplePaused: false } },
+        )
+        .exec();
+      this.enqueueExamples(
+        missing.map((c) => ({
+          id: c._id,
+          deck: deck._id,
+          term: c.front,
+          meaning: c.back,
+          reading: c.reading ?? "",
+          partOfSpeech: (c.partOfSpeech ?? "") as Pos,
+        })),
+      );
+      return { deckId, action, remaining: missing.length };
+    }
+
+    if (action === "pause") {
+      drop();
+      await this.deck.updateOne({ _id: deck._id }, { $set: { examplePaused: true } }).exec();
+      return { deckId, action, remaining: 0 };
+    }
+
+    if (action === "stop") {
+      drop();
+      const set: Record<string, unknown> = {
+        exampleTotal: 0,
+        exampleDone: 0,
+        examplePaused: false,
+      };
+      if (deck.publishWhenReady) {
+        set.status = "PUBLISHED";
+        set.publishWhenReady = false;
+      }
+      await this.deck.updateOne({ _id: deck._id }, { $set: set }).exec();
+      return { deckId, action, remaining: 0 };
+    }
+
+    // resume
+    const cards = await this.card
+      .find({ deck: deck._id, examples: { $size: 0 } })
+      .select("front back reading partOfSpeech")
+      .exec();
+    await this.deck
+      .updateOne(
+        { _id: deck._id },
+        {
+          $set: {
+            examplePaused: false,
+            exampleDone: Math.max(0, (deck.exampleTotal ?? 0) - cards.length),
+          },
+        },
+      )
+      .exec();
+    if (cards.length === 0) {
+      await this.finishDeckExamples(deck._id);
+    } else {
+      this.enqueueExamples(
+        cards.map((c) => ({
+          id: c._id,
+          deck: deck._id,
+          term: c.front,
+          meaning: c.back,
+          reading: c.reading ?? "",
+          partOfSpeech: (c.partOfSpeech ?? "") as Pos,
+        })),
+      );
+    }
+    return { deckId, action, remaining: cards.length };
+  }
+
   /** Clear the progress and, for a new import deck, publish it. */
   private async finishDeckExamples(deckId: Types.ObjectId): Promise<void> {
     const d = await this.deck.findById(deckId).exec();
     if (!d) return;
-    const set: Record<string, unknown> = { exampleTotal: 0, exampleDone: 0 };
+    const set: Record<string, unknown> = { exampleTotal: 0, exampleDone: 0, examplePaused: false };
     if (d.publishWhenReady) {
       set.status = "PUBLISHED";
       set.publishWhenReady = false;
@@ -232,7 +370,7 @@ export class ImportService implements OnApplicationBootstrap {
     try {
       let job: (typeof this.exampleQueue)[number] | undefined;
       while ((job = this.exampleQueue.shift())) {
-        const hit = await this.exampleSuggest.suggest({
+        const hit = await this.exampleSuggest.suggestFull({
           term: job.term,
           meaning: job.meaning,
           reading: job.reading,
@@ -244,13 +382,18 @@ export class ImportService implements OnApplicationBootstrap {
           await this.card
             .updateOne(
               { _id: job.id, examples: { $size: 0 } },
-              { $set: { examples: [{ sentence: hit.sentence, translation: hit.translation }] } },
+              { $set: { examples: [{ sentence: hit.sentence, translation: hit.translation, ...(hit.source ? { source: hit.source } : {}) }] } },
             )
             .exec();
         }
         // Progress for the deck badge; the last card finishes (and publishes) it.
+        // (a paused or stopped deck is no longer counted or finished here)
         const d = await this.deck
-          .findByIdAndUpdate(job.deck, { $inc: { exampleDone: 1 } }, { new: true })
+          .findOneAndUpdate(
+            { _id: job.deck, exampleTotal: { $gt: 0 }, examplePaused: { $ne: true } },
+            { $inc: { exampleDone: 1 } },
+            { new: true },
+          )
           .exec();
         if (d && (d.exampleDone ?? 0) >= (d.exampleTotal ?? 0)) {
           await this.finishDeckExamples(job.deck);
@@ -408,6 +551,7 @@ export class ImportService implements OnApplicationBootstrap {
         okRows: 0,
         errorRows: 0,
         duplicateRows: 0,
+        duplicates: [],
         rows: [],
       };
     }
@@ -423,12 +567,15 @@ export class ImportService implements OnApplicationBootstrap {
     );
     const existing = await this.card
       .find({ deck: targetDeck._id, dedupeKey: candidateKeys })
-      .select("dedupeKey")
+      .select("dedupeKey front back reading")
       .exec();
     const existingKeys = new Set(existing.map((c) => c.dedupeKey));
+    const existingByKey = new Map(existing.map((c) => [c.dedupeKey, c]));
 
-    // Within-file duplicates: a key seen earlier in the same file.
-    const seenInFile = new Set<string>();
+    // Within-file duplicates: a key seen earlier in the same file (remember
+    // which row, so the preview can show what it duplicates).
+    const seenInFile = new Map<string, { no?: number; rowNumber: number; front: string; reading: string; back: string }>();
+    const dupList: DuplicateInfo[] = [];
 
     const rows: PreviewRow[] = [];
     let ok = 0;
@@ -463,9 +610,26 @@ export class ImportService implements OnApplicationBootstrap {
           back: rawBack,
           tags,
           status: "duplicate",
+          no: extra.order,
         });
         duplicates += 1;
-        seenInFile.add(key);
+        if (dupList.length < MAX_DUPLICATES_LISTED) {
+          const inDeck = existingByKey.get(key);
+          const earlier = seenInFile.get(key);
+          dupList.push({
+            rowNumber: i + 2,
+            no: extra.order,
+            front: rawFront,
+            reading: extra.reading,
+            back: rawBack,
+            of: inDeck
+              ? { source: "deck", front: inDeck.front, reading: inDeck.reading ?? "", back: inDeck.back }
+              : { source: "file", front: earlier!.front, reading: earlier!.reading, back: earlier!.back, no: earlier!.no, rowNumber: earlier!.rowNumber },
+          });
+        }
+        if (!seenInFile.has(key)) {
+          seenInFile.set(key, { no: extra.order, rowNumber: i + 2, front: rawFront, reading: extra.reading, back: rawBack });
+        }
         continue;
       }
 
@@ -482,7 +646,7 @@ export class ImportService implements OnApplicationBootstrap {
         hanViet: extra.hanViet || undefined,
       });
       ok += 1;
-      seenInFile.add(key);
+      seenInFile.set(key, { no: extra.order, rowNumber: i + 2, front: rawFront, reading: extra.reading, back: rawBack });
     }
 
     return {
@@ -493,6 +657,7 @@ export class ImportService implements OnApplicationBootstrap {
       okRows: ok,
       errorRows: errors,
       duplicateRows: duplicates,
+      duplicates: dupList,
       rows,
     };
   }
@@ -523,11 +688,12 @@ export class ImportService implements OnApplicationBootstrap {
           ),
         ),
       })
-      .select("dedupeKey front back")
+      .select("dedupeKey front back reading")
       .exec();
     const existingKeys = new Set(existing.map((c) => c.dedupeKey));
     const existingByKey = new Map(existing.map((c) => [c.dedupeKey, c]));
-    const seenInFile = new Set<string>();
+    const seenInFile = new Map<string, { no?: number; rowNumber: number; front: string; reading: string; back: string }>();
+    const dupList: DuplicateInfo[] = [];
 
     // A card row as written by an import: the fields `origin: "import"`
     // supplies are the ones set here; `kind`/timestamps come from the
@@ -579,19 +745,38 @@ export class ImportService implements OnApplicationBootstrap {
         order: extra.order,
       };
 
+      const noteDuplicate = () => {
+        if (dupList.length >= MAX_DUPLICATES_LISTED) return;
+        const inDeck = existingByKey.get(key);
+        const earlier = seenInFile.get(key);
+        dupList.push({
+          rowNumber: rowNo,
+          no: extra.order,
+          front,
+          reading: extra.reading,
+          back,
+          of: inDeck
+            ? { source: "deck", front: inDeck.front, reading: inDeck.reading ?? "", back: inDeck.back }
+            : { source: "file", front: earlier!.front, reading: earlier!.reading, back: earlier!.back, no: earlier!.no, rowNumber: earlier!.rowNumber },
+        });
+      };
+
       if (seenInFile.has(key)) {
         skipped += 1; // a later copy of the same row in the file
+        noteDuplicate();
         continue;
       }
-      seenInFile.add(key);
 
       if (existingKeys.has(key)) {
         if (policy === "overwrite") {
           toOverwrite.push(doc);
         } else {
           skipped += 1;
+          noteDuplicate();
         }
+        seenInFile.set(key, { no: extra.order, rowNumber: rowNo, front, reading: extra.reading, back });
       } else {
+        seenInFile.set(key, { no: extra.order, rowNumber: rowNo, front, reading: extra.reading, back });
         toInsert.push(doc);
       }
     }
@@ -701,6 +886,7 @@ export class ImportService implements OnApplicationBootstrap {
       overwritten,
       errors,
       examplesQueued: pending.length,
+      duplicates: dupList,
     };
   }
 

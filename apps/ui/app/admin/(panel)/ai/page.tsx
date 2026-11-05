@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import { AiServicesConsole } from "@/components/admin/ai-services-console";
+import { AiActivityPanel } from "@/components/admin/ai-activity-panel";
+import { AiCallLogPanel } from "@/components/admin/ai-call-log-panel";
 
 export const metadata: Metadata = {
   title: "Dịch vụ AI",
@@ -9,5 +11,11 @@ export const metadata: Metadata = {
 
 /** Admin AI-service management. The role gate lives in the panel layout. */
 export default function AdminAiPage() {
-  return <AiServicesConsole />;
+  return (
+    <>
+      <AiServicesConsole />
+      <AiActivityPanel />
+      <AiCallLogPanel />
+    </>
+  );
 }

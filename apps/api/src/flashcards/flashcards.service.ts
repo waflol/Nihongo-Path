@@ -31,6 +31,7 @@ export interface DeckWriteInput {
   title: string;
   summary?: string;
   level?: string;
+  category?: string;
   lang?: string;
   /** `DRAFT` | `PUBLISHED` — validated by the DTO's `@IsIn` + the schema. */
   status?: DeckStatus;
@@ -72,13 +73,14 @@ export interface DeckView {
   title: string;
   summary?: string;
   level?: string;
+  category?: string;
   lang: string;
   status: string;
   shared: boolean;
   user: string | null;
   cardCount: number;
   /** Set while example sentences are being generated after an import. */
-  examples: { total: number; done: number } | null;
+  examples: { total: number; done: number; paused: boolean } | null;
   /** The deck stays a draft until the examples are ready, then publishes. */
   publishWhenReady: boolean;
   createdAt: string;
@@ -214,6 +216,7 @@ export class FlashcardsService implements OnModuleInit {
       title: input.title,
       summary: input.summary,
       level: input.level,
+      category: input.category,
       lang: input.lang,
       status: input.status ?? "PUBLISHED",
       shared,
@@ -239,6 +242,7 @@ export class FlashcardsService implements OnModuleInit {
     if (input.title !== undefined) update.title = input.title;
     if (input.summary !== undefined) update.summary = input.summary;
     if (input.level !== undefined) update.level = input.level;
+    if (input.category !== undefined) update.category = input.category;
     if (input.lang !== undefined) update.lang = input.lang;
     if (input.status !== undefined) update.status = input.status;
     const res = await this.deck
@@ -346,6 +350,120 @@ export class FlashcardsService implements OnModuleInit {
       .exec();
   }
 
+  /** Mongo filter for the card-manager list: text search, one tag, "no example". */
+  private cardFilter(
+    deckId: string,
+    f: { q?: string; tag?: string; missing?: boolean },
+  ): Record<string, unknown> {
+    const filter: Record<string, unknown> = { deck: new Types.ObjectId(deckId) };
+    const q = f.q?.trim();
+    if (q) {
+      const rx = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+      filter.$or = [{ front: rx }, { back: rx }, { reading: rx }, { hanViet: rx }];
+    }
+    if (f.tag) filter.tags = f.tag;
+    if (f.missing) filter.examples = { $size: 0 };
+    return filter;
+  }
+
+  /**
+   * One page of a deck's cards for the card manager, with the filter applied
+   * server-side (decks can hold thousands of cards) plus every tag in the deck
+   * with its card count.
+   */
+  async pageCards(
+    caller: AuthUser,
+    deckId: string,
+    opts: { page: number; pageSize: number; q?: string; tag?: string; missing?: boolean },
+  ): Promise<{
+    items: FlashcardDocument[];
+    total: number;
+    missingExamples: number;
+    tags: { tag: string; count: number }[];
+  }> {
+    await this.getDeck(caller, deckId);
+    const filter = this.cardFilter(deckId, opts);
+    const deckOid = new Types.ObjectId(deckId);
+    const [items, total, missingExamples, tagRows] = await Promise.all([
+      this.card
+        .find(filter)
+        .sort({ order: 1, _id: 1 })
+        .skip((opts.page - 1) * opts.pageSize)
+        .limit(opts.pageSize)
+        .exec(),
+      this.card.countDocuments(filter).exec(),
+      this.card.countDocuments({ deck: deckOid, examples: { $size: 0 } }).exec(),
+      this.card
+        .aggregate<{ _id: string; count: number }>([
+          { $match: { deck: deckOid } },
+          { $unwind: "$tags" },
+          { $group: { _id: "$tags", count: { $sum: 1 } } },
+          { $sort: { count: -1, _id: 1 } },
+        ])
+        .exec(),
+    ]);
+    return {
+      items,
+      total,
+      missingExamples,
+      tags: tagRows.map((t) => ({ tag: t._id, count: t.count })),
+    };
+  }
+
+  /**
+   * Add and/or remove tags on many cards at once — either an explicit id list
+   * or everything matching a filter (so "select all 4861" needs no id list).
+   */
+  async bulkTags(
+    caller: AuthUser,
+    deckId: string,
+    input: {
+      ids?: string[];
+      filter?: { q?: string; tag?: string; missing?: boolean };
+      add?: string[];
+      remove?: string[];
+    },
+  ): Promise<{ matched: number }> {
+    const deck = await this.getDeck(caller, deckId);
+    if (deck.shared && !this.isAdmin(caller)) {
+      throw new ForbiddenException("Only admins modify shared-deck cards");
+    }
+    const clean = (l?: string[]) =>
+      [...new Set((l ?? []).map((t) => t.trim().replace(/^#/, "")).filter(Boolean))];
+    const add = clean(input.add);
+    const remove = clean(input.remove);
+    if (add.length === 0 && remove.length === 0) {
+      throw new BadRequestException("Nothing to add or remove");
+    }
+    let match: Record<string, unknown>;
+    if (input.ids && input.ids.length > 0) {
+      let oids: Types.ObjectId[];
+      try {
+        oids = input.ids.map((i) => new Types.ObjectId(i));
+      } catch {
+        throw new BadRequestException("Invalid card id");
+      }
+      match = { deck: deck._id, _id: { $in: oids } };
+    } else if (input.filter) {
+      match = this.cardFilter(deckId, input.filter);
+    } else {
+      throw new BadRequestException("ids or filter required");
+    }
+    let matched = 0;
+    // $addToSet and $pull on the same field conflict, so run them in turn.
+    if (remove.length > 0) {
+      const r = await this.card.updateMany(match, { $pull: { tags: { $in: remove } } }).exec();
+      matched = r.matchedCount;
+    }
+    if (add.length > 0) {
+      const r = await this.card
+        .updateMany(match, { $addToSet: { tags: { $each: add } } })
+        .exec();
+      matched = r.matchedCount;
+    }
+    return { matched };
+  }
+
   /**
    * Add a card to a deck the caller owns (personal) — or, for an admin, to
    * a **shared** deck (the admin manages shared content; T-P3-08). Idempotent
@@ -423,6 +541,7 @@ export class FlashcardsService implements OnModuleInit {
       title: doc.title,
       summary: doc.summary,
       level: doc.level,
+      category: doc.category ?? "",
       lang: doc.lang,
       status: doc.status,
       shared: doc.shared,
@@ -430,7 +549,7 @@ export class FlashcardsService implements OnModuleInit {
       cardCount,
       examples:
         (doc.exampleTotal ?? 0) > 0
-          ? { total: doc.exampleTotal ?? 0, done: doc.exampleDone ?? 0 }
+          ? { total: doc.exampleTotal ?? 0, done: doc.exampleDone ?? 0, paused: doc.examplePaused ?? false }
           : null,
       publishWhenReady: doc.publishWhenReady ?? false,
       createdAt: doc.createdAt?.toISOString() ?? "",

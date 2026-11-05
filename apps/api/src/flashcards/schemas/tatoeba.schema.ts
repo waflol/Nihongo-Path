@@ -15,8 +15,12 @@ export class TatoebaSentence {
   @Prop({ type: String, required: true })
   ja: string;
 
-  @Prop({ type: String, required: true })
-  vi: string;
+  /** Human Vietnamese translation, when Tatoeba has one (~6k sentences). */
+  @Prop({ type: String })
+  vi?: string;
+
+  @Prop({ type: Boolean, default: false })
+  hasVi: boolean;
 
   @Prop({ type: [String], index: true, default: [] })
   tokens: string[];

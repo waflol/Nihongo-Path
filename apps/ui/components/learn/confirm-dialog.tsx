@@ -13,6 +13,7 @@ export function ConfirmDialog({
   message,
   confirmLabel,
   busy = false,
+  busyLabel = "Đang đặt lại…",
   onConfirm,
   onCancel,
 }: {
@@ -21,6 +22,7 @@ export function ConfirmDialog({
   message: string;
   confirmLabel: string;
   busy?: boolean;
+  busyLabel?: string;
   onConfirm: () => void;
   onCancel: () => void;
 }) {
@@ -73,7 +75,7 @@ export function ConfirmDialog({
             disabled={busy}
             className="rounded-lg bg-[var(--destructive)] px-4 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-60"
           >
-            {busy ? "Đang đặt lại…" : confirmLabel}
+            {busy ? busyLabel : confirmLabel}
           </button>
         </div>
       </div>

@@ -3,18 +3,11 @@
 import Link from "next/link";
 import { useEffect, useState, type FormEvent } from "react";
 import { emitSessionChanged } from "@/lib/session-events";
-import {
-  ExampleFields,
-  cleanExampleInputs,
-  type ExampleInput,
-} from "@/components/learn/example-fields";
-import { CardEditForm } from "@/components/learn/card-edit-form";
-import { ReadingFields, type PartOfSpeech } from "@/components/learn/reading-fields";
-import { ImageField } from "@/components/learn/image-field";
-import { CardTile, HanVietToggle } from "@/components/learn/card-tile";
 import { ConfirmDialog } from "@/components/learn/confirm-dialog";
-import { DeckProcessing, useDeckProgressPolling, type DeckExamples } from "@/components/learn/deck-processing";
-import { useHanVietPref } from "@/lib/use-han-viet-pref";
+import { Icon } from "@/components/learn/icons";
+import { LevelBadge, LevelSelect } from "@/components/learn/level-select";
+import { CategoryChip, CategoryFilter, deckCategories } from "@/components/learn/category-filter";
+import { DeckProcessing, RetryExamplesButton, reloadDecks, useDeckProgressPolling, type DeckExamples } from "@/components/learn/deck-processing";
 
 /**
  * Deck list + per-deck progress + **card management** (P3-UI-03, P3-UI-05).
@@ -35,25 +28,13 @@ interface Deck {
   summary?: string;
   shared: boolean;
   level?: string;
+  category?: string;
   status: string;
   cardCount: number;
   examples?: DeckExamples | null;
   createdAt: string;
 }
 
-interface Card {
-  _id: string;
-  front: string;
-  back: string;
-  reading?: string;
-  image?: string;
-  imageCredit?: string;
-  partOfSpeech?: string;
-  hanViet?: string;
-  examples?: { sentence: string; translation?: string }[];
-  tags?: string[];
-  origin: string;
-}
 
 interface DeckProgress {
   [deckId: string]: { new: number; due: number };
@@ -74,20 +55,13 @@ export function DecksConsole() {
   const [creating, setCreating] = useState(false);
   const [newTitle, setNewTitle] = useState("");
   const [newLevel, setNewLevel] = useState("");
+  const [newCategory, setNewCategory] = useState("");
+  const [catFilter, setCatFilter] = useState("");
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [resettingId, setResettingId] = useState<string | null>(null);
   const [confirmResetId, setConfirmResetId] = useState<string | null>(null);
 
   // Card management state, per open deck.
-  const [openDeck, setOpenDeck] = useState<string | null>(null);
-  const [cards, setCards] = useState<Card[]>([]);
-  const [cardsLoading, setCardsLoading] = useState(false);
-  const [formKey, setFormKey] = useState(0);
-  const [adding, setAdding] = useState(false);
-  const [cardForm, setCardForm] = useState<{ front: string; back: string; reading: string; image: string; imageCredit: string; partOfSpeech: PartOfSpeech | ""; examples: ExampleInput[]; tags: string }>({ front: "", back: "", reading: "", image: "", imageCredit: "", partOfSpeech: "", examples: [{ sentence: "", translation: "" }], tags: "" });
-  const [showHanViet, toggleHanViet] = useHanVietPref();
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [deletingCardId, setDeletingCardId] = useState<string | null>(null);
 
   const loading = loadedFor !== version;
   useDeckProgressPolling(decks, "/api/flashcards/decks", setDecks);
@@ -143,31 +117,7 @@ export function DecksConsole() {
     setVersion((v) => v + 1);
   }
 
-  /** Load (or reload) the cards of the open deck. */
-  async function loadCards(deckId: string) {
-    setCardsLoading(true);
-    const res = await fetch(`/api/flashcards/decks/${deckId}/cards`, {
-      cache: "no-store",
-    }).catch(() => null);
-    setCardsLoading(false);
-    if (!res || !res.ok) {
-      setError("Không tải được danh sách thẻ");
-      return;
-    }
-    setCards(((await res.json().catch(() => [])) as Card[]) ?? []);
-  }
 
-  async function toggleDeck(deck: Deck) {
-    if (openDeck === deck._id) {
-      setOpenDeck(null);
-      setCards([]);
-      return;
-    }
-    setOpenDeck(deck._id);
-    setCardForm({ front: "", back: "", reading: "", image: "", imageCredit: "", partOfSpeech: "", examples: [{ sentence: "", translation: "" }], tags: "" });
-    setError(null);
-    await loadCards(deck._id);
-  }
 
   async function createDeck(event: FormEvent) {
     event.preventDefault();
@@ -179,6 +129,7 @@ export function DecksConsole() {
       body: JSON.stringify({
         title: newTitle,
         level: newLevel || undefined,
+        category: newCategory.trim() || undefined,
       }),
     }).catch(() => null);
     setCreating(false);
@@ -195,6 +146,7 @@ export function DecksConsole() {
     }
     setNewTitle("");
     setNewLevel("");
+    setNewCategory("");
     refetch();
   }
 
@@ -206,10 +158,6 @@ export function DecksConsole() {
     }).catch(() => null);
     setDeletingId(null);
     if (res?.ok) {
-      if (openDeck === deckId) {
-        setOpenDeck(null);
-        setCards([]);
-      }
       refetch();
     } else if (res && res.status === 403) {
       setError("Chỉ chủ sở hữu xoá được bộ thẻ cá nhân");
@@ -236,65 +184,7 @@ export function DecksConsole() {
     }
   }
 
-  async function addCard(event: FormEvent) {
-    event.preventDefault();
-    if (!openDeck) return;
-    setAdding(true);
-    setError(null);
-    const res = await fetch("/api/flashcards/cards", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        deckId: openDeck,
-        front: cardForm.front,
-        back: cardForm.back,
-        reading: cardForm.reading.trim(),
-        image: cardForm.image,
-        imageCredit: cardForm.imageCredit,
-        partOfSpeech: cardForm.partOfSpeech,
-        examples: cleanExampleInputs(cardForm.examples),
-        tags: cardForm.tags
-          ? cardForm.tags.split(/[;,]/).map((t) => t.trim()).filter(Boolean)
-          : undefined,
-      }),
-    }).catch(() => null);
-    setAdding(false);
-    if (!res) {
-      setError("Không kết nối được API");
-      return;
-    }
-    if (!res.ok) {
-      const data = (await res.json().catch(() => null)) as
-        | { message?: string }
-        | null;
-      setError(
-        data?.message
-          ? `Lỗi: ${data.message}`
-          : `Không thêm được thẻ (${res.status})`,
-      );
-      return;
-    }
-    setFormKey((k) => k + 1);
-    setCardForm({ front: "", back: "", reading: "", image: "", imageCredit: "", partOfSpeech: "", examples: [{ sentence: "", translation: "" }], tags: "" });
-    await loadCards(openDeck);
-    refetch();
-  }
 
-  async function removeCard(cardId: string) {
-    if (!window.confirm("Xoá thẻ này? Tiến độ học của thẻ cũng bị xoá.")) return;
-    setDeletingCardId(cardId);
-    setError(null);
-    const res = await fetch(`/api/flashcards/cards/${cardId}`, {
-      method: "DELETE",
-    }).catch(() => null);
-    setDeletingCardId(null);
-    if (res?.ok) {
-      if (openDeck) await loadCards(openDeck);
-      refetch();
-    } else {
-      setError("Xoá thẻ thất bại");
-    }
-  }
 
   return (
     <div className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6">
@@ -352,14 +242,24 @@ export function DecksConsole() {
               placeholder="Từ vựng N5"
             />
           </label>
-          <label className="w-full sm:w-40 text-sm">
+          <div className="w-full sm:w-40 text-sm">
             <span className="text-[var(--muted-foreground)]">Cấp độ</span>
+            <LevelSelect value={newLevel} onChange={(lv) => setNewLevel(lv)} />
+          </div>
+          <label className="w-full sm:w-44 text-sm">
+            <span className="text-[var(--muted-foreground)]">Phân loại</span>
             <input
-              value={newLevel}
-              onChange={(e) => setNewLevel(e.target.value)}
+              value={newCategory}
+              onChange={(e) => setNewCategory(e.target.value)}
+              list="deck-category-list"
               className={`mt-1 ${inputClass}`}
-              placeholder="N5"
+              placeholder="Từ vựng, Kanji…"
             />
+            <datalist id="deck-category-list">
+              {deckCategories(decks).map(([c]) => (
+                <option key={c} value={c} />
+              ))}
+            </datalist>
           </label>
           <button
             type="submit"
@@ -370,6 +270,8 @@ export function DecksConsole() {
           </button>
         </div>
       </form>
+
+      <CategoryFilter decks={decks} value={catFilter} onChange={setCatFilter} />
 
       {/* Deck list */}
       <div className="mt-6 space-y-3">
@@ -391,10 +293,11 @@ export function DecksConsole() {
             .
           </p>
         )}
-        {decks.map((deck) => {
+        {decks
+          .filter((d) => !catFilter || d.category === catFilter)
+          .map((deck) => {
           const mine = !deck.shared;
           const counts = progress[deck._id];
-          const isOpen = openDeck === deck._id;
           return (
             <div
               key={deck._id}
@@ -414,10 +317,9 @@ export function DecksConsole() {
                         Bản nháp
                       </span>
                     )}
+                    <CategoryChip category={deck.category} />
                     {deck.level && (
-                      <span className="rounded-full bg-[var(--layer)] px-2 py-0.5 text-xs font-medium text-[var(--muted-foreground)]">
-                        {deck.level}
-                      </span>
+                      <LevelBadge level={deck.level} />
                     )}
                   </h3>
                   {deck.summary && (
@@ -427,46 +329,63 @@ export function DecksConsole() {
                   )}
                 </div>
 
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => void toggleDeck(deck)}
-                    aria-expanded={isOpen}
-                    className="rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs font-medium text-[var(--foreground)] hover:bg-[var(--layer-hover)]"
+                <div className="flex flex-wrap items-center justify-end gap-2">
+                  <Link
+                    href={`/learn/decks/${deck._id}`}
+                    title={`Xem thẻ (${deck.cardCount})`}
+                    aria-label="Xem thẻ"
+                    className="relative inline-flex size-9 items-center justify-center rounded-lg border border-[var(--border)] text-[var(--foreground)] hover:bg-[var(--layer-hover)]"
                   >
-                    {isOpen ? "Ẩn thẻ" : `Xem thẻ (${deck.cardCount})`}
-                  </button>
+                    <Icon name="list" />
+                    <span className="absolute -right-1.5 -top-1.5 min-w-4 rounded-full bg-[var(--primary)] px-1 text-center text-[10px] font-semibold leading-4 text-white">
+                      {deck.cardCount}
+                    </span>
+                  </Link>
                   <a
                     href={`/api/flashcards/decks/${deck._id}/export`}
                     download
-                    title="Tải toàn bộ thẻ của bộ này thành file CSV (nhập lại được)"
-                    className="rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs font-medium text-[var(--primary)] hover:bg-[var(--layer-hover)]"
+                    title="Xuất CSV — tải toàn bộ thẻ của bộ này (nhập lại được)"
+                    aria-label="Xuất CSV"
+                    className="inline-flex size-9 items-center justify-center rounded-lg border border-[var(--border)] text-[var(--foreground)] hover:bg-[var(--layer-hover)] disabled:opacity-60"
                   >
-                    Xuất CSV
+                    <Icon name="download" />
                   </a>
+                  {mine && (
+                    <RetryExamplesButton
+                      deckId={deck._id}
+                      iconOnly
+                      className="inline-flex size-9 items-center justify-center rounded-lg border border-[var(--border)] text-[var(--foreground)] hover:bg-[var(--layer-hover)] disabled:opacity-60"
+                      onChanged={() => void reloadDecks("/api/flashcards/decks", setDecks)}
+                    />
+                  )}
                   <Link
                       href={`/learn/study?deck=${deck._id}`}
-                      className="rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs font-medium text-[var(--foreground)] hover:bg-[var(--layer-hover)]"
+                      title="Ôn tập"
+                      aria-label="Ôn tập"
+                      className="inline-flex size-9 items-center justify-center rounded-lg border border-[var(--border)] text-[var(--foreground)] hover:bg-[var(--layer-hover)]"
                     >
-                      Ôn tập
+                      <Icon name="play" />
                     </Link>
                   <button
                       type="button"
                       onClick={() => setConfirmResetId(deck._id)}
                       disabled={resettingId === deck._id}
                       title="Đặt lại tiến độ học — mọi thẻ thành thẻ mới (thẻ vẫn giữ nguyên)"
-                      className="rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs font-medium text-[var(--muted-foreground)] hover:bg-[var(--layer-hover)] hover:text-[var(--foreground)] disabled:opacity-60"
+                      aria-label="Đặt lại tiến độ"
+                      className="inline-flex size-9 items-center justify-center rounded-lg border border-[var(--border)] text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[var(--layer-hover)] disabled:opacity-60"
                     >
-                      {resettingId === deck._id ? "Đang đặt lại…" : "↺ Đặt lại"}
+                      <Icon name="reset" className={"size-4" + (resettingId === deck._id ? " animate-spin" : "")} />
                     </button>
                   {mine && (
                     <button
                       type="button"
                       onClick={() => void remove(deck._id)}
                       disabled={deletingId === deck._id}
-                      className="rounded-lg border border-[var(--destructive)] px-3 py-1.5 text-xs font-medium text-[var(--destructive)] hover:bg-[#fef2f2] disabled:opacity-60"
+                      title="Xoá"
+                      aria-label="Xoá"
+                      className="inline-flex size-9 items-center justify-center rounded-lg border border-[var(--destructive)] text-[var(--destructive)] hover:bg-[#fef2f2] disabled:opacity-60"
                     >
-                      {deletingId === deck._id ? "Đang xoá…" : "Xoá"}
+                      <Icon name="trash" />
                     </button>
                   )}
                 </div>
@@ -503,173 +422,12 @@ export function DecksConsole() {
               </dl>
 
               {deck.examples && (
-                <DeckProcessing examples={deck.examples} draft={deck.status === "DRAFT"} />
-              )}
-
-              {/* ── Card list + add-card form (expanded) ───────────────── */}
-              {isOpen && (
-                <div className="mt-4 border-t border-[var(--border)] pt-4">
-                  {/* Add a card (own decks only) */}
-                  {mine && (
-                    <form
-                      onSubmit={addCard}
-                      className="rounded-xl border border-[var(--border)] bg-[var(--background)] p-4"
-                    >
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <h3 className="text-sm font-semibold text-[var(--foreground)]">
-                          Thêm thẻ
-                        </h3>
-                        <Link
-                          href={`/learn/import?deck=${deck._id}`}
-                          className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs font-semibold text-[var(--primary)] hover:bg-[var(--layer-hover)]"
-                        >
-                          ⬆ Nhập từ CSV / XLSX
-                        </Link>
-                      </div>
-                      <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                        <label className="block text-sm">
-                          <span className="text-[var(--muted-foreground)]">
-                            Mặt trước (câu hỏi)
-                          </span>
-                          <input
-                            required
-                            value={cardForm.front}
-                            onChange={(e) =>
-                              setCardForm((f) => ({ ...f, front: e.target.value }))
-                            }
-                            className={`mt-1 ${inputClass}`}
-                            placeholder="猫"
-                          />
-                        </label>
-                        <label className="block text-sm">
-                          <span className="text-[var(--muted-foreground)]">
-                            Mặt sau (đáp án)
-                          </span>
-                          <input
-                            required
-                            value={cardForm.back}
-                            onChange={(e) =>
-                              setCardForm((f) => ({ ...f, back: e.target.value }))
-                            }
-                            className={`mt-1 ${inputClass}`}
-                            placeholder="chú mèo"
-                          />
-                        </label>
-                        <ReadingFields
-                          key={formKey}
-                          front={cardForm.front}
-                          reading={cardForm.reading}
-                          partOfSpeech={cardForm.partOfSpeech}
-                          onReading={(reading) => setCardForm((f) => ({ ...f, reading }))}
-                          onPartOfSpeech={(partOfSpeech) => setCardForm((f) => ({ ...f, partOfSpeech }))}
-                        />
-                        <ImageField
-                          key={`img-${formKey}`}
-                          term={cardForm.front}
-                          image={cardForm.image}
-                          credit={cardForm.imageCredit}
-                          onChange={(image, imageCredit) =>
-                            setCardForm((f) => ({ ...f, image, imageCredit }))
-                          }
-                        />
-                        <ExampleFields
-                          autoSuggest
-                          value={cardForm.examples}
-                          onChange={(examples) => setCardForm((f) => ({ ...f, examples }))}
-                        />
-                        <label className="block text-sm sm:col-span-2">
-                          <span className="text-[var(--muted-foreground)]">
-                            Tags (tuỳ chọn, phân tách bằng dấu phẩy)
-                          </span>
-                          <input
-                            value={cardForm.tags}
-                            onChange={(e) =>
-                              setCardForm((f) => ({ ...f, tags: e.target.value }))
-                            }
-                            className={`mt-1 ${inputClass}`}
-                            placeholder="động vật, N5"
-                          />
-                        </label>
-                      </div>
-                      <button
-                        type="submit"
-                        disabled={
-                          adding ||
-                          cardForm.front.trim() === "" ||
-                          cardForm.back.trim() === ""
-                        }
-                        className="mt-3 rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-semibold text-[var(--primary-foreground)] hover:bg-[var(--primary-hover)] disabled:cursor-not-allowed disabled:opacity-60"
-                      >
-                        {adding ? "Đang thêm…" : "Thêm thẻ"}
-                      </button>
-                    </form>
-                  )}
-
-                  {/* Cards */}
-                  <div className="mt-4">
-                    {cardsLoading && (
-                      <p className="text-sm text-[var(--muted-foreground)]">
-                        Đang tải thẻ…
-                      </p>
-                    )}
-                    {!cardsLoading && cards.length === 0 && (
-                      <p className="text-sm text-[var(--muted-foreground)]">
-                        Bộ thẻ này chưa có thẻ nào.
-                      </p>
-                    )}
-                    <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                      <p className="text-sm font-medium text-[var(--muted-foreground)]">
-                        {cards.length} thẻ
-                      </p>
-                      <HanVietToggle on={showHanViet} onToggle={toggleHanViet} />
-                    </div>
-                    <ul className="space-y-3">
-                      {cards.map((card, i) =>
-                        editingId === card._id ? (
-                          <li
-                            key={card._id}
-                            className="rounded-2xl border border-[var(--primary)] bg-[var(--background)] p-4 shadow-sm"
-                          >
-                            <CardEditForm
-                              card={card}
-                              onCancel={() => setEditingId(null)}
-                              onError={setError}
-                              onSaved={async () => {
-                                setEditingId(null);
-                                setError(null);
-                                await (openDeck ? loadCards(openDeck) : Promise.resolve());
-                              }}
-                            />
-                          </li>
-                        ) : (
-                          <CardTile
-                            key={card._id}
-                            card={card}
-                            index={i}
-                            showHanViet={showHanViet}
-                            actions={mine && (<>
-                              <button
-                                type="button"
-                                onClick={() => setEditingId(card._id)}
-                                className="rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs font-semibold text-[var(--foreground)] hover:bg-[var(--layer-hover)]"
-                              >
-                                Sửa
-                              </button>
-                              <button
-                                type="button"
-                                disabled={deletingCardId === card._id}
-                                onClick={() => void removeCard(card._id)}
-                                className="rounded-lg border border-[var(--destructive)] px-3 py-1.5 text-xs font-semibold text-[var(--destructive)] hover:bg-[#fef2f2] disabled:opacity-60 dark:hover:bg-[#2a1215]"
-                              >
-                                {deletingCardId === card._id ? "…" : "Xoá"}
-                              </button>
-                            </>)}
-                          />
-                        ),
-                      )}
-                    </ul>
-                  </div>
-                </div>
+                <DeckProcessing
+                  examples={deck.examples}
+                  draft={deck.status === "DRAFT"}
+                  deckId={deck._id}
+                  onChanged={() => void reloadDecks("/api/flashcards/decks", setDecks)}
+                />
               )}
             </div>
           );

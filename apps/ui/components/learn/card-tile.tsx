@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { isJlptLevel, LevelBadge } from "@/components/learn/level-select";
 import { hanViet } from "@/lib/han-viet";
 import { PosChip } from "@/components/learn/reading-fields";
 
@@ -13,7 +14,7 @@ export interface TileCard {
   imageCredit?: string;
   partOfSpeech?: string;
   hanViet?: string;
-  examples?: { sentence: string; translation?: string }[];
+  examples?: { sentence: string; translation?: string; source?: string }[];
   tags?: string[];
   origin?: string;
 }
@@ -35,11 +36,18 @@ export function CardTile({
   index,
   showHanViet,
   actions,
+  selected,
+  onSelect,
+  onTagClick,
 }: {
   card: TileCard;
   index: number;
   showHanViet: boolean;
   actions?: ReactNode;
+  /** When `onSelect` is given, a checkbox appears under the number. */
+  selected?: boolean;
+  onSelect?: (checked: boolean) => void;
+  onTagClick?: (tag: string) => void;
 }) {
   const hv = showHanViet ? card.hanViet || hanViet(card.front) : "";
   const accent = ACCENT[card.partOfSpeech ?? ""] ?? "bg-[var(--border-line-3)]";
@@ -53,6 +61,15 @@ export function CardTile({
           <span className="grid size-6 place-items-center rounded-full bg-[var(--layer)] text-[11px] font-semibold tabular-nums text-[var(--muted-foreground)]">
             {index + 1}
           </span>
+          {onSelect ? (
+            <input
+              type="checkbox"
+              checked={selected === true}
+              onChange={(e) => onSelect(e.target.checked)}
+              aria-label="Chọn thẻ"
+              className="size-4 accent-[var(--primary)]"
+            />
+          ) : null}
           {card.image ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
@@ -92,6 +109,14 @@ export function CardTile({
               {card.examples.map((ex, i) => (
                 <li key={i} className="text-sm leading-snug">
                   <span lang="ja" className="text-[var(--foreground)]">{ex.sentence}</span>
+                  {ex.source === "ai" || ex.source === "ai-translated" ? (
+                    <span
+                      title={ex.source === "ai" ? "Câu do AI viết" : "Câu thật (Tatoeba), bản dịch do AI"}
+                      className="ml-2 rounded bg-[var(--layer)] px-1.5 py-0.5 align-middle text-[10px] font-semibold text-[var(--muted-foreground)]"
+                    >
+                      {ex.source === "ai" ? "AI viết" : "AI dịch"}
+                    </span>
+                  ) : null}
                   {ex.translation ? (
                     <span className="block text-xs text-[var(--muted-foreground)]">{ex.translation}</span>
                   ) : null}
@@ -103,9 +128,29 @@ export function CardTile({
           {(card.tags && card.tags.length > 0) || card.origin ? (
             <div className="mt-3 flex flex-wrap items-center gap-1.5">
               {card.tags?.map((t) => (
-                <span key={t} className="rounded-full bg-[var(--layer)] px-2 py-0.5 text-[11px] font-medium text-[var(--muted-foreground)]">
-                  #{t}
-                </span>
+                isJlptLevel(t) ? (
+                  onTagClick ? (
+                    <button key={t} type="button" onClick={() => onTagClick(t)} title="Lọc theo cấp độ này">
+                      <LevelBadge level={t} />
+                    </button>
+                  ) : (
+                    <LevelBadge key={t} level={t} />
+                  )
+                ) : onTagClick ? (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => onTagClick(t)}
+                    title="Lọc theo tag này"
+                    className="rounded-full bg-[var(--layer)] px-2 py-0.5 text-[11px] font-medium text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+                  >
+                    #{t}
+                  </button>
+                ) : (
+                  <span key={t} className="rounded-full bg-[var(--layer)] px-2 py-0.5 text-[11px] font-medium text-[var(--muted-foreground)]">
+                    #{t}
+                  </span>
+                )
               ))}
               {card.origin && card.origin !== "manual" ? (
                 <span className="ml-auto text-[11px] text-[var(--muted-foreground)]">nguồn: {card.origin}</span>
