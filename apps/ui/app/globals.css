@@ -1,5 +1,9 @@
 @import "tailwindcss";
 
+/* Preline UI — JS-driven state variants (hs-dropdown-open:…, etc.). */
+@source "../node_modules/preline/dist/index.js";
+@import "preline/variants.css";
+
 /* Nihongo Path brand tokens (placeholder palette — replace on brand approval). */
 @import "./themes/theme.css";
 

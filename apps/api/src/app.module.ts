@@ -12,6 +12,7 @@ import { buildContentModule } from "./content/content.module.js";
 import { buildFlashcardsModule } from "./flashcards/flashcards.module.js";
 import { buildSrsModule } from "./srs/srs.module.js";
 import { buildImportModule } from "./import/import.module.js";
+import { buildLogsModule } from "./logs/logs.module.js";
 
 /**
  * NOTE: the very first import (`./bootstrap/env.js`) loads `.env` /
@@ -47,6 +48,8 @@ import { buildImportModule } from "./import/import.module.js";
     buildFlashcardsModule(),
     buildSrsModule(),
     buildImportModule(),
+    // Admin request-log viewer (GET /admin/logs).
+    buildLogsModule(),
   ],
   controllers: [AppController],
   providers: [AppService],

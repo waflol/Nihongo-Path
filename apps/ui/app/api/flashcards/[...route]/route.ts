@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { API_BASE_URL } from "@/lib/api";
+import { API_BASE_URL, clientIpHeaders } from "@/lib/api";
 import { getSession } from "@/lib/session";
 
 /**
@@ -26,6 +26,7 @@ async function forward(request: NextRequest, route: string[]): Promise<NextRespo
   const upstream = await fetch(target, {
     method: request.method.toUpperCase() as "GET" | "POST" | "PATCH" | "DELETE",
     headers: {
+      ...(await clientIpHeaders()),
       "Content-Type": "application/json",
       Authorization: `Bearer ${session.accessToken}`,
     },

@@ -38,6 +38,23 @@ interface FetchOptions {
 }
 
 /**
+ * `X-Forwarded-For` for the current browser request, so the API sees the real
+ * client IP (for IP stats / blocking) rather than this server's. Only
+ * honoured by the API when `TRUST_PROXY` is set. Call from Route Handlers.
+ */
+export async function clientIpHeaders(): Promise<Record<string, string>> {
+  try {
+    const { headers } = await import("next/headers");
+    const h = await headers();
+    const ip =
+      h.get("x-forwarded-for")?.split(",")[0]?.trim() || h.get("x-real-ip") || "";
+    return ip ? { "X-Forwarded-For": ip } : {};
+  } catch {
+    return {};
+  }
+}
+
+/**
  * Fetch a backend endpoint, JSON in / JSON out. Throws `ApiError` on any
  * non-2xx status (with the parsed body for UI error display).
  */
@@ -50,6 +67,7 @@ export async function apiFetch<T>(
   const res = await fetch(`${API_BASE}${path}`, {
     method,
     headers: {
+      ...(await clientIpHeaders()),
       ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { API_BASE_URL } from "@/lib/api";
+import { API_BASE_URL, clientIpHeaders } from "@/lib/api";
 import { getSession } from "@/lib/session";
 
 /**
@@ -35,6 +35,7 @@ export async function POST(request: Request) {
   const upstream = await fetch(`${API_BASE_URL}/flashcards/import/${action}`, {
     method: "POST",
     headers: {
+      ...(await clientIpHeaders()),
       "Content-Type": contentType,
       Authorization: `Bearer ${session.accessToken}`,
     },

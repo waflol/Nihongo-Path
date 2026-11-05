@@ -93,7 +93,34 @@ JWT_ACCESS_SECRET=
 JWT_ACCESS_EXPIRES_IN=15m
 JWT_REFRESH_SECRET=
 JWT_REFRESH_EXPIRES_IN=7d
+
+# Nhật ký & chống flood (tuỳ chọn) — xem §4.1.1
+TRUST_PROXY=
+IP_ALLOWLIST=
+RATE_BLOCK_MAX=300
+RATE_BLOCK_WINDOW_SEC=10
+RATE_BLOCK_MINUTES=15
+LOG_4XX_ALL=false
 ```
+
+#### 4.1.1. Nhật ký, thống kê truy cập & chặn IP
+
+Cần `MONGODB_URL`. Admin xem ở `/admin/logs` (tab Request, Log ứng dụng & lỗi,
+Thao tác admin, Truy cập & chặn IP; lọc theo Ngày/Tuần/Tháng hoặc ngày cụ thể;
+nút **Xuất CSV** theo bộ lọc hiện tại, tối đa 10.000 dòng).
+
+| Biến | Mặc định | Ý nghĩa |
+|---|---|---|
+| `TRUST_PROXY` | tắt | Lấy IP thật từ `X-Forwarded-For`: `true`, số hop (`1`) hoặc tên subnet (`loopback`). **Chỉ bật khi người ngoài không gọi thẳng được vào API** (header có thể giả mạo). Không bật → mọi request cùng IP của server UI, thống kê/chặn theo IP vô nghĩa. Kiểm tra bằng khối "API nhìn thấy IP của bạn". |
+| `IP_ALLOWLIST` | rỗng | IP cách nhau bằng dấu phẩy, không bao giờ bị chặn. Thêm/gỡ thêm được ngay trên UI (mục nhập từ env chỉ sửa được ở đây). |
+| `RATE_BLOCK_MAX` | `300` | Quá số request này trong cửa sổ → tự chặn IP |
+| `RATE_BLOCK_WINDOW_SEC` | `10` | Độ dài cửa sổ đếm (giây) |
+| `RATE_BLOCK_MINUTES` | `15` | Thời gian khoá khi tự chặn |
+| `LOG_4XX_ALL` | `false` | `true` = lưu cả 401/403/404/429 vào log ứng dụng (mặc định bỏ qua vì nhiễu khi bị quét) |
+
+Lưu ý: IP nội bộ (127.x, 10.x, 192.168.x, 172.16–31.x…) không bao giờ bị tự
+chặn; IP trong allowlist cũng vậy. Chặn ở tầng ứng dụng chỉ chống flood nhỏ —
+DDoS thật cần chặn ở hạ tầng (Cloudflare / nginx / firewall).
 
 ### 4.2. UI — `apps/ui/.env`
 

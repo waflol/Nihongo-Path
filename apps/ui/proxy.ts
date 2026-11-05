@@ -16,6 +16,12 @@ import { SESSION_COOKIE } from "@/lib/constants";
  * - Cookie present → allow; the page's server code does the real check.
  */
 export function proxy(request: NextRequest) {
+  // The admin sign-in page itself must stay reachable while signed out —
+  // otherwise it redirects to `/login?from=/admin/login`, which sends the
+  // admin back to the same page after sign-in (an endless loop).
+  if (request.nextUrl.pathname === "/admin/login") {
+    return NextResponse.next();
+  }
   const hasSession = request.cookies.has(SESSION_COOKIE);
   if (hasSession) {
     return NextResponse.next();

@@ -4,6 +4,9 @@ import Link from "next/link";
 import { siteConfig } from "./site";
 import BlurText from "@/components/reactbits/BlurText";
 import SpotlightCard from "@/components/reactbits/SpotlightCard";
+import StarBorder from "@/components/reactbits/StarBorder";
+import ShinyText from "@/components/reactbits/ShinyText";
+import FadeContent from "@/components/reactbits/FadeContent";
 
 export const metadata: Metadata = {
   title: "Học tiếng Nhật mỗi ngày",
@@ -47,18 +50,22 @@ export default function Home() {
               className="text-4xl font-bold tracking-tight text-[var(--foreground)] sm:text-5xl"
             />
             <p className="mt-4 text-lg text-[var(--muted-foreground)]">
-              {siteConfig.tagline}
+              <ShinyText text={siteConfig.tagline} color="var(--muted-foreground)" shineColor="var(--primary)" />
             </p>
             <p className="mt-4 text-base text-[var(--foreground)]">
               {siteConfig.defaultDescription}
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
-              <Link
+              <StarBorder
+                as="a"
                 href="/learn"
-                className="rounded-lg bg-[var(--primary)] px-5 py-2.5 text-sm font-semibold text-[var(--primary-foreground)] hover:bg-[var(--primary-hover)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--primary-focus)]"
+                color="var(--primary)"
+                backgroundColor="var(--primary)"
+                textColor="var(--primary-foreground)"
+                className="text-sm font-semibold"
               >
                 Vào khu học tập
-              </Link>
+              </StarBorder>
               <Link
                 href="/login"
                 className="rounded-lg border border-[var(--border)] px-5 py-2.5 text-sm font-semibold text-[var(--foreground)] hover:bg-[var(--layer-hover)]"
@@ -78,7 +85,7 @@ export default function Home() {
         >
           Những gì bạn sẽ làm được
         </h2>
-        <div className="mt-8 grid gap-6 sm:grid-cols-2">
+        <FadeContent blur duration={0.8} className="mt-8 grid gap-6 sm:grid-cols-2">
           {features.map((f) => (
             <SpotlightCard
               key={f.title}
@@ -91,7 +98,7 @@ export default function Home() {
               <p className="mt-2 text-sm leading-6 text-[var(--muted-foreground-1)]">{f.desc}</p>
             </SpotlightCard>
           ))}
-        </div>
+        </FadeContent>
       </section>
     </div>
   );

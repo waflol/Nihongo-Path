@@ -64,6 +64,16 @@ const NAV: NavItem[] = [
       </svg>
     ),
   },
+  {
+    href: "/admin/logs",
+    label: "Nhật ký hệ thống",
+    desc: "Theo dõi request tới backend",
+    icon: (
+      <svg {...iconProps}>
+        <path d="M5 4h14v16H5zM8 9h8M8 13h8M8 17h5" />
+      </svg>
+    ),
+  },
 ];
 
 function isActive(pathname: string, href: string) {

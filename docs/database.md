@@ -57,7 +57,7 @@
 | Collection | Ghi chú |
 |---|---|
 | `feedback` | Trạng thái xử lý + lịch sử |
-| `audit_logs` | AI thay đổi, thời điểm, giá trị |
+| `audit_logs` | AI thay đổi, thời điểm, giá trị — đã triển khai một phần: xem `auditlogs` ở §3.3 (thao tác của admin) |
 
 ### Ads
 | Ghi chú |
@@ -98,6 +98,21 @@ bắt buộc + unique (vd `user_subscriptions(userId, status)` unique một gói
 | `usercardprogresses` | `UserCardProgress` | `{ user: 1, card: 1 }` | **unique** | 1 progress record mỗi (user, card) — last-write-wins đa thiết bị (T-P3-06) |
 | `usercardprogresses` | `UserCardProgress` | `{ user: 1, dueDay: 1 }` | — | Hàng đợi ôn theo ngày (P3-SRS-02 / T-P3-05) |
 | `studysessions` | `StudySession` | `{ user: 1, day: -1 }` | — | Thống kê phiên học theo ngày (P3-UI-03) |
+
+### 3.3. Đã tạo (nhật ký & chặn IP — `apps/api/src/logs/`)
+
+| Collection (actual) | Model | Index | Loại | Mục đích |
+|---|---|---|---|---|
+| `requestlogs` | `RequestLog` | `{ createdAt: -1 }`, `{ status: 1, createdAt: -1 }`, `{ ip: 1, createdAt: -1 }` | — | Mỗi request HTTP đã kết thúc (method, path **không query/body**, status, ms, user, IP, `error`) |
+| `requestlogs` | `RequestLog` | `{ createdAt: 1 }` | **TTL 30 ngày** | Tự xoá log cũ |
+| `applogs` | `AppLog` | `{ createdAt: -1 }`, `{ level: 1, createdAt: -1 }` | TTL 30 ngày | Dòng log Nest (`log`/`warn`/`error`) + exception: stack, request, user, IP, `details` (đã `[redacted]` khoá nhạy cảm). 5xx = `error`; 4xx = `warn` (trừ 401/403/404/429, bật hết bằng `LOG_4XX_ALL=true`) |
+| `auditlogs` | `AuditLog` | `{ createdAt: -1 }`, `{ actor: 1 }` | TTL 365 ngày | Thao tác ghi (non-GET) trên route có `@Roles`: ai, khi nào, path, body đã lọc, thành công/thất bại |
+| `blockedips` | `BlockedIp` | `{ ip: 1 }` | **unique** | IP bị chặn (thủ công hoặc tự động) |
+| `blockedips` | `BlockedIp` | `{ expiresAt: 1 }` | TTL theo `expiresAt` | Hết hạn chặn → tự gỡ (không có `expiresAt` = vĩnh viễn) |
+| `allowedips` | `AllowedIp` | `{ ip: 1 }` | **unique** | IP không bao giờ bị chặn (allowlist) |
+
+Các module log chỉ có khi có `MONGODB_URL`. Truy vấn qua `GET /admin/logs*`
+(ADMIN / SUPER_ADMIN), UI ở `/admin/logs`.
 
 Tài khoản admin đầu tiên: **không auto-seed** (spec §4.1) — chạy
 `node apps/api/scripts/bootstrap-admin.mjs <email> [password]` (P2-USER-02).

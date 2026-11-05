@@ -1,5 +1,7 @@
 "use client";
 
+import CountUp from "@/components/reactbits/CountUp";
+
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
@@ -64,7 +66,7 @@ export function AdminOverview() {
         {stats.map((s) => (
           <div key={s.label} className="rounded-2xl border border-[var(--border)] bg-[var(--background-1)] p-5">
             <dt className="text-xs font-medium uppercase tracking-wide text-[var(--muted-foreground)]">{s.label}</dt>
-            <dd className="mt-1 text-3xl font-bold tabular-nums text-[var(--foreground)]">{s.value}</dd>
+            <dd className="mt-1 text-3xl font-bold tabular-nums text-[var(--foreground)]">{typeof s.value === "number" ? <CountUp to={s.value} duration={1.2} separator="," /> : s.value}</dd>
           </div>
         ))}
       </dl>

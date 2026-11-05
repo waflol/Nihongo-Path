@@ -4,6 +4,7 @@ import { ConfigService } from "@nestjs/config";
 import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
 import type { NestExpressApplication } from "@nestjs/platform-express";
 import { AppModule } from "./app.module.js";
+import { DbLogger } from "./logs/db-logger.js";
 
 /**
  * Entrypoint.
@@ -21,6 +22,7 @@ async function bootstrap() {
   // image as a data URL. Express' default 100 kB would reject those.
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     bodyParser: false,
+    logger: new DbLogger(),
   });
   app.useBodyParser("json", { limit: "400kb" });
   app.useBodyParser("urlencoded", { extended: true, limit: "400kb" });
@@ -34,6 +36,18 @@ async function bootstrap() {
   );
 
   const configService = app.get(ConfigService);
+
+  // Real client IP behind the Next.js server / a reverse proxy. Off by default
+  // (X-Forwarded-For is spoofable): set TRUST_PROXY to `true`, a hop count, or
+  // a subnet name such as `loopback` — only when the API is not directly
+  // reachable by clients. Drives IP stats and IP blocking.
+  const trustProxy = process.env.TRUST_PROXY?.trim();
+  if (trustProxy) {
+    app.set(
+      "trust proxy",
+      trustProxy === "true" ? true : /^\d+$/.test(trustProxy) ? Number(trustProxy) : trustProxy,
+    );
+  }
 
   // CORS — the UI runs on a different port/origin in local dev (`WEB_ORIGIN`,
   // comma-separated). Requests without an Origin header (curl, health checks)

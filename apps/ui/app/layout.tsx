@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import { Preline } from "@/components/preline";
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 import { themeInitScript } from "@/components/theme-toggle";
@@ -56,6 +57,8 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         <SiteHeader />
         <main className="flex flex-1 flex-col">{children}</main>
         <SiteFooter />
+        {/* Preline JS init (client, idempotent, re-runs on route change). */}
+        <Preline />
       </body>
     </html>
   );
