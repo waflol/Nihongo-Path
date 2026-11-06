@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { siteConfig } from "@/app/site";
 import { AccountMenu } from "@/components/auth/account-menu";
-import { ThemeToggle } from "@/components/theme-toggle";
+import { AccentPicker, ThemeToggle } from "@/components/theme-toggle";
 
 const navLinks = [
   { href: "/", label: "Trang chủ" },
@@ -64,6 +64,7 @@ export function SiteHeader() {
         <div className="flex items-center gap-2">
           {/* Real account state: "Đăng nhập" when signed out, user + menu
               (with logout / admin link) when signed in. */}
+          <AccentPicker />
           <ThemeToggle />
           <AccountMenu />
 

@@ -159,7 +159,7 @@ const GRADES: { key: string; grade: Grade; label: string; hint: string }[] = [
 /** Toolbar pill: soft primary tint when active, quiet outline otherwise. */
 function toolbarBtn(active: boolean): string {
   return (
-    "inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-4 py-2 text-sm font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--primary-focus)] " +
+    "inline-flex size-9 items-center justify-center rounded-full border text-sm font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--primary-focus)] " +
     (active
       ? "border-[color-mix(in_srgb,var(--primary)_45%,transparent)] bg-[color-mix(in_srgb,var(--primary)_14%,transparent)] text-[var(--primary)]"
       : "border-[var(--border)] bg-transparent text-[var(--muted-foreground)] hover:bg-[var(--layer-hover)] hover:text-[var(--foreground)]")
@@ -651,7 +651,7 @@ function StudySessionInner() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6">
+    <div className="mx-auto w-full max-w-2xl px-4 py-6 sm:px-6 sm:py-8">
       <ConfirmDialog
         open={confirmReset}
         title="Đặt lại tiến độ?"
@@ -663,8 +663,8 @@ function StudySessionInner() {
           void resetDeckProgress().finally(() => setConfirmReset(false));
         }}
       />
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-2xl font-semibold tracking-tight text-[var(--foreground)]">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border)] pb-4">
+        <h1 className="text-xl font-semibold tracking-tight text-[var(--foreground)]">
           Ôn tập
         </h1>
         <div className="flex items-center gap-3">
@@ -767,15 +767,15 @@ function StudySessionInner() {
       {!loading && current && (
         <div className="mt-6">
           {/* Quizlet-style counter row: New / Learning / Known */}
-          <div className="flex items-center justify-between text-sm font-medium">
-            <span className="text-[#ef4444]">{counters.new} mới</span>
-            <span className="text-[#f59e0b]">{counters.due} đến hạn</span>
-            <span className="text-[#16a34a]">{counters.known} đã thuộc</span>
+          <div className="flex items-center justify-center gap-2 text-xs font-semibold">
+            <span className="rounded-full bg-[#ef4444]/10 px-3 py-1 text-[#ef4444]">{counters.new} mới</span>
+            <span className="rounded-full bg-[#f59e0b]/10 px-3 py-1 text-[#d97706]">{counters.due} đến hạn</span>
+            <span className="rounded-full bg-[#16a34a]/10 px-3 py-1 text-[#16a34a]">{counters.known} đã thuộc</span>
           </div>
 
           {/* Progress strip */}
           <div
-            className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-[var(--layer)]"
+            className="mt-3 h-1 w-full overflow-hidden rounded-full bg-[var(--layer)]"
             role="progressbar"
             aria-valuenow={done}
             aria-valuemin={0}
@@ -792,7 +792,7 @@ function StudySessionInner() {
 
           {/* Toolbar: shuffle + reset + card position */}
           <div className="mt-4">
-            <div className="flex flex-wrap items-center gap-1.5">
+            <div className="flex flex-wrap items-center justify-center gap-1.5">
               <div
                 role="group"
                 aria-label="Hiển thị mặt thẻ trước"
@@ -829,60 +829,60 @@ function StudySessionInner() {
                 type="button"
                 onClick={toggleShuffle}
                 aria-pressed={shuffle}
-                title="Xáo trộn các thẻ chưa phân loại (thẻ đã phân loại giữ nguyên)"
+                title={shuffle ? "Đang xáo trộn — bấm để tắt" : "Xáo trộn các thẻ chưa phân loại (thẻ đã phân loại giữ nguyên)"}
+                aria-label="Xáo trộn"
                 className={toolbarBtn(shuffle)}
               >
                 <svg aria-hidden="true" className="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
                   <path d="M16 3h5v5M4 20 21 3M21 16v5h-5M15 15l6 6M4 4l5 5" />
                 </svg>
-                {shuffle ? "Đang xáo trộn" : "Xáo trộn"}
               </button>
               <button
                 type="button"
                 onClick={() => setConfirmReset(true)}
                 disabled={resetting}
                 title="Đặt lại tiến độ học của bộ thẻ này (thẻ vẫn giữ nguyên)"
+                aria-label="Đặt lại"
                 className={`${toolbarBtn(false)} disabled:cursor-not-allowed disabled:opacity-60`}
               >
                 <svg aria-hidden="true" className="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
                   <path d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5" />
                 </svg>
-                {resetting ? "Đang đặt lại…" : "Đặt lại"}
               </button>
               <button
                 type="button"
                 onClick={toggleReading}
                 aria-pressed={showReading}
                 title="Bật/tắt cách đọc hiragana trên mặt thuật ngữ"
+                aria-label="Hiragana"
                 className={toolbarBtn(showReading)}
               >
                 <span aria-hidden="true" className="text-base leading-none">あ</span>
-                Hiragana
               </button>
               <button
                 type="button"
                 onClick={toggleExamples}
                 aria-pressed={showExamples}
                 title="Bật/tắt câu ví dụ trên thẻ"
+                aria-label="Ví dụ"
                 className={toolbarBtn(showExamples)}
               >
                 <svg aria-hidden="true" className="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
                   <path d="M4 6h16M4 12h16M4 18h10" />
                 </svg>
-                Ví dụ
               </button>
               <button
                 type="button"
                 onClick={toggleHanViet}
                 aria-pressed={showHanViet}
                 title="Hiện/ẩn âm Hán Việt dưới chữ kanji"
+                aria-label="Hán Việt"
                 className={toolbarBtn(showHanViet)}
               >
                 <span aria-hidden="true" className="text-base leading-none">漢</span>
-                Hán Việt
               </button>
             </div>
-            <p className="mt-2 h-4 truncate text-right text-xs text-[var(--muted-foreground)]" title={current.relearn ? "Học lại — thẻ vừa quên, quay lại sau ~10 phút" : undefined}>
+            <p className="mt-3 h-4 truncate text-center text-xs text-[var(--muted-foreground)]" title={current.relearn ? "Học lại — thẻ vừa quên, quay lại sau ~10 phút" : undefined}>
               {current.relearn
                 ? "Học lại (quên, ~10 phút)"
                 : current.bucket === "due"
@@ -897,7 +897,7 @@ function StudySessionInner() {
           </div>
 
           {/* ── The card ────────────────────────────────────────────── */}
-          <div className="mt-4">
+          <div className="mt-2">
             {/* key: a new card mounts un-flipped (no flip-back reveal of the
                 next card's answer) and plays the short entrance. */}
             <LearnCard
@@ -921,11 +921,11 @@ function StudySessionInner() {
 
           {/* ── Grading (always available — even before flipping) ────── */}
           <div className="mt-5">
-            <p className="text-center text-sm text-[var(--muted-foreground)]">
+            <p className="text-center text-xs text-[var(--muted-foreground)]">
               Đánh giá mức độ thuộc — có thể chấm ngay cả khi chưa lật thẻ ·
               phím 0–3
             </p>
-            <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
               {GRADES.map((g, i) => (
                 <button
                   key={g.grade}
@@ -933,7 +933,7 @@ function StudySessionInner() {
                   title={g.hint}
                   onClick={() => grade(g.grade)}
                   className={
-                    "rounded-xl border px-4 py-4 text-lg font-semibold transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--primary-focus)] " +
+                    "rounded-lg border px-3 py-2.5 text-base font-semibold transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--primary-focus)] " +
                     [
                       "border-[#fca5a5] bg-[#fef2f2] text-[#b91c1c] hover:bg-[#fee2e2] dark:border-[#7f1d1d] dark:bg-[#2a1215] dark:text-[#fca5a5] dark:hover:bg-[#3a171b]",
                       "border-[#fdba74] bg-[#fff7ed] text-[#c2410c] hover:bg-[#ffedd5] dark:border-[#7c2d12] dark:bg-[#2a1a0e] dark:text-[#fdba74] dark:hover:bg-[#3a2412]",
@@ -950,23 +950,23 @@ function StudySessionInner() {
           </div>
 
           {/* ── Navigation: Prev / Next ─────────────────────────────── */}
-          <div className="mt-5 flex items-center justify-between gap-3">
+          <div className="mt-4 flex items-center justify-between gap-3">
             <button
               type="button"
               onClick={() => go(-1)}
               disabled={index === 0}
-              className="rounded-xl border border-[var(--border)] bg-[var(--background)] px-6 py-3 text-base font-medium text-[var(--foreground)] hover:bg-[var(--layer-hover)] disabled:cursor-not-allowed disabled:opacity-40"
+              className="rounded-lg border border-[var(--border)] bg-[var(--background)] px-4 py-2 text-sm font-medium text-[var(--foreground)] hover:bg-[var(--layer-hover)] disabled:cursor-not-allowed disabled:opacity-40"
             >
               ← Thẻ trước
             </button>
-            <p className="text-xs text-[var(--muted-foreground)]">
+            <p className="hidden text-xs text-[var(--muted-foreground)] sm:block">
               Dùng ← / → để chuyển thẻ
             </p>
             <button
               type="button"
               onClick={() => go(1)}
               disabled={index >= sessionList.length - 1}
-              className="rounded-xl bg-[var(--primary)] px-6 py-3 text-base font-medium text-[var(--primary-foreground)] hover:bg-[var(--primary-hover)] disabled:cursor-not-allowed disabled:opacity-40"
+              className="rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-medium text-[var(--primary-foreground)] hover:bg-[var(--primary-hover)] disabled:cursor-not-allowed disabled:opacity-40"
             >
               Thẻ sau →
             </button>
@@ -1121,28 +1121,28 @@ function LearnCard({
 }) {
   const { supported, speak, speakingId } = useJapaneseSpeech();
   const face =
-    "absolute inset-0 overflow-y-auto rounded-3xl border p-8 sm:p-12 text-center shadow-[0_10px_30px_-12px_rgba(30,27,75,0.35)] [backface-visibility:hidden] [-webkit-backface-visibility:hidden]";
+    "absolute inset-0 overflow-y-auto rounded-2xl border p-5 sm:p-7 text-center shadow-[0_8px_24px_-12px_rgba(30,27,75,0.35)] ring-1 ring-black/5 [backface-visibility:hidden] [-webkit-backface-visibility:hidden]";
 
   // Prefer the stored hiragana field; fall back to a legacy "猫 (ねこ)" front.
   const parsed = splitReading(front);
   const term = parsed.term;
   const reading = cardReading || parsed.reading;
   const hint = (tone: string, text: string) => (
-    <p className={`mt-8 text-sm ${tone}`}>{text}</p>
+    <p className={`mt-5 text-xs ${tone}`}>{text}</p>
   );
   const termContent = (
     <div className="flex min-h-full flex-col items-center justify-center">
       <div className="text-center">
         {reading && showReading && (
-          <p lang="ja" className="mb-2 text-xl text-white/80 sm:text-2xl">
+          <p lang="ja" className="mb-2 text-base text-white/80 sm:text-lg">
             {reading}
           </p>
         )}
-        <p lang="ja" className="break-words text-5xl font-semibold text-white sm:text-7xl">
+        <p lang="ja" className="break-words text-4xl font-semibold text-white drop-shadow-sm sm:text-5xl">
           {term}
         </p>
         {showHanViet && (hanVietText || hanViet(term)) ? (
-          <p className="mt-2 text-sm font-semibold tracking-[0.22em] text-white/75 sm:text-base">
+          <p className="mt-2 text-xs font-semibold tracking-[0.2em] text-white/75 sm:text-sm">
             {hanVietText || hanViet(term)}
           </p>
         ) : null}
@@ -1163,7 +1163,7 @@ function LearnCard({
           src={image}
           alt=""
           title={imageCredit || undefined}
-          className="mb-3 max-h-44 w-auto max-w-full rounded-2xl object-contain sm:max-h-52"
+          className="mb-3 max-h-32 w-auto max-w-full rounded-xl object-contain sm:max-h-36"
         />
       )}
       {partOfSpeech && (
@@ -1171,25 +1171,25 @@ function LearnCard({
           <PosChip pos={partOfSpeech} />
         </div>
       )}
-      <p className="break-words text-3xl font-semibold text-[var(--foreground)] sm:text-4xl">
+      <p className="break-words text-2xl font-semibold text-[var(--foreground)] sm:text-3xl">
         {back}
       </p>
       {showExamples && examples && examples.length > 0 && (
-              <div className="mt-5 w-full max-w-xl space-y-2 text-left">
+              <div className="mt-4 w-full max-w-md space-y-1.5 text-left">
                 {examples.map((ex, i) => (
                   <div
                     key={i}
-                    className="flex items-start gap-2 rounded-xl border border-[var(--border)] bg-[var(--background)] px-4 py-3"
+                    className="flex items-start gap-2 rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2"
                   >
                     <div className="min-w-0 flex-1">
                       <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">
                         Ví dụ{examples.length > 1 ? ` ${i + 1}` : ""}
                       </p>
-                      <p lang="ja" className="mt-1 break-words text-lg text-[var(--foreground)]">
+                      <p lang="ja" className="mt-0.5 break-words text-base text-[var(--foreground)]">
                         {ex.sentence}
                       </p>
                       {ex.translation && (
-                        <p className="mt-1 break-words text-base text-[var(--muted-foreground)]">
+                        <p className="mt-0.5 break-words text-sm text-[var(--muted-foreground)]">
                           {ex.translation}
                         </p>
                       )}
@@ -1221,11 +1221,11 @@ function LearnCard({
     </div>
   );
   const termPlate = {
-    tone: "border-transparent bg-[var(--primary)] dark:bg-[var(--primary-700)]",
+    tone: "border-transparent bg-gradient-to-br from-[var(--primary-500)] via-[var(--primary-600)] to-[var(--primary-800)] dark:from-[var(--primary-700)] dark:via-[var(--primary-800)] dark:to-[var(--primary-950)]",
     content: termContent,
   };
   const meaningPlate = {
-    tone: "border-[var(--border)] bg-[var(--background-1)]",
+    tone: "border-[color-mix(in_srgb,var(--primary)_22%,var(--border))] bg-gradient-to-b from-[var(--background)] to-[color-mix(in_srgb,var(--primary-100)_45%,var(--background))] dark:to-[color-mix(in_srgb,var(--primary-900)_35%,var(--background))]",
     content: meaningContent,
   };
   const plates =
@@ -1238,7 +1238,7 @@ function LearnCard({
       onClick={onFlip}
       aria-pressed={flipped}
       aria-label={flipped ? "Hiện mặt câu hỏi" : "Hiện mặt đáp án"}
-      className="animate-card-in relative block h-96 w-full cursor-pointer rounded-3xl text-center focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--primary-focus)] sm:h-[28rem]"
+      className="animate-card-in relative block h-64 w-full cursor-pointer rounded-2xl text-center focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--primary-focus)] sm:h-72"
       style={{ perspective: "1400px" }}
     >
       <div
@@ -1276,7 +1276,7 @@ function LearnCard({
           aria-label="Phát âm thanh"
           title="Phát âm (tiếng Nhật)"
           className={
-            "absolute right-4 top-4 z-10 inline-flex h-12 w-12 items-center justify-center rounded-full border border-white/40 bg-white/90 text-[var(--primary)] shadow-sm transition hover:bg-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--primary-focus)] " +
+            "absolute right-3 top-3 z-10 inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/40 bg-white/90 text-[var(--primary)] shadow-sm transition hover:bg-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--primary-focus)] " +
             (speakingId === "term" ? "animate-pulse" : "")
           }
         >
