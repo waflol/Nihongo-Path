@@ -11,6 +11,8 @@ interface Item {
   ja: string;
   vi: string;
   matches?: boolean;
+  reason: string;
+  usable: boolean;
   service: string;
   model: string;
   createdAt: string;
@@ -73,8 +75,8 @@ export function AiUnusedExamples({ deckId, missing }: { deckId: string; missing:
       {open && (
         <div className="mt-3">
           <p className="text-xs text-[var(--muted-foreground)]">
-            AI đã trả lời cho các từ này nhưng câu chưa được nhận vào thẻ (thường vì câu không qua bước kiểm tra
-            dùng đúng từ/đúng cách đọc). Xem và thêm tay vào thẻ nếu câu đúng.
+            AI đã trả lời cho các từ này nhưng câu chưa được nhận vào thẻ. Mỗi dòng ghi rõ lý do; dòng có dấu ✓ là câu
+            hợp lệ, chỉ cần bấm “Tạo ví dụ” để áp dụng. Câu bị loại có thể thêm tay vào thẻ nếu bạn thấy đúng.
           </p>
           {busy && <p className="mt-3 text-sm text-[var(--muted-foreground)]">Đang tải…</p>}
           {error && <p className="mt-3 text-sm text-[var(--destructive,#dc2626)]">{error}</p>}
@@ -94,6 +96,12 @@ export function AiUnusedExamples({ deckId, missing }: { deckId: string; missing:
                   </div>
                   {it.ja && <div className="mt-1 text-[var(--foreground)]">{it.ja}</div>}
                   <div className="text-[var(--muted-foreground)]">{it.vi}</div>
+                  <p
+                    className={`mt-1 text-xs font-medium ${it.usable ? "text-[#15803d] dark:text-[#86efac]" : "text-[#b91c1c] dark:text-[#fca5a5]"}`}
+                  >
+                    {it.usable ? "✓ " : "✕ Lý do không hiện: "}
+                    {it.reason}
+                  </p>
                   <div className="mt-1 text-xs text-[var(--muted-foreground)]">
                     {it.kind === "write" ? "AI viết câu" : "AI dịch câu Tatoeba"}
                     {it.matches === false ? " · AI báo sai nghĩa" : ""}

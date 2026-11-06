@@ -311,17 +311,12 @@ export class ExampleSuggestService {
       // held against it: the word (or one of its written forms / readings)
       // just has to be in the sentence.
       if (this.ai && (await this.ai.isEnabled())) {
-        const forms = this.wordForms(term, input.reading);
         const tried: string[] = [];
         for (let i = 0; i < MAX_AI_TRIES; i++) {
           const r = await this.ai.run({ kind: "write", term, reading, meaning, pos: pos ?? "", skip: [...tried] });
           if (!r) break; // no further service can answer
           const sentence = r.ja?.trim() ?? "";
-          if (
-            sentence &&
-            sentence.length <= 40 &&
-            (forms.some((f) => sentence.includes(f)) || (await this.usesWord(sentence, termTokens, null, "")))
-          ) {
+          if ((await this.checkAiSentence(term, input.reading, sentence)).ok) {
             return { sentence, translation: r.vi, source: "ai" };
           }
           if (!r.service) break;
@@ -333,6 +328,33 @@ export class ExampleSuggestService {
       this.logger.warn(`Full example suggestion failed: ${(err as Error).message}`);
       return null;
     }
+  }
+
+  /**
+   * Does a sentence the AI wrote suit the card, and if not, why? Shared by the
+   * generator (accepts or asks the next service) and the admin listing of saved
+   * AI answers that never reached a card (shows the reason).
+   */
+  async checkAiSentence(
+    rawTerm: string,
+    reading: string | undefined,
+    sentence: string,
+  ): Promise<{ ok: boolean; reason: string }> {
+    const term = rawTerm.replace(/[（(][^）)]*[）)]/g, "").trim();
+    const s = sentence.trim();
+    if (!s) return { ok: false, reason: "AI không trả về câu tiếng Nhật" };
+    if ([...s].length > 40) return { ok: false, reason: `Câu quá dài (${[...s].length} ký tự, tối đa 40)` };
+    if (this.wordForms(term, reading).some((f) => s.includes(f))) return { ok: true, reason: "" };
+    try {
+      const termTokens = (await this.morph.tokens(term)).filter((t) => t.pos !== "記号");
+      if (termTokens.length > 0 && (await this.usesWord(s, termTokens, null, ""))) return { ok: true, reason: "" };
+    } catch {
+      /* analyser unavailable → judged by the text alone */
+    }
+    return {
+      ok: false,
+      reason: `Câu không chứa từ “${term}” (AI dùng từ đồng nghĩa hoặc viết bằng kana)`,
+    };
   }
 
   /**

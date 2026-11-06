@@ -38,3 +38,29 @@ describe("ExampleSuggestService reading check", () => {
     expect(await svc.usesWord("格別な味", term, "noun", "")).toBe(true);
   });
 });
+
+describe("ExampleSuggestService.checkAiSentence (why an AI sentence is not used)", () => {
+  const check = svc as unknown as {
+    checkAiSentence: (term: string, reading: string | undefined, s: string) => Promise<{ ok: boolean; reason: string }>;
+  };
+  const noToken = new ExampleSuggestService({ tokens: async () => [] } as never) as unknown as typeof check;
+
+  it("accepts a sentence that contains the word", async () => {
+    expect((await noToken.checkAiSentence("信任", undefined, "彼は信任を得た。")).ok).toBe(true);
+  });
+
+  it("accepts a sentence that contains the card's reading", async () => {
+    expect((await noToken.checkAiSentence("中程", "【なかほど】", "道のなかほどで止まる。")).ok).toBe(true);
+  });
+
+  it("explains a sentence that dropped the word", async () => {
+    const r = await noToken.checkAiSentence("偶像", "ぐうぞう", "彼女は私のアイドルだ。");
+    expect(r.ok).toBe(false);
+    expect(r.reason).toContain("偶像");
+  });
+
+  it("explains an empty or too long sentence", async () => {
+    expect((await noToken.checkAiSentence("犬", undefined, "")).reason).toMatch(/không trả về/);
+    expect((await noToken.checkAiSentence("犬", undefined, "あ".repeat(41))).reason).toMatch(/quá dài/);
+  });
+});

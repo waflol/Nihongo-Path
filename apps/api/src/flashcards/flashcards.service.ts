@@ -462,6 +462,10 @@ export class FlashcardsService implements OnModuleInit {
       ja: string;
       vi: string;
       matches?: boolean;
+      /** Why this answer is not on the card yet. */
+      reason: string;
+      /** True when the answer is fine and only needs the generation to be run again. */
+      usable: boolean;
       service: string;
       model: string;
       createdAt: Date;
@@ -487,6 +491,18 @@ export class FlashcardsService implements OnModuleInit {
       // Only an answer that carries a usable sentence: a written one (`ja`) or a translation.
       if (!a.vi?.trim()) continue;
       for (const c of byTerm.get(a.term) ?? []) {
+        // Judged against this very card (its reading counts as a written form of the word).
+        let reason = "";
+        let usable = false;
+        if (a.kind === "write") {
+          const check = await this.exampleSuggest.checkAiSentence(a.term, c.reading, a.ja ?? "");
+          usable = check.ok;
+          reason = check.reason;
+        } else if (a.matches === false) {
+          reason = "AI báo từ không dùng đúng nghĩa trong câu Tatoeba tìm được";
+        } else {
+          usable = true;
+        }
         items.push({
           cardId: String(c._id),
           front: c.front,
@@ -496,6 +512,10 @@ export class FlashcardsService implements OnModuleInit {
           ja: a.ja ?? "",
           vi: a.vi,
           matches: a.matches,
+          reason:
+            reason ||
+            "Câu hợp lệ nhưng thẻ chưa được cập nhật (kết quả lưu sau lần chạy trước) — bấm “Tạo ví dụ” để áp dụng",
+          usable,
           service: a.service,
           model: a.model ?? "",
           createdAt: a.createdAt,
