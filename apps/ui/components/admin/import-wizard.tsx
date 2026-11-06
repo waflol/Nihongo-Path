@@ -1,5 +1,6 @@
 "use client";
 
+import { EXAMPLES_STARTED_EVENT } from "@/components/learn/example-job-tracker";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
@@ -375,6 +376,7 @@ export function ImportWizard({ learner = false }: { learner?: boolean }) {
       return;
     }
     setResult(data);
+    if (data && (data.examplesQueued ?? 0) > 0) window.dispatchEvent(new Event(EXAMPLES_STARTED_EVENT)); // progress popup
     setPreview(null);
   }
 

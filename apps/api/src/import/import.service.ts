@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { AiExampleService } from "../ai/ai-example.service.js";
+import { AiExampleService, lostKanji } from "../ai/ai-example.service.js";
 import {
   Optional,
   Injectable,
@@ -189,7 +189,7 @@ interface PdfJob {
   /** Content hash = key of the parsed table in the PDF cache. */
   key: string;
   /** OCR'd PDFs: rows per page, for the page-by-page review. */
-  pages?: { n: number; rows: number; ok: boolean }[];
+  pages?: { n: number; rows: number; ok: boolean; lostKanji: number }[];
 }
 
 /** What the browser sees of a job (never the file bytes). */
@@ -204,7 +204,13 @@ function viewOf(j: PdfJob): PdfJobView {
 }
 
 function pagesOf(table: Table): PdfJob["pages"] {
-  return table.ocr?.pages.map((p, i) => ({ n: i + 1, rows: p?.length ?? 0, ok: p !== null }));
+  return table.ocr?.pages.map((p, i) => ({
+    n: i + 1,
+    rows: p?.length ?? 0,
+    ok: p !== null,
+    // entries that look like they lost their kanji (reading copied into the word)
+    lostKanji: p?.filter(lostKanji).length ?? 0,
+  }));
 }
 
 @Injectable()
@@ -324,7 +330,7 @@ export class ImportService implements OnApplicationBootstrap {
     const job = this.ownJob(caller, id);
     const page = this.pdfCache.get(job.key)?.ocr?.pages[n - 1];
     if (page === undefined) throw new NotFoundException("Trang này không có dữ liệu OCR");
-    return { n, ok: page !== null, rows: page ?? [] };
+    return { n, ok: page !== null, rows: (page ?? []).map((r) => ({ ...r, lostKanji: lostKanji(r) })) };
   }
 
   /** Read one page again (after a failure, or when the result looked wrong). */

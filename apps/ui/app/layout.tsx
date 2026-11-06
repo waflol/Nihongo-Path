@@ -1,4 +1,5 @@
 import { ImportJobTracker } from "@/components/admin/import-job-tracker";
+import { ExampleJobTracker } from "@/components/learn/example-job-tracker";
 import type { Metadata } from "next";
 import { Suspense } from "react";
 import { Geist, Geist_Mono } from "next/font/google";
@@ -59,6 +60,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         <SiteHeader />
         <main className="flex flex-1 flex-col">{children}</main>
         <ImportJobTracker />
+        <ExampleJobTracker />
         <SiteFooter />
         {/* Preline JS init (client, idempotent, re-runs on route change). */}
         <Suspense fallback={null}>

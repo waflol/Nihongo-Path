@@ -14,7 +14,7 @@ export interface PdfJob {
   rows?: number;
   error?: string;
   /** OCR'd PDFs: rows per page (for the page-by-page check). */
-  pages?: { n: number; rows: number; ok: boolean }[];
+  pages?: { n: number; rows: number; ok: boolean; lostKanji?: number }[];
 }
 
 /** Fired by the wizard right after it starts a job, so the tracker starts polling at once. */
@@ -151,8 +151,8 @@ export function ImportJobTracker() {
             {j.status === "done" && (
               <p className="mt-1 text-xs text-[var(--muted-foreground)]">
                 Đã đọc xong · {j.rows ?? 0} dòng
-                {(j.pages?.filter((p) => !p.ok || p.rows === 0).length ?? 0) > 0 &&
-                  ` · ${j.pages!.filter((p) => !p.ok || p.rows === 0).length} trang cần xem lại`}
+                {(j.pages?.filter((p) => !p.ok || p.rows === 0 || (p.lostKanji ?? 0) > 0).length ?? 0) > 0 &&
+                  ` · ${j.pages!.filter((p) => !p.ok || p.rows === 0 || (p.lostKanji ?? 0) > 0).length} trang cần xem lại`}
                 .{" "}
                 <Link href={href} onClick={() => dismiss(j.id)} className="font-medium text-[var(--primary)] hover:underline">
                   Xem kết quả →

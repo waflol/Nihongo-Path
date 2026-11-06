@@ -103,6 +103,12 @@ export class FlashcardsController {
 
   // ── Decks ───────────────────────────────────────────────────────────
 
+  @Get("example-jobs")
+  @ApiOperation({ summary: "Decks of mine whose example sentences are being generated (progress popup)" })
+  exampleJobs(@CurrentUser() caller: AuthUser) {
+    return this.flashcards.exampleJobs(caller);
+  }
+
   @Get("decks")
   @ApiOperation({ summary: "List my personal decks + published shared decks" })
   listDecks(@CurrentUser() caller: AuthUser) {

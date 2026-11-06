@@ -14,6 +14,7 @@ import { LevelSelect } from "@/components/learn/level-select";
 import { CategoryChip } from "@/components/learn/category-filter";
 import { useHanVietPref } from "@/lib/use-han-viet-pref";
 import { AiUnusedExamples } from "@/components/learn/ai-unused-examples";
+import { RetryExamplesButton } from "@/components/learn/deck-processing";
 
 /**
  * Full-page card manager for one deck: search, filter by tag / "no example",
@@ -44,6 +45,7 @@ interface PageCard {
   examples?: { sentence: string; translation?: string; source?: string }[];
   tags?: string[];
   origin?: string;
+  order?: number;
 }
 
 interface PageData {
@@ -101,7 +103,6 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
   const [bulkTag, setBulkTag] = useState("");
   const [bulkBusy, setBulkBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
-  const [aiBusy, setAiBusy] = useState(false);
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showAdd, setShowAdd] = useState(false);
@@ -169,25 +170,6 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
       off = true;
     };
   }, [deckId, page, q, tag, missing, version]);
-
-  /** Queue every card without an example: Tatoeba first, the AI when nothing is found. */
-  async function generateExamples() {
-    setAiBusy(true);
-    setNotice(null);
-    const res = await fetch(`/api/flashcards/import/examples/${deckId}/retry`, { method: "POST" }).catch(() => null);
-    setAiBusy(false);
-    if (!res?.ok) {
-      setError("Không bắt đầu tạo ví dụ được — thử lại sau");
-      return;
-    }
-    const body = (await res.json().catch(() => null)) as { remaining?: number } | null;
-    setNotice(
-      body?.remaining
-        ? `Đang tạo ví dụ cho ${body.remaining} thẻ ở nền (Tatoeba, không có thì AI). Tải lại trang sau ít phút.`
-        : "Mọi thẻ đều đã có ví dụ",
-    );
-    reload();
-  }
 
   async function openInfo() {
     if (!deck) return;
@@ -543,15 +525,7 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
             Chưa có ví dụ{data ? ` (${data.missingExamples})` : ""}
           </button>
           {canWrite && data && data.missingExamples > 0 && (
-            <button
-              type="button"
-              className={btn}
-              disabled={aiBusy}
-              onClick={() => void generateExamples()}
-              title="Tìm trên Tatoeba; không có thì nhờ AI dịch/viết câu"
-            >
-              {aiBusy ? "Đang xếp hàng…" : "✨ Tạo ví dụ bằng AI"}
-            </button>
+            <RetryExamplesButton deckId={deckId} className={btn} onChanged={reload} />
           )}
         </div>
         {data && data.tags.length > 0 && (

@@ -9,6 +9,8 @@ interface PageRow {
   reading: string;
   hanViet?: string;
   meaning: string;
+  /** The word is only the reading although the entry has a Hán Việt reading → the kanji were probably lost. */
+  lostKanji?: boolean;
 }
 
 /**
@@ -30,7 +32,8 @@ export function PdfPageReview({
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
-  const problems = pages.filter((p) => !p.ok || p.rows === 0);
+  const problems = pages.filter((p) => !p.ok || p.rows === 0 || (p.lostKanji ?? 0) > 0);
+  const lostTotal = pages.reduce((a, p) => a + (p.lostKanji ?? 0), 0);
   const current = pages[page - 1];
 
   const loadRows = useCallback(async () => {
@@ -75,7 +78,7 @@ export function PdfPageReview({
         Đọc được {total} dòng từ {pages.length} trang.{" "}
         {problems.length > 0 ? (
           <>
-            <strong className="text-[#b91c1c]">{problems.length} trang cần xem lại</strong> (lỗi hoặc không có dòng nào):{" "}
+            <strong className="text-[#b91c1c]">{problems.length} trang cần xem lại</strong> (lỗi, không có dòng nào, hoặc có chữ Hán bị mất):{" "}
             {problems.slice(0, 20).map((p, i) => (
               <button key={p.n} type="button" onClick={() => setPage(p.n)} className="text-[var(--primary)] hover:underline">
                 {i > 0 && ", "}
@@ -88,6 +91,13 @@ export function PdfPageReview({
           "Mọi trang đều có dữ liệu."
         )}
       </p>
+      {lostTotal > 0 && (
+        <p role="alert" className="mt-2 rounded-lg bg-[#fef2f2] px-3 py-2 text-xs text-[#b91c1c]">
+          {lostTotal} dòng có thể đã mất chữ Hán: cột “Từ” chỉ có cách đọc kana (ví dụ こうどう thay vì 行動) dù dòng có
+          âm Hán Việt. Bấm “Đọc lại” ở các trang được đánh dấu — hệ thống sẽ đọc lại bằng dịch vụ AI khác, hoặc sửa tay
+          trước khi nhập.
+        </p>
+      )}
 
       <div className="mt-3 flex flex-wrap items-center gap-2 text-sm">
         <button
@@ -107,7 +117,7 @@ export function PdfPageReview({
           >
             {pages.map((p) => (
               <option key={p.n} value={p.n}>
-                {p.n} ({p.ok ? `${p.rows} dòng` : "lỗi"})
+                {p.n} ({p.ok ? `${p.rows} dòng` : "lỗi"}{(p.lostKanji ?? 0) > 0 ? ` · ⚠ ${p.lostKanji} mất kanji` : ""})
               </option>
             ))}
           </select>
@@ -136,7 +146,7 @@ export function PdfPageReview({
             onClick={() => void retry(problems.map((p) => p.n))}
             className="rounded-lg bg-[var(--primary)] px-3 py-1 font-semibold text-[var(--primary-foreground)] hover:bg-[var(--primary-hover)] disabled:opacity-60"
           >
-            Đọc lại {problems.length} trang lỗi
+            Đọc lại {problems.length} trang cần xem
           </button>
         )}
         {msg && <span className="text-xs text-[var(--muted-foreground)]">{msg}</span>}
@@ -166,9 +176,19 @@ export function PdfPageReview({
             </thead>
             <tbody>
               {(rows ?? []).map((r, i) => (
-                <tr key={i} className="border-t border-[var(--border)]">
+                <tr key={i} className={`border-t border-[var(--border)] ${r.lostKanji ? "bg-[#fef2f2] dark:bg-[#2a1215]" : ""}`}>
                   <td className="px-2 py-1.5">{r.no}</td>
-                  <td className="px-2 py-1.5 font-medium">{r.word}</td>
+                  <td className="px-2 py-1.5 font-medium">
+                    {r.word}
+                    {r.lostKanji && (
+                      <span
+                        title="Dòng có âm Hán Việt nên từ này có chữ Hán, nhưng cột Từ chỉ có cách đọc"
+                        className="ml-1.5 rounded bg-[#b91c1c] px-1 py-0.5 align-middle text-[10px] font-semibold text-white"
+                      >
+                        mất kanji?
+                      </span>
+                    )}
+                  </td>
                   <td className="px-2 py-1.5">{r.reading}</td>
                   <td className="px-2 py-1.5">{r.hanViet}</td>
                   <td className="px-2 py-1.5">{r.meaning}</td>

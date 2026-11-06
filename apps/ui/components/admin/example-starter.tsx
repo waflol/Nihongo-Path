@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { startExamples } from "@/components/learn/deck-processing";
 
 interface Progress {
   total: number;
@@ -35,14 +36,13 @@ export function ExampleStarter({
   async function start() {
     setBusy(true);
     setError(null);
-    const res = await fetch(`/api/flashcards/import/examples/${deckId}/retry`, { method: "POST" }).catch(() => null);
+    const remaining = await startExamples(deckId);
     setBusy(false);
-    if (!res?.ok) {
+    if (remaining === null) {
       setError("Không bắt đầu tạo ví dụ được — thử lại sau");
       return;
     }
-    const body = (await res.json().catch(() => null)) as { remaining?: number } | null;
-    if (body?.remaining === 0) setFinished(true);
+    if (remaining === 0) setFinished(true);
     else setStarted(true);
   }
 

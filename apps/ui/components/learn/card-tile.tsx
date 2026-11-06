@@ -17,6 +17,8 @@ export interface TileCard {
   examples?: { sentence: string; translation?: string; source?: string }[];
   tags?: string[];
   origin?: string;
+  /** The card's own number in the source list (STT); kept when searching / filtering. */
+  order?: number;
 }
 
 const ACCENT: Record<string, string> = {
@@ -58,8 +60,8 @@ export function CardTile({
       <div className="flex gap-4 p-4 pl-5">
         {/* number + picture */}
         <div className="flex shrink-0 flex-col items-center gap-2">
-          <span className="grid size-6 place-items-center rounded-full bg-[var(--layer)] text-[11px] font-semibold tabular-nums text-[var(--muted-foreground)]">
-            {index + 1}
+          <span className="grid h-6 min-w-6 place-items-center rounded-full bg-[var(--layer)] px-1.5 text-[11px] font-semibold tabular-nums text-[var(--muted-foreground)]">
+            {card.order && card.order > 0 ? card.order : index + 1}
           </span>
           {onSelect ? (
             <input

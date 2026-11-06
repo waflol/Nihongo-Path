@@ -3,6 +3,21 @@
 import { useEffect, useState } from "react";
 import { ConfirmDialog } from "@/components/learn/confirm-dialog";
 import { Icon } from "@/components/learn/icons";
+import { EXAMPLES_STARTED_EVENT } from "@/components/learn/example-job-tracker";
+
+/**
+ * THE way to start example generation for a deck's cards that have none
+ * (Tatoeba first, the AI services when nothing is found). Every "Tạo ví dụ"
+ * button goes through here; it also wakes the floating progress popup.
+ * Returns how many cards were queued, or `null` when it could not start.
+ */
+export async function startExamples(deckId: string): Promise<number | null> {
+  const res = await fetch(`/api/flashcards/import/examples/${deckId}/retry`, { method: "POST" }).catch(() => null);
+  if (!res?.ok) return null;
+  const body = (await res.json().catch(() => null)) as { remaining?: number } | null;
+  window.dispatchEvent(new Event(EXAMPLES_STARTED_EVENT));
+  return body?.remaining ?? 0;
+}
 
 /** Progress of the example sentences being generated for a deck. */
 export interface DeckExamples {
@@ -144,16 +159,13 @@ export function RetryExamplesButton({
   async function run() {
     setBusy(true);
     setNote(null);
-    const res = await fetch(`/api/flashcards/import/examples/${deckId}/retry`, {
-      method: "POST",
-    }).catch(() => null);
+    const remaining = await startExamples(deckId);
     setBusy(false);
-    if (!res?.ok) {
+    if (remaining === null) {
       setNote("Không tạo được ví dụ — thử lại sau");
       return;
     }
-    const body = (await res.json().catch(() => null)) as { remaining?: number } | null;
-    setNote(body?.remaining === 0 ? "Mọi thẻ đều đã có ví dụ" : null);
+    setNote(remaining === 0 ? "Mọi thẻ đều đã có ví dụ" : `Đang tạo ví dụ cho ${remaining} thẻ ở nền — xem khung tiến trình, bạn có thể sang trang khác.`);
     onChanged();
   }
 
@@ -163,7 +175,7 @@ export function RetryExamplesButton({
         type="button"
         disabled={busy}
         onClick={() => void run()}
-        title="Tạo ví dụ cho những thẻ chưa có"
+        title="Tạo ví dụ cho những thẻ chưa có (Tatoeba; không có thì nhờ AI)"
         aria-label="Tạo ví dụ"
         className={className}
       >

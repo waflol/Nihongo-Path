@@ -161,6 +161,33 @@ export class FlashcardsService implements OnModuleInit {
    * Each deck carries its `cardCount` so the UI can show "12 thẻ" without a
    * second request per deck (P3-UI-03).
    */
+  /**
+   * Decks of the caller whose example sentences are being generated in the
+   * background (own personal decks; for an admin also the shared ones) — feeds
+   * the progress popup that follows the user around the site.
+   */
+  async exampleJobs(
+    caller: AuthUser,
+  ): Promise<{ deckId: string; title: string; shared: boolean; total: number; done: number; paused: boolean }[]> {
+    const mine: Record<string, unknown>[] = [{ user: new Types.ObjectId(caller.sub), shared: false }];
+    if (this.isAdmin(caller)) mine.push({ shared: true });
+    const decks = await this.deck
+      .find({ exampleTotal: { $gt: 0 }, $or: mine })
+      .select("title shared exampleTotal exampleDone examplePaused")
+      .sort({ _id: -1 })
+      .limit(20)
+      .lean()
+      .exec();
+    return decks.map((d) => ({
+      deckId: String(d._id),
+      title: d.title,
+      shared: d.shared === true,
+      total: d.exampleTotal ?? 0,
+      done: Math.min(d.exampleDone ?? 0, d.exampleTotal ?? 0),
+      paused: d.examplePaused === true,
+    }));
+  }
+
   async listDecks(caller: AuthUser): Promise<DeckView[]> {
     const [personal, shared] = await Promise.all([
       this.deck

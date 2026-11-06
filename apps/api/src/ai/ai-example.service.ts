@@ -66,6 +66,20 @@ export interface VocabOcrRow {
   meaning: string;
 }
 
+/**
+ * An OCR row whose kanji went missing: the word is the same kana as its reading
+ * although the entry has a Hán Việt reading (only kanji words have one).
+ */
+export function lostKanji(r: { word: string; reading: string; hanViet?: string }): boolean {
+  const kana = /^[぀-ヿー・]+$/;
+  const hira = (t: string) => t.replace(/[ァ-ヶ]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0x60));
+  return (
+    !!r.hanViet?.trim() &&
+    kana.test(r.word) &&
+    hira(r.word) === hira(r.reading.replace(/\s+/g, ""))
+  );
+}
+
 const HAS_JAPANESE = /[぀-ヿ㐀-鿿]/;
 const BATCH = 20;
 const FLUSH_MS = 1500;
@@ -524,23 +538,27 @@ export class AiExampleService {
    * the next one is used). Returns the rows, or `null` when none could read it.
    */
   async ocrVocabPage(png: Buffer, page?: number): Promise<VocabOcrRow[] | null> {
-    const prompt = [
+    const base = [
       "This image is one page of a Japanese vocabulary book (JLPT) for Vietnamese learners.",
       "Transcribe every vocabulary entry on the page. Ignore headers, footers, page numbers, example sentences and exercises.",
       'Return JSON only: {"rows":[{"no":string,"word":string,"reading":string,"hanViet":string,"meaning":string}]}.',
-      '"word" is the kanji form exactly as printed, or the kana itself when the entry has no kanji; "reading" the hiragana reading; "hanViet" the Sino-Vietnamese (Hán Việt) column if the page has one, else ""; "meaning" the Vietnamese meaning; "no" the entry number printed on the page, or "" if none. Keep one object per table row, in page order.',
+      '"word" is the word exactly as printed in the word column, KEEPING ITS KANJI (行動, 提出, 権利 …); use kana only when the entry really has no kanji. "reading" is the hiragana reading (often small furigana above the word, or a separate column) and is NEVER a substitute for "word": for an entry with kanji, "word" and "reading" differ. "hanViet" is the Sino-Vietnamese (Hán Việt) column if the page has one, else ""; an entry that has a Hán Việt reading always contains kanji. "meaning" the Vietnamese meaning; "no" the entry number printed on the page, or "" if none. Keep one object per table row, in page order.',
       'If the page has no vocabulary entries return {"rows":[]}. Never invent entries.',
-    ].join("\n");
+    ];
+    // The best answer so far: the one with the fewest entries whose kanji were lost.
+    let best: { rows: VocabOcrRow[]; lost: VocabOcrRow[] } | null = null;
+    let warning = "";
     for (const svc of await this.services.available()) {
       if (this.isTranslator(svc)) continue;
       try {
         await this.pace(svc);
+        const prompt = [...base, warning].filter(Boolean).join("\n");
         const text = await this.call(svc, prompt, "ocr", page ? [`Trang ${page}`] : [], png);
         await this.services.reportOk(svc.id);
         const json = /\{[\s\S]*\}/.exec(text)?.[0];
         const parsed = json ? (JSON.parse(json) as { rows?: unknown }) : null;
         if (!parsed || !Array.isArray(parsed.rows)) continue;
-        return parsed.rows
+        const rows = parsed.rows
           .filter((r): r is Record<string, unknown> => typeof r === "object" && r !== null)
           .map((r) => ({
             no: String(r.no ?? "").trim(),
@@ -550,12 +568,19 @@ export class AiExampleService {
             meaning: String(r.meaning ?? "").trim(),
           }))
           .filter((r) => r.word !== "");
+        const lost = rows.filter(lostKanji);
+        if (lost.length === 0) return rows; // every entry looks right
+        if (!best || lost.length < best.lost.length) best = { rows, lost };
+        // Ask the next service, telling it exactly what the previous one got wrong.
+        warning =
+          "WARNING: a previous attempt copied the reading into \"word\" for these entries, which have Hán Việt and therefore kanji — read the kanji from the image this time: " +
+          lost.slice(0, 40).map((r) => `${r.no || "?"}:${r.word}(${r.hanViet})`).join(", ");
       } catch (err) {
         if (err instanceof AiFailure) await this.services.reportFailure(svc.id, err.kind, err.message, err.retryAfterMs);
         // else: unparsable answer — try the next service
       }
     }
-    return null;
+    return best?.rows ?? null;
   }
 
   /** True for a task-specific translation model (Cloudflare m2m100): it only translates. */
