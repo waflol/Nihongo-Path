@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useConfirm } from "@/components/learn/use-confirm";
 
 interface ExampleJob {
   deckId: string;
@@ -35,6 +36,7 @@ export function ExampleJobTracker() {
   const [finished, setFinished] = useState<FinishedJob[]>([]);
   const [signedIn, setSignedIn] = useState(true);
   const [collapsed, setCollapsed] = useState(false);
+  const { confirm, dialog } = useConfirm();
   const [busyId, setBusyId] = useState<string | null>(null);
   const prev = useRef<Map<string, ExampleJob>>(new Map());
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -88,7 +90,20 @@ export function ExampleJobTracker() {
     return () => clearTimeout(t);
   }, [finished]);
 
-  async function control(deckId: string, action: "pause" | "resume") {
+  async function stop(j: ExampleJob) {
+    const ok = await confirm({
+      title: "Hủy tạo ví dụ?",
+      message: `Dừng tạo ví dụ cho "${j.title}". Các ví dụ đã tạo sẽ được giữ lại.`,
+      confirmLabel: "Hủy tạo ví dụ",
+      tone: "danger",
+    });
+    if (!ok) return;
+    // Cancelled on purpose → forget it first so the next poll shows no "done" card.
+    prev.current.delete(j.deckId);
+    await control(j.deckId, "stop");
+  }
+
+  async function control(deckId: string, action: "pause" | "resume" | "stop") {
     setBusyId(deckId);
     await fetch(`/api/flashcards/import/examples/${deckId}/${action}`, { method: "POST" }).catch(() => null);
     setBusyId(null);
@@ -109,6 +124,7 @@ export function ExampleJobTracker() {
       className="flex flex-col gap-2"
       aria-live="polite"
     >
+      {dialog}
       {jobs.length > 0 && (
         <div className="rounded-xl border border-[var(--border)] bg-[var(--background-1)] p-3 text-sm shadow-lg">
           <div className="flex items-center justify-between gap-2">
@@ -160,14 +176,24 @@ export function ExampleJobTracker() {
                       <p className="text-xs text-[var(--muted-foreground)]">
                         {j.paused ? "Đã tạm dừng" : `${pct}% — chạy nền, bạn có thể sang trang khác`}
                       </p>
-                      <button
-                        type="button"
-                        disabled={busyId === j.deckId}
-                        onClick={() => void control(j.deckId, j.paused ? "resume" : "pause")}
-                        className="shrink-0 rounded-md border border-[var(--border)] px-2 py-0.5 text-xs font-medium text-[var(--foreground)] hover:bg-[var(--layer-hover)] disabled:opacity-60"
-                      >
-                        {j.paused ? "Tiếp tục" : "Tạm dừng"}
-                      </button>
+                      <div className="flex shrink-0 gap-1">
+                        <button
+                          type="button"
+                          disabled={busyId === j.deckId}
+                          onClick={() => void control(j.deckId, j.paused ? "resume" : "pause")}
+                          className="rounded-md border border-[var(--border)] px-2 py-0.5 text-xs font-medium text-[var(--foreground)] hover:bg-[var(--layer-hover)] disabled:opacity-60"
+                        >
+                          {j.paused ? "Tiếp tục" : "Tạm dừng"}
+                        </button>
+                        <button
+                          type="button"
+                          disabled={busyId === j.deckId}
+                          onClick={() => void stop(j)}
+                          className="rounded-md border border-[var(--border)] px-2 py-0.5 text-xs font-medium text-red-500 hover:bg-[var(--layer-hover)] disabled:opacity-60"
+                        >
+                          Hủy
+                        </button>
+                      </div>
                     </div>
                   </li>
                 );
