@@ -1,5 +1,6 @@
 packages:
   - 'apps/*'
+  - 'packages/*'
 
 # pnpm 12: allow native build scripts for these dependencies (kept explicit
 # so installs are non-interactive and reproducible).

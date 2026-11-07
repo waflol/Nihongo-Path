@@ -720,6 +720,47 @@ export class AiExampleService {
   }
 
   /**
+   * Vietnamese meanings for dictionary words (kanji related-words list).
+   * Input carries the English gloss as grounding. Keyed by `term`; words the
+   * model skipped are left out. `null` when no service could answer.
+   */
+  async translateWords(
+    items: { term: string; reading: string; glossEn: string }[],
+  ): Promise<Map<string, string> | null> {
+    if (items.length === 0) return new Map();
+    const prompt = [
+      "Translate these Japanese dictionary words into SHORT Vietnamese meanings (1-5 words each, the everyday sense a JLPT learner needs, no romaji).",
+      'Return JSON only: {"items":[{"term":string,"vi":string}]} with "term" copied exactly from the input.',
+      "Words:",
+      ...items.map((i) => `- ${i.term}（${i.reading}）: ${i.glossEn}`),
+    ].join("\n");
+    for (const svc of await this.services.available()) {
+      if (this.isTranslator(svc)) continue;
+      try {
+        await this.pace(svc);
+        const text = await this.call(svc, prompt, "example", items.map((i) => i.term));
+        await this.services.reportOk(svc.id);
+        const json = /\{[\s\S]*\}/.exec(text)?.[0];
+        const parsed = json ? (JSON.parse(json) as { items?: unknown }) : null;
+        if (!parsed || !Array.isArray(parsed.items)) continue;
+        const out = new Map<string, string>();
+        for (const r of parsed.items) {
+          if (typeof r !== "object" || r === null) continue;
+          const o = r as Record<string, unknown>;
+          // The model sometimes echoes "学ぶ（まなぶ）": keep only the headword.
+          const term = String(o.term ?? "").split(/[（(]/)[0].trim();
+          const vi = String(o.vi ?? "").trim();
+          if (term && vi) out.set(term, vi.slice(0, 120));
+        }
+        if (out.size > 0) return out;
+      } catch (err) {
+        if (err instanceof AiFailure) await this.services.reportFailure(svc.id, err.kind, err.message, err.retryAfterMs);
+      }
+    }
+    return null;
+  }
+
+  /**
    * Grade a learner's own sentence for a studied word. The model scores it,
    * lists each mistake with an explanation, gives a corrected sentence and
    * model usage examples as evidence. Returns `null` when no service could

@@ -1,0 +1,7 @@
+{
+  "name": "@nihongo/shared",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Data shared by api and ui (curated Han-Viet table).",
+  "exports": { "./han-viet.json": "./han-viet.json" }
+}

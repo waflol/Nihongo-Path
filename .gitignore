@@ -152,3 +152,6 @@ vite.config.ts.timestamp-*
 .turbo
 
 .claude/settings.json
+
+# kanji import cache
+apps/api/data/kanji/

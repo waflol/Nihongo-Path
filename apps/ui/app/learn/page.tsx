@@ -73,6 +73,18 @@ export default function LearnPage() {
             biểu hiện từ, cách dùng từ.
           </p>
         </Link>
+        <Link
+          href="/learn/kanji"
+          className="rounded-2xl border border-[var(--border)] bg-[var(--background-1)] p-6 transition-colors hover:bg-[var(--layer-hover)]"
+        >
+          <h2 className="text-sm font-semibold text-[var(--foreground)]">
+            Kanji N5–N1
+          </h2>
+          <p className="mt-1 text-sm text-[var(--muted-foreground)]">
+            Tra theo cấp JLPT và âm Hán Việt, xem thứ tự nét, on/kun và từ
+            vựng liên quan.
+          </p>
+        </Link>
         <div className="rounded-2xl border border-dashed border-[var(--border)] bg-[var(--background-1)] p-6">
           <h2 className="text-sm font-semibold text-[var(--foreground)]">
             Luyện nghe

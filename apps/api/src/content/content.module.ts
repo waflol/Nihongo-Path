@@ -1,8 +1,13 @@
 import { Module, type DynamicModule } from "@nestjs/common";
 import { MongooseModule } from "@nestjs/mongoose";
+import { buildAiModule } from "../ai/ai.module.js";
 import { buildDatabaseModule } from "../database/database.module.js";
 import { ContentController } from "./content.controller.js";
 import { ContentService } from "./content.service.js";
+import { Flashcard, FlashcardSchema } from "../flashcards/schemas/card.schema.js";
+import { KanjiController } from "./kanji.controller.js";
+import { KanjiService } from "./kanji.service.js";
+import { Kanji, KanjiSchema } from "./schemas/kanji.schema.js";
 import {
   GrammarPoint,
   GrammarPointSchema,
@@ -31,15 +36,18 @@ export function buildContentModule(): DynamicModule {
     module: ContentModule,
     imports: [
       buildDatabaseModule(),
+      buildAiModule(),
       MongooseModule.forFeature([
         { name: Textbook.name, schema: TextbookSchema },
         { name: Unit.name, schema: UnitSchema },
         { name: Vocabulary.name, schema: VocabularySchema },
         { name: GrammarPoint.name, schema: GrammarPointSchema },
+        { name: Kanji.name, schema: KanjiSchema },
+        { name: Flashcard.name, schema: FlashcardSchema },
       ]),
     ],
-    controllers: [ContentController],
-    providers: [ContentService],
+    controllers: [ContentController, KanjiController],
+    providers: [ContentService, KanjiService],
   };
 }
 
