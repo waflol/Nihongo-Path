@@ -30,6 +30,10 @@ export class AuditLog {
   @Prop({ type: String })
   ip?: string;
 
+  /** Client-reported public IPv4 (spoofable; display only). */
+  @Prop({ type: String })
+  ipv4?: string;
+
   /** Request body (secrets redacted, size-capped). */
   @Prop({ type: Object })
   body?: Record<string, unknown>;

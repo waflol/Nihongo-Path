@@ -3,7 +3,7 @@ import { InjectModel } from "@nestjs/mongoose";
 import { Model, Types } from "mongoose";
 import type { NextFunction, Request, Response } from "express";
 import type { AuthUser } from "../auth/auth.types.js";
-import { normalizeIp } from "./ip-block.service.js";
+import { clientIpv4, normalizeIp } from "./ip-block.service.js";
 import { RequestLog } from "./request-log.schema.js";
 import { scrub } from "./scrub.js";
 
@@ -84,6 +84,7 @@ export class RequestLogMiddleware implements NestMiddleware {
           user: user && Types.ObjectId.isValid(user.sub) ? new Types.ObjectId(user.sub) : undefined,
           role: user?.role,
           ip: normalizeIp(req.ip),
+          ipv4: clientIpv4(req),
           userAgent: typeof ua === "string" ? ua.slice(0, 200) : undefined,
           error:
             typeof res.locals.errorMessage === "string" ? res.locals.errorMessage : undefined,

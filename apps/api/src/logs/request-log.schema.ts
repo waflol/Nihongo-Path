@@ -34,6 +34,10 @@ export class RequestLog {
   @Prop({ type: String })
   ip?: string;
 
+  /** Client-reported public IPv4 (spoofable; display only). */
+  @Prop({ type: String })
+  ipv4?: string;
+
   @Prop({ type: String })
   userAgent?: string;
 

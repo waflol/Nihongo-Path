@@ -11,6 +11,22 @@ export function normalizeIp(raw: string | undefined): string {
   return raw.startsWith("::ffff:") ? raw.slice(7) : raw;
 }
 
+const IPV4_RE = /^(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)$/;
+
+/**
+ * Client-reported public IPv4 (`X-Client-Ipv4`, sent by the web app). It is
+ * self-declared and spoofable, so it is for display only — never use it for
+ * blocking or rate limiting. Falls back to the connection IP when that is
+ * already IPv4. Returns undefined when nothing valid is available.
+ */
+export function clientIpv4(req: { headers: Record<string, unknown>; ip?: string }): string | undefined {
+  const raw = req.headers["x-client-ipv4"];
+  const v = (Array.isArray(raw) ? raw[0] : raw);
+  if (typeof v === "string" && IPV4_RE.test(v.trim())) return v.trim();
+  const conn = normalizeIp(req.ip);
+  return IPV4_RE.test(conn) ? conn : undefined;
+}
+
 /** Loopback / private ranges: never auto-blocked (the UI server proxies from one). */
 export function isInternalIp(ip: string): boolean {
   return (

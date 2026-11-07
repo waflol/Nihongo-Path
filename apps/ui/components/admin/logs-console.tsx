@@ -12,6 +12,7 @@ interface LogItem {
   user: string | null;
   role: string | null;
   ip: string | null;
+  ipv4?: string | null;
   userAgent: string | null;
   error: string | null;
   createdAt: string;
@@ -23,6 +24,7 @@ interface ReqDetail {
   status: number;
   durationMs: number;
   ip: string | null;
+  ipv4?: string | null;
   error: string | null;
   createdAt: string;
   query: Record<string, unknown> | null;
@@ -46,6 +48,7 @@ interface AppLogItem {
   request: string | null;
   user: string | null;
   ip: string | null;
+  ipv4?: string | null;
   details: Record<string, unknown> | null;
   createdAt: string;
 }
@@ -64,6 +67,7 @@ interface AuditItem {
   ok: boolean;
   status: number | null;
   ip: string | null;
+  ipv4?: string | null;
   body: Record<string, unknown> | null;
   createdAt: string;
 }
@@ -470,7 +474,7 @@ export function LogsConsole() {
                 <span className="font-mono text-xs">{r.method} {r.path}</span>
               </div>
               <p className="mt-1 text-xs text-[var(--muted-foreground)]">
-                {[r.actor ?? "?", r.role, r.ip && `ip: ${r.ip}`].filter(Boolean).join(" · ")}
+                {[r.actor ?? "?", r.role, r.ip && `ip: ${r.ip}`, r.ipv4 && `ipv4: ${r.ipv4}`].filter(Boolean).join(" · ")}
               </p>
               {r.body && (
                 <details className="mt-1">
@@ -496,7 +500,7 @@ export function LogsConsole() {
               <p className="mt-1 break-words">{r.message}</p>
               {(r.exception || r.user || r.ip) && (
                 <p className="mt-1 text-xs text-[var(--muted-foreground)]">
-                  {[r.exception, r.user && `user: ${r.user}`, r.ip && `ip: ${r.ip}`].filter(Boolean).join(" · ")}
+                  {[r.exception, r.user && `user: ${r.user}`, r.ip && `ip: ${r.ip}`, r.ipv4 && `ipv4: ${r.ipv4}`].filter(Boolean).join(" · ")}
                 </p>
               )}
               {r.details && (
@@ -528,7 +532,7 @@ export function LogsConsole() {
               <th className="px-3 py-2">Mã</th>
               <th className="px-3 py-2">ms</th>
               <th className="px-3 py-2">Người dùng</th>
-              <th className="px-3 py-2">IP</th>
+              <th className="px-3 py-2">IPv4 / IP</th>
               <th className="px-3 py-2">Chi tiết</th>
             </tr>
           </thead>
@@ -547,7 +551,10 @@ export function LogsConsole() {
                 <td className={"px-3 py-2 font-semibold tabular-nums " + statusColor(r.status)}>{r.status}</td>
                 <td className="px-3 py-2 tabular-nums">{r.durationMs}</td>
                 <td className="max-w-40 truncate px-3 py-2">{r.user ?? "—"}</td>
-                <td className="px-3 py-2 font-mono text-xs">{r.ip ?? "—"}</td>
+                <td className="px-3 py-2 font-mono text-xs">
+                  <div>{r.ipv4 ?? "—"}</div>
+                  {r.ip && r.ip !== r.ipv4 && <div className="text-[10px] text-[var(--muted-foreground)]" title={r.ip}>{r.ip.length > 22 ? `${r.ip.slice(0, 22)}…` : r.ip}</div>}
+                </td>
                 <td className="px-3 py-2">
                   <button className="rounded-md border border-[var(--border)] px-2 py-1 text-xs hover:bg-[var(--background-1)]" onClick={() => void toggle(r.id)}>
                     {openId === r.id ? "Ẩn" : "Xem"}

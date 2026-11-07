@@ -13,7 +13,7 @@ import { catchError, type Observable, tap, throwError } from "rxjs";
 import type { AuthUser } from "../auth/auth.types.js";
 import { REQUIRED_ROLES } from "../auth/guards/guards.constants.js";
 import { AuditLog } from "./audit-log.schema.js";
-import { normalizeIp } from "./ip-block.service.js";
+import { clientIpv4, normalizeIp } from "./ip-block.service.js";
 import { scrub } from "./scrub.js";
 
 /** Role-protected routes whose calls are not worth auditing. */
@@ -63,6 +63,7 @@ export class AuditInterceptor implements NestInterceptor {
         ok,
         status,
         ip: normalizeIp(req.ip),
+        ipv4: clientIpv4(req),
         body: body && JSON.stringify(body).length <= 4000 ? body : undefined,
       })
       .catch(() => undefined);

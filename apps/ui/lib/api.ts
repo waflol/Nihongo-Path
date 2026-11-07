@@ -48,7 +48,12 @@ export async function clientIpHeaders(): Promise<Record<string, string>> {
     const h = await headers();
     const ip =
       h.get("x-forwarded-for")?.split(",")[0]?.trim() || h.get("x-real-ip") || "";
-    return ip ? { "X-Forwarded-For": ip } : {};
+    const ipv4 = /(?:^|;\s*)client_ipv4=([0-9.]{7,15})/.exec(h.get("cookie") ?? "")?.[1];
+    return {
+      ...(ip ? { "X-Forwarded-For": ip } : {}),
+      // Self-declared public IPv4 (display only on the API side).
+      ...(ipv4 ? { "X-Client-Ipv4": ipv4 } : {}),
+    };
   } catch {
     return {};
   }

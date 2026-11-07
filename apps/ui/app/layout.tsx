@@ -5,6 +5,7 @@ import { Suspense } from "react";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { Preline } from "@/components/preline";
+import { ClientIpv4Reporter } from "@/components/client-ipv4-reporter";
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 import { themeInitScript } from "@/components/theme-toggle";
@@ -59,6 +60,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       <body className="flex min-h-full flex-col bg-[var(--background)] font-sans text-[var(--foreground)]">
         <SiteHeader />
         <main className="flex flex-1 flex-col">{children}</main>
+        <ClientIpv4Reporter />
         <div className="fixed bottom-4 right-4 z-50 flex w-80 max-w-[calc(100vw-2rem)] flex-col gap-2">
           <ImportJobTracker />
           <ExampleJobTracker />
