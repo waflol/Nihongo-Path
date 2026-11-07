@@ -1,7 +1,7 @@
 "use client";
 
 import { TrafficPanel } from "@/components/admin/traffic-panel";
-import { useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 
 interface LogItem {
   id: string;
@@ -15,6 +15,19 @@ interface LogItem {
   userAgent: string | null;
   error: string | null;
   createdAt: string;
+}
+interface ReqDetail {
+  id: string;
+  method: string;
+  path: string;
+  status: number;
+  durationMs: number;
+  ip: string | null;
+  error: string | null;
+  createdAt: string;
+  query: Record<string, unknown> | null;
+  request: { headers: Record<string, unknown> | null; body: unknown };
+  response: { headers: Record<string, unknown> | null; body: unknown };
 }
 interface LogPage {
   page: number;
@@ -84,6 +97,124 @@ function statusColor(s: number) {
   return "text-emerald-500";
 }
 
+type DetailTab = "curl" | "params" | "reqHeaders" | "reqBody" | "response";
+const DETAIL_TABS: { key: DetailTab; label: string }[] = [
+  { key: "params", label: "Params" },
+  { key: "reqHeaders", label: "Request header" },
+  { key: "reqBody", label: "Request body" },
+  { key: "response", label: "Response" },
+  { key: "curl", label: "cURL" },
+];
+
+const CURL_SKIP = new Set(["host", "content-length", "connection", "accept-encoding", "x-forwarded-for", "x-forwarded-host", "x-forwarded-proto"]);
+const shq = (v: string) => `'${v.replace(/'/g, `'\\''`)}'`;
+
+/** Rebuild the logged request as a curl command (secrets stay as placeholders). */
+function buildCurl(d: ReqDetail, base: string): string {
+  const qs = new URLSearchParams();
+  for (const [k, v] of Object.entries(d.query ?? {})) {
+    for (const item of Array.isArray(v) ? v : [v]) qs.append(k, typeof item === "string" ? item : JSON.stringify(item));
+  }
+  const url = `${base}${d.path}${qs.size ? `?${qs}` : ""}`;
+  const parts = [`curl -X ${d.method} ${shq(url)}`];
+  for (const [k, v] of Object.entries(d.request.headers ?? {})) {
+    if (CURL_SKIP.has(k.toLowerCase())) continue;
+    const val = v === "[redacted]" ? (k.toLowerCase() === "authorization" ? "Bearer <TOKEN>" : "<REDACTED>") : String(v);
+    parts.push(`-H ${shq(`${k}: ${val}`)}`);
+  }
+  const body = d.request.body;
+  if (body !== null && body !== undefined && typeof body === "object") {
+    const hasCT = Object.keys(d.request.headers ?? {}).some((h) => h.toLowerCase() === "content-type");
+    if (!hasCT) parts.push(`-H 'Content-Type: application/json'`);
+    parts.push(`--data-raw ${shq(JSON.stringify(body))}`);
+  }
+  return parts.join(" \\\n  ");
+}
+
+function DetailTabs({ detail }: { detail: ReqDetail }) {
+  const [tab, setTab] = useState<DetailTab>("reqBody");
+  const [copied, setCopied] = useState(false);
+  const [base, setBase] = useState("http://localhost:3000");
+  const curl = buildCurl(detail, base);
+  async function copyCurl() {
+    try {
+      await navigator.clipboard.writeText(curl);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      window.prompt("Copy cURL:", curl);
+    }
+  }
+  const recorded = detail.request.headers !== null || detail.response.headers !== null;
+  return (
+    <div>
+      <div className="mb-2 flex flex-wrap items-center gap-2">
+        {DETAIL_TABS.map((t) => (
+          <button
+            key={t.key}
+            onClick={() => setTab(t.key)}
+            className={
+              "rounded-md border px-3 py-1 text-xs font-medium " +
+              (tab === t.key
+                ? "border-[var(--foreground)] bg-[var(--foreground)] text-[var(--background)]"
+                : "border-[var(--border)] hover:bg-[var(--background-1)]")
+            }
+          >
+            {t.label}
+          </button>
+        ))}
+        <button
+          onClick={() => void copyCurl()}
+          className={
+            "rounded-md border px-3 py-1 text-xs font-medium " +
+            (detail.status >= 400 ? "border-red-500 text-red-500 hover:bg-red-500/10" : "border-[var(--border)] hover:bg-[var(--background-1)]")
+          }
+        >
+          {copied ? "Đã copy ✓" : "Copy cURL"}
+        </button>
+        <span className="ml-auto text-xs text-[var(--muted-foreground)]">
+          {detail.method} {detail.path} · <span className={statusColor(detail.status)}>{detail.status}</span> · {detail.durationMs} ms
+        </span>
+      </div>
+      {!recorded && (
+        <div className="mb-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-600">
+          Request này được ghi trước khi bật lưu chi tiết (hoặc API chưa restart) nên không có header/body.
+        </div>
+      )}
+      {tab === "curl" && (
+        <div className="space-y-2">
+          <label className="flex items-center gap-2 text-xs text-[var(--muted-foreground)]">
+            API base
+            <input className={field + " flex-1 font-mono text-xs"} value={base} onChange={(e) => setBase(e.target.value)} />
+          </label>
+          <Json title="cURL (token/mật khẩu là placeholder — điền lại trước khi chạy)" value={curl} />
+        </div>
+      )}
+      {tab === "params" && <Json title="Query params" value={detail.query} />}
+      {tab === "reqHeaders" && <Json title="Request headers" value={detail.request.headers} />}
+      {tab === "reqBody" && <Json title="Request body" value={detail.request.body} />}
+      {tab === "response" && (
+        <div className="space-y-3">
+          <Json title="Response headers" value={detail.response.headers} />
+          <Json title="Response body" value={detail.response.body} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Json({ title, value }: { title: string; value: unknown }) {
+  const empty = value === null || value === undefined || (typeof value === "object" && Object.keys(value as object).length === 0);
+  return (
+    <div className="min-w-0">
+      <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">{title}</div>
+      <pre className="max-h-80 overflow-auto whitespace-pre-wrap break-all rounded-lg border border-[var(--border)] bg-[var(--background-1)] p-2 font-mono text-xs">
+        {empty ? "—" : typeof value === "string" ? value : JSON.stringify(value, null, 2)}
+      </pre>
+    </div>
+  );
+}
+
 /** Admin request-log viewer: 24 h summary + filterable, paginated table. */
 export function LogsConsole() {
   const [q, setQ] = useState("");
@@ -109,6 +240,22 @@ export function LogsConsole() {
   const [summary, setSummary] = useState<Summary | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [detail, setDetail] = useState<ReqDetail | null>(null);
+  const [detailErr, setDetailErr] = useState<string | null>(null);
+
+  async function toggle(id: string) {
+    if (openId === id) {
+      setOpenId(null);
+      return;
+    }
+    setOpenId(id);
+    setDetail(null);
+    setDetailErr(null);
+    const res = await fetch(`/api/admin/logs?view=request&id=${id}`, { cache: "no-store" }).catch(() => null);
+    if (res?.ok) setDetail((await res.json()) as ReqDetail);
+    else setDetailErr("Không tải được chi tiết request.");
+  }
 
   const load = useCallback(async () => {
     if (tab === "traffic") return;
@@ -382,11 +529,13 @@ export function LogsConsole() {
               <th className="px-3 py-2">ms</th>
               <th className="px-3 py-2">Người dùng</th>
               <th className="px-3 py-2">IP</th>
+              <th className="px-3 py-2">Chi tiết</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-[var(--border)]">
             {data?.items.map((r) => (
-              <tr key={r.id} title={r.userAgent ?? undefined}>
+<Fragment key={r.id}>
+              <tr title={r.userAgent ?? undefined}>
                 <td className="whitespace-nowrap px-3 py-2 tabular-nums text-[var(--muted-foreground)]">
                   {new Date(r.createdAt).toLocaleString("vi-VN")}
                 </td>
@@ -399,10 +548,25 @@ export function LogsConsole() {
                 <td className="px-3 py-2 tabular-nums">{r.durationMs}</td>
                 <td className="max-w-40 truncate px-3 py-2">{r.user ?? "—"}</td>
                 <td className="px-3 py-2 font-mono text-xs">{r.ip ?? "—"}</td>
+                <td className="px-3 py-2">
+                  <button className="rounded-md border border-[var(--border)] px-2 py-1 text-xs hover:bg-[var(--background-1)]" onClick={() => void toggle(r.id)}>
+                    {openId === r.id ? "Ẩn" : "Xem"}
+                  </button>
+                </td>
               </tr>
+              {openId === r.id && (
+                <tr>
+                  <td colSpan={8} className="bg-[var(--background-1)]/50 px-3 py-3">
+                    {detailErr ? <div className="text-red-500">{detailErr}</div> : !detail ? <div className="text-[var(--muted-foreground)]">Đang tải…</div> : (
+                      <DetailTabs detail={detail} />
+                    )}
+                  </td>
+                </tr>
+              )}
+            </Fragment>
             ))}
             {data && data.items.length === 0 && (
-              <tr><td colSpan={7} className="px-3 py-8 text-center text-[var(--muted-foreground)]">Chưa có bản ghi.</td></tr>
+              <tr><td colSpan={8} className="px-3 py-8 text-center text-[var(--muted-foreground)]">Chưa có bản ghi.</td></tr>
             )}
           </tbody>
         </table>

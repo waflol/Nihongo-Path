@@ -5,8 +5,10 @@ import { HydratedDocument, Types } from "mongoose";
 export const REQUEST_LOG_RETENTION_DAYS = 30;
 
 /**
- * One finished HTTP request. Query strings and bodies are deliberately NOT
- * stored (they may carry tokens / passwords — spec §12).
+ * One finished HTTP request. Query, headers and JSON bodies (request and
+ * response) are stored for the admin detail view, but only after `scrub()`:
+ * keys matching pass|token|secret|authorization|cookie are redacted, strings,
+ * depth and arrays are capped (spec §12).
  */
 @Schema({ _id: true, timestamps: { createdAt: true, updatedAt: false } })
 export class RequestLog {
@@ -38,6 +40,26 @@ export class RequestLog {
   /** Error message when the request failed (status >= 400). */
   @Prop({ type: String })
   error?: string;
+
+  /** Scrubbed query-string params. */
+  @Prop({ type: Object })
+  query?: Record<string, unknown>;
+
+  /** Scrubbed request headers. */
+  @Prop({ type: Object })
+  reqHeaders?: Record<string, unknown>;
+
+  /** Scrubbed JSON request body (or a short note when not JSON). */
+  @Prop({ type: Object })
+  reqBody?: unknown;
+
+  /** Scrubbed response headers. */
+  @Prop({ type: Object })
+  resHeaders?: Record<string, unknown>;
+
+  /** Scrubbed JSON response body (capped; or a short note). */
+  @Prop({ type: Object })
+  resBody?: unknown;
 
   createdAt: Date;
 }

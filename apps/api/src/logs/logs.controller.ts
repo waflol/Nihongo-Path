@@ -33,6 +33,13 @@ export class LogsController {
     return this.logs.list(query);
   }
 
+  @Get("request/:id")
+  @ContentAdmin()
+  @ApiOperation({ summary: "One request with headers and request/response bodies (scrubbed)" })
+  detail(@Param("id") id: string) {
+    return this.logs.detail(id);
+  }
+
   @Get("app")
   @ContentAdmin()
   @ApiOperation({ summary: "Application log lines and exception stack traces" })

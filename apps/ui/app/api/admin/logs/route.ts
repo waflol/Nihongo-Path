@@ -7,7 +7,7 @@ import { getSession } from "@/lib/session";
  * Admin-only proxy to the API's `/admin/logs*`. `?view=` picks the sub-route
  * (summary | app | traffic | blocked | protection | whoami | simulate | allowed | audit | export); `DELETE ?ip=` lifts a block.
  */
-const VIEWS = new Set(["summary", "app", "traffic", "blocked", "protection", "whoami", "simulate", "allowed", "audit", "export"]);
+const VIEWS = new Set(["summary", "app", "traffic", "blocked", "protection", "whoami", "simulate", "allowed", "audit", "export", "request"]);
 
 async function forward(request: NextRequest): Promise<NextResponse> {
   const session = await getSession();
@@ -17,6 +17,8 @@ async function forward(request: NextRequest): Promise<NextResponse> {
   const params = new URLSearchParams(request.nextUrl.searchParams);
   const view = params.get("view") ?? "";
   const ip = params.get("ip");
+  const id = params.get("id");
+  params.delete("id");
   params.delete("view");
   params.delete("ip");
   const qs = params.toString();
@@ -26,6 +28,10 @@ async function forward(request: NextRequest): Promise<NextResponse> {
   if (view) {
     if (!VIEWS.has(view)) return NextResponse.json({ error: "Bad view" }, { status: 400 });
     path = `/${view}`;
+    if (view === "request") {
+      if (!id || !/^[0-9a-f]{24}$/i.test(id)) return NextResponse.json({ error: "Bad id" }, { status: 400 });
+      path += `/${id}`;
+    }
     if (method === "DELETE") {
       if ((view !== "blocked" && view !== "allowed") || !ip) return NextResponse.json({ error: "Bad request" }, { status: 400 });
       path += `/${encodeURIComponent(ip)}`;

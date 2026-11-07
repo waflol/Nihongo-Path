@@ -1,6 +1,6 @@
-import { Injectable, type OnModuleInit } from "@nestjs/common";
+import { Injectable, NotFoundException, type OnModuleInit } from "@nestjs/common";
 import { InjectModel } from "@nestjs/mongoose";
-import { Model, type FilterQuery } from "mongoose";
+import { Model, Types, type FilterQuery } from "mongoose";
 import type { ExportQuery, ListAppLogsQuery, ListAuditQuery, ListLogsQuery, Range } from "./logs.dto.js";
 import { AppLog } from "./app-log.schema.js";
 import { AuditLog } from "./audit-log.schema.js";
@@ -203,6 +203,27 @@ export class LogsService implements OnModuleInit {
         error: r.error ?? null,
         createdAt: r.createdAt,
       })),
+    };
+  }
+
+  /** Full detail of one logged request (headers + bodies, already scrubbed). */
+  async detail(id: string) {
+    if (!Types.ObjectId.isValid(id)) throw new NotFoundException("Request log not found");
+    const r = await this.logs.findById(id).lean();
+    if (!r) throw new NotFoundException("Request log not found");
+    return {
+      id: r._id.toString(),
+      method: r.method,
+      path: r.path,
+      status: r.status,
+      durationMs: r.durationMs,
+      ip: r.ip ?? null,
+      userAgent: r.userAgent ?? null,
+      error: r.error ?? null,
+      createdAt: r.createdAt,
+      query: r.query ?? null,
+      request: { headers: r.reqHeaders ?? null, body: r.reqBody ?? null },
+      response: { headers: r.resHeaders ?? null, body: r.resBody ?? null },
     };
   }
 

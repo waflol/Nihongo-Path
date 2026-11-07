@@ -57,6 +57,16 @@ export async function POST(request: Request) {
     }
   } catch (error) {
     if (error instanceof ApiError) {
+      if (error.status === 429) {
+        const wait = (error.body as { retryAfterSeconds?: number } | null)
+          ?.retryAfterSeconds;
+        return NextResponse.json(
+          {
+            error: `Đăng nhập quá nhiều lần, thử lại sau${wait ? ` ${wait} giây` : " ít phút"}`,
+          },
+          { status: 429 },
+        );
+      }
       const status =
         error.status === 401 ? 401 : error.status >= 500 ? 502 : 400;
       return NextResponse.json(
