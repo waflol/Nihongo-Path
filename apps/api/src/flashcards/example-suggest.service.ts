@@ -11,6 +11,7 @@ import {
   tokenPos,
   type PartOfSpeech,
 } from "./reading.service.js";
+import { sentenceUsesForm } from "./japanese-forms.js";
 
 export interface ExampleSuggestion {
   sentence: string;
@@ -345,6 +346,8 @@ export class ExampleSuggestService {
     if (!s) return { ok: false, reason: "AI không trả về câu tiếng Nhật" };
     if ([...s].length > 40) return { ok: false, reason: `Câu quá dài (${[...s].length} ký tự, tối đa 40)` };
     if (this.wordForms(term, reading).some((f) => s.includes(f))) return { ok: true, reason: "" };
+    // Passive / causative / potential / adverbial … forms of the word.
+    if (this.wordVariants(term).some((v) => sentenceUsesForm(s, v, null))) return { ok: true, reason: "" };
     try {
       const termTokens = (await this.morph.tokens(term)).filter((t) => t.pos !== "記号");
       if (termTokens.length > 0 && (await this.usesWord(s, termTokens, null, ""))) return { ok: true, reason: "" };
@@ -366,6 +369,11 @@ export class ExampleSuggestService {
     const parts = term.split(/[／/・、,\s]+/).filter(Boolean);
     const forms = new Set<string>([term, ...parts, ...readingVariants(reading)]);
     return [...forms].filter((f) => [...f].length >= 2 || f === term);
+  }
+
+  /** The separate written variants of a front (`寄附／寄付` → both). */
+  private wordVariants(term: string): string[] {
+    return term.split(/[／/・、,\s]+/).filter(Boolean);
   }
 
   /** Words of the card's meaning ("ăn (động từ)" → ["ăn"]). */
@@ -421,6 +429,13 @@ export class ExampleSuggestService {
         continue;
       }
       return true;
+    }
+    // The analyser lemmatises most inflection (passive, causative, adverbial く),
+    // but not all of it (potential 書ける is its own entry): fall back to the
+    // grammar-generated forms for verbs and い-adjectives.
+    if (pos === "verb" || pos === "adjective") {
+      const term = termTokens.map((t) => t.surface_form).join("");
+      if (sentenceUsesForm(sentence, term, pos)) return true;
     }
     return false;
   }

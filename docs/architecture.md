@@ -182,7 +182,7 @@ File (CSV/XLSX/PDF) → preview (không ghi DB) → confirm (idempotent)
              1) Tatoeba cục bộ (cặp Nhật–Việt thật)
              2) câu Nhật Tatoeba + AI dịch
              3) AI viết, kuromoji kiểm tra
-   → cache (Mongo `airesultcache` + Redis) → deck tự PUBLISHED khi xong
+   → cache (Mongo `airesultcache` + Redis); deck mới luôn ở DRAFT, admin tự công khai
 ```
 
 PDF scan (không có text layer): render từng trang PNG → dịch vụ AI có hỗ trợ ảnh

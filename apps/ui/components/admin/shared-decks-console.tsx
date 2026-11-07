@@ -113,7 +113,7 @@ export function SharedDecksConsole() {
         level: newLevel || undefined,
         category: newCategory.trim() || undefined,
         summary: newSummary || undefined,
-        status: "PUBLISHED",
+        status: "DRAFT",
       }),
     }).catch(() => null);
     setCreating(false);

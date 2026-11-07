@@ -248,7 +248,7 @@ export class FlashcardsService implements OnModuleInit {
       level: input.level,
       category: input.category,
       lang: input.lang,
-      status: input.status ?? "PUBLISHED",
+      status: input.status ?? "DRAFT",
       shared,
       // Shared decks have no owner; personal decks belong to the caller.
       user: shared ? null : new Types.ObjectId(caller.sub),

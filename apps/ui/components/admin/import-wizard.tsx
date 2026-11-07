@@ -237,7 +237,7 @@ export function ImportWizard({ learner = false }: { learner?: boolean }) {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(
-        learner ? { title: newTitle.trim() } : { title: newTitle.trim(), status: "PUBLISHED" },
+        learner ? { title: newTitle.trim() } : { title: newTitle.trim(), status: "DRAFT" },
       ),
     }).catch(() => null);
     setCreatingDeck(false);
