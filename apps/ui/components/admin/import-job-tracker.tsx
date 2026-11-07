@@ -108,7 +108,7 @@ export function ImportJobTracker() {
   if (visible.length === 0) return null;
 
   return (
-    <div className="fixed bottom-4 right-4 z-50 flex w-80 max-w-[calc(100vw-2rem)] flex-col gap-2" aria-live="polite">
+    <div className="flex flex-col gap-2" aria-live="polite">
       {visible.map((j) => {
         const pct = j.total > 0 ? Math.round((j.done / j.total) * 100) : 0;
         const href = `${window.location.pathname.startsWith("/learn") ? "/learn/import" : "/admin/import"}?job=${j.id}`;

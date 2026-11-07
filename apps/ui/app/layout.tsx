@@ -59,8 +59,10 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       <body className="flex min-h-full flex-col bg-[var(--background)] font-sans text-[var(--foreground)]">
         <SiteHeader />
         <main className="flex flex-1 flex-col">{children}</main>
-        <ImportJobTracker />
-        <ExampleJobTracker />
+        <div className="fixed bottom-4 right-4 z-50 flex w-80 max-w-[calc(100vw-2rem)] flex-col gap-2">
+          <ImportJobTracker />
+          <ExampleJobTracker />
+        </div>
         <SiteFooter />
         {/* Preline JS init (client, idempotent, re-runs on route change). */}
         <Suspense fallback={null}>
