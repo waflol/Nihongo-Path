@@ -161,8 +161,8 @@ export function AdminShell({
     <div className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-0 px-0 md:flex-row md:px-4 lg:px-6">
       {/* Desktop sidebar */}
       <aside className="hidden w-64 shrink-0 md:block">
-        <div className="sticky top-16 flex h-[calc(100vh-4rem)] flex-col py-6 pr-4">
-          <div className="mb-5 rounded-2xl border border-[var(--border)] bg-[var(--background-1)] p-4">
+        <div className="sticky top-16 flex h-[calc(100vh-4rem)] flex-col py-4 pr-4">
+          <div className="mb-3 shrink-0 rounded-2xl border border-[var(--border)] bg-[var(--background-1)] p-4">
             <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--primary)]">
               Khu quản trị
             </p>
@@ -174,7 +174,7 @@ export function AdminShell({
             </p>
           </div>
 
-          <nav aria-label="Điều hướng quản trị" className="flex flex-col gap-1">
+          <nav aria-label="Điều hướng quản trị" className="-mr-2 flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto pr-2">
             {NAV.map((item) => {
               const active = isActive(pathname, item.href);
               return (
@@ -182,8 +182,9 @@ export function AdminShell({
                   key={item.href}
                   href={item.href}
                   aria-current={active ? "page" : undefined}
+                  title={item.desc}
                   className={
-                    "group flex items-start gap-3 rounded-xl px-3 py-2.5 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--primary-focus)] " +
+                    "group flex shrink-0 items-center gap-3 rounded-xl px-3 py-2 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--primary-focus)] " +
                     (active
                       ? "bg-[color-mix(in_srgb,var(--primary)_14%,transparent)] text-[var(--primary)]"
                       : "text-[var(--foreground)] hover:bg-[var(--layer-hover)]")
@@ -194,7 +195,7 @@ export function AdminShell({
                   </span>
                   <span className="min-w-0">
                     <span className="block text-sm font-semibold leading-5">{item.label}</span>
-                    <span className="block text-xs leading-4 text-[var(--muted-foreground)]">
+                    <span className="block truncate text-xs leading-4 text-[var(--muted-foreground)] [@media(max-height:800px)]:hidden">
                       {item.desc}
                     </span>
                   </span>
@@ -203,7 +204,7 @@ export function AdminShell({
             })}
           </nav>
 
-          <div className="mt-auto border-t border-[var(--border)] pt-4">
+          <div className="mt-2 shrink-0 border-t border-[var(--border)] pt-2">
             <Link
               href="/learn"
               className="flex items-center gap-2 rounded-xl px-3 py-2 text-sm text-[var(--muted-foreground)] hover:bg-[var(--layer-hover)] hover:text-[var(--foreground)]"
