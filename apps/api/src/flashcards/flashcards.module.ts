@@ -19,6 +19,8 @@ import { ReadingModule } from "./reading.module.js";
 import { ImageSuggestService } from "./image-suggest.service.js";
 import { buildAiModule } from "../ai/ai.module.js";
 import { ExampleSuggestService } from "./example-suggest.service.js";
+import { CardReport, CardReportSchema } from "./schemas/card-report.schema.js";
+import { CardReportsService } from "./card-reports.service.js";
 
 /**
  * Personal-deck + save-a-word surface (P3-CARD-01..04).
@@ -48,6 +50,7 @@ export function buildFlashcardsModule(): DynamicModule {
         { name: Vocabulary.name, schema: VocabularySchema },
         { name: GrammarPoint.name, schema: GrammarPointSchema },
         { name: "TatoebaSentence", schema: TatoebaSentenceSchema },
+        { name: CardReport.name, schema: CardReportSchema },
       ]),
     ],
     controllers: [FlashcardsController],
@@ -55,6 +58,7 @@ export function buildFlashcardsModule(): DynamicModule {
       FlashcardsService,
       ImageSuggestService,
       ExampleSuggestService,
+      CardReportsService,
     ],
   };
 }

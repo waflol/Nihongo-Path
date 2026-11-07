@@ -14,7 +14,9 @@ import {
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from "@nestjs/swagger";
 import { Type } from "class-transformer";
 import type { Response } from "express";
-import { IsArray, IsInt, IsOptional, IsString, Max, Min, ValidateNested } from "class-validator";
+import { IsArray, IsIn, IsInt, IsOptional, IsString, Max, MaxLength, Min, ValidateNested } from "class-validator";
+import { CardReportsService } from "./card-reports.service.js";
+import { REPORT_KINDS, REPORT_STATUSES, type ReportKind, type ReportStatus } from "./schemas/card-report.schema.js";
 import { ContentAdmin } from "../auth/decorators/roles.decorator.js";
 import { CurrentUser } from "../auth/decorators/current-user.decorator.js";
 import type { AuthUser } from "../auth/auth.types.js";
@@ -48,12 +50,23 @@ class PageCardsQuery {
   @IsOptional() @IsString() q?: string;
   @IsOptional() @IsString() tag?: string;
   @IsOptional() @IsString() missing?: string;
+  @IsOptional() @IsString() card?: string;
 }
 
 class CardFilterDto {
   @IsOptional() @IsString() q?: string;
   @IsOptional() @IsString() tag?: string;
   @IsOptional() missing?: boolean;
+}
+
+class CardReportDto {
+  @IsIn(REPORT_KINDS as unknown as string[]) kind: ReportKind;
+  @IsOptional() @IsString() @MaxLength(1000) message?: string;
+  @IsOptional() @IsString() @MaxLength(1000) suggestion?: string;
+}
+
+class ReportStatusDto {
+  @IsIn(REPORT_STATUSES as unknown as string[]) status: ReportStatus;
 }
 
 class BulkTagsDto {
@@ -79,7 +92,35 @@ export class FlashcardsController {
     private readonly flashcards: FlashcardsService,
     private readonly reading: ReadingService,
     private readonly images: ImageSuggestService,
+    private readonly reports: CardReportsService,
   ) {}
+
+  // ── Card error reports (shared decks) ──────────────────────────────
+
+  @Post("cards/:id/report")
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({ summary: "Report an error / suggest a fix on a shared-deck card" })
+  reportCard(
+    @CurrentUser() caller: AuthUser,
+    @Param("id") id: string,
+    @Body() body: CardReportDto,
+  ) {
+    return this.reports.create(caller, id, body);
+  }
+
+  @Get("admin/card-reports")
+  @ContentAdmin()
+  @ApiOperation({ summary: "List learner error reports (admin)" })
+  adminListReports(@Query("status") status?: string) {
+    return this.reports.adminList(status);
+  }
+
+  @Patch("admin/card-reports/:id")
+  @ContentAdmin()
+  @ApiOperation({ summary: "Mark a report resolved / rejected / open (admin)" })
+  adminSetReportStatus(@Param("id") id: string, @Body() body: ReportStatusDto) {
+    return this.reports.adminSetStatus(id, body.status);
+  }
 
   @Get("image-suggestions")
   @ApiOperation({
@@ -173,6 +214,7 @@ export class FlashcardsController {
       q: query.q,
       tag: query.tag,
       missing: query.missing === "1" || query.missing === "true",
+      card: query.card,
     });
   }
 

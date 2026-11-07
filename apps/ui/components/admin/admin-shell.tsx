@@ -45,6 +45,16 @@ const NAV: NavItem[] = [
     ),
   },
   {
+    href: "/admin/reports",
+    label: "Góp ý & báo lỗi",
+    desc: "Báo lỗi thẻ, ngữ pháp, giải thích",
+    icon: (
+      <svg {...iconProps}>
+        <path d="M4 22V4M4 4h13l-2 4 2 4H4" />
+      </svg>
+    ),
+  },
+  {
     href: "/admin/import",
     label: "Nhập thẻ từ file",
     desc: "CSV / XLSX → xem trước → xác nhận",

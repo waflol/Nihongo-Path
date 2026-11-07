@@ -383,9 +383,10 @@ export class FlashcardsService implements OnModuleInit {
   /** Mongo filter for the card-manager list: text search, one tag, "no example". */
   private cardFilter(
     deckId: string,
-    f: { q?: string; tag?: string; missing?: boolean },
+    f: { q?: string; tag?: string; missing?: boolean; card?: string },
   ): Record<string, unknown> {
     const filter: Record<string, unknown> = { deck: new Types.ObjectId(deckId) };
+    if (f.card && Types.ObjectId.isValid(f.card)) filter._id = new Types.ObjectId(f.card);
     const q = f.q?.trim();
     if (q) {
       const rx = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
@@ -404,7 +405,7 @@ export class FlashcardsService implements OnModuleInit {
   async pageCards(
     caller: AuthUser,
     deckId: string,
-    opts: { page: number; pageSize: number; q?: string; tag?: string; missing?: boolean },
+    opts: { page: number; pageSize: number; q?: string; tag?: string; missing?: boolean; card?: string },
   ): Promise<{
     items: FlashcardDocument[];
     total: number;

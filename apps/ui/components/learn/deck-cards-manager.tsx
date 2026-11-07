@@ -105,6 +105,8 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
   const [notice, setNotice] = useState<string | null>(null);
 
   const [editingId, setEditingId] = useState<string | null>(null);
+  // `?card=<id>` (from an admin error report): show just that card, ready to edit.
+  const [focusCard, setFocusCard] = useState<string | null>(null);
   const [showAdd, setShowAdd] = useState(false);
   const [adding, setAdding] = useState(false);
   const [formKey, setFormKey] = useState(0);
@@ -119,6 +121,21 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
 
   const canWrite = mode === "admin" || (deck !== null && !deck.shared);
   const reload = useCallback(() => setVersion((v) => v + 1), []);
+
+  useEffect(() => {
+    const c = new URLSearchParams(window.location.search).get("card");
+    if (c) {
+      setFocusCard(c);
+      setEditingId(c);
+    }
+  }, []);
+
+  function clearFocus() {
+    setFocusCard(null);
+    setEditingId(null);
+    setPage(1);
+    window.history.replaceState(null, "", window.location.pathname);
+  }
 
   // Debounce the search box.
   useEffect(() => {
@@ -155,6 +172,7 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
       if (q) params.set("q", q);
       if (tag) params.set("tag", tag);
       if (missing) params.set("missing", "1");
+      if (focusCard) params.set("card", focusCard);
       const res = await fetch(`/api/flashcards/decks/${deckId}/cards/page?${params}`, {
         cache: "no-store",
       }).catch(() => null);
@@ -169,7 +187,7 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
     return () => {
       off = true;
     };
-  }, [deckId, page, q, tag, missing, version]);
+  }, [deckId, page, q, tag, missing, focusCard, version]);
 
   async function openInfo() {
     if (!deck) return;
@@ -602,6 +620,14 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
       )}
 
       {/* Cards */}
+      {focusCard && (
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[var(--primary)] bg-[color-mix(in_srgb,var(--primary)_10%,transparent)] px-4 py-2.5 text-sm text-[var(--foreground)]">
+          <span>Đang xem thẻ được báo lỗi — sửa rồi lưu, sau đó đánh dấu “Đã sửa” ở trang báo lỗi.</span>
+          <button type="button" onClick={clearFocus} className="font-semibold text-[var(--primary)] hover:underline">
+            Xem cả bộ thẻ
+          </button>
+        </div>
+      )}
       <div className="mt-4">
         {loading && !data && <p className="text-sm text-[var(--muted-foreground)]">Đang tải thẻ…</p>}
         {!loading && items.length === 0 && (
