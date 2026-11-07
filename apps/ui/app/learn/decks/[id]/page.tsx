@@ -3,6 +3,7 @@ import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/session";
 import { DeckCardsManager } from "@/components/learn/deck-cards-manager";
+import { DeckPageReview } from "@/components/learn/deck-page-review";
 
 export const metadata: Metadata = {
   title: "Quản lý thẻ",
@@ -13,7 +14,12 @@ async function Gate({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const session = await getSession();
   if (!session.authenticated) redirect("/login?from=/learn/decks");
-  return <DeckCardsManager mode="learn" deckId={id} />;
+  return (
+    <>
+      <DeckCardsManager mode="learn" deckId={id} />
+      <DeckPageReview deckId={id} />
+    </>
+  );
 }
 
 /** Card manager for one deck (own deck: editable; shared deck: read-only). */

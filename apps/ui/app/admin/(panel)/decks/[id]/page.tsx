@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
 import { DeckCardsManager } from "@/components/learn/deck-cards-manager";
+import { DeckPageReview } from "@/components/learn/deck-page-review";
 
 export const metadata: Metadata = {
   title: "Quản lý thẻ",
@@ -9,7 +10,12 @@ export const metadata: Metadata = {
 
 async function Manager({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  return <DeckCardsManager mode="admin" deckId={id} />;
+  return (
+    <>
+      <DeckCardsManager mode="admin" deckId={id} />
+      <DeckPageReview deckId={id} />
+    </>
+  );
 }
 
 /** Admin card manager for one shared deck. The role gate lives in the panel layout. */

@@ -134,7 +134,7 @@ DDoS thật cần chặn ở hạ tầng (Cloudflare / nginx / firewall).
 - **Dịch vụ AI** (Gemini/Groq/OpenRouter/NVIDIA) được admin thêm ở `/admin/ai`:
   khoá API được mã hoá AES-256-GCM bằng `AI_KEY_SECRET` (mặc định dùng
   `JWT_ACCESS_SECRET` — **đổi secret này sẽ làm các khoá đã lưu không giải mã được**).
-  Có benchmark chấm điểm/xếp hạng, thử theo `priority`, tự nghỉ khi 429; các
+  Benchmark, xếp hạng và thứ tự ưu tiên chạy **riêng cho từng tác vụ** (dịch / viết ví dụ / ngữ pháp; tab theo tác vụ ở `/admin/ai`, lịch sử 30 lần chạy mỗi tác vụ); thử theo thứ tự của tác vụ đó (thiếu thì dùng `priority` chung), tự nghỉ khi 429; các
   request chạy song song giữa các dịch vụ. Nhật ký gọi AI xem ở `/admin/ai`
   (lưu 30 ngày). `GEMINI_*` chỉ là dịch vụ dự phòng qua env.
 - **Chỉ mục Tatoeba cục bộ** (ví dụ nhanh, không gọi API ngoài):

@@ -4,6 +4,7 @@ import { EXAMPLES_STARTED_EVENT } from "@/components/learn/example-job-tracker";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import { ErrorsPanel, type ImportErrorInfo } from "@/components/admin/errors-panel";
 import { DuplicatesPanel, type DuplicateInfo } from "@/components/admin/duplicates-panel";
 import { ExampleStarter } from "@/components/admin/example-starter";
 import { PdfPageReview } from "@/components/admin/pdf-page-review";
@@ -63,7 +64,7 @@ interface ConfirmResult {
   examplesQueued?: number;
   examplesDeferred?: number;
   duplicates?: DuplicateInfo[];
-  errors: { rowNumber: number; error: string }[];
+  errors: ImportErrorInfo[];
 }
 
 const inputClass =
@@ -180,6 +181,39 @@ export function ImportWizard({ learner = false }: { learner?: boolean }) {
       setDeckId(j.deckId);
       setJobId(j.id);
       setJob(j);
+    })();
+  }, [wantedJob]);
+
+  // A deck keeps the page check of the PDF it was imported from: show it again when the deck is picked.
+  const [savedJob, setSavedJob] = useState<PdfJob | null>(null);
+  useEffect(() => {
+    if (!deckId || (jobId && (job?.pages?.length ?? 0) > 0)) return;
+    let cancelled = false;
+    void (async () => {
+      const r = await fetch("/api/import", { cache: "no-store" }).catch(() => null);
+      if (!r?.ok || cancelled) return;
+      const mine = ((await r.json().catch(() => [])) as PdfJob[]).find(
+        (j) => j.deckId === deckId && j.status === "done" && (j.pages?.length ?? 0) > 0,
+      );
+      if (!cancelled) setSavedJob(mine ?? null);
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deckId, jobId, result, preview]);
+
+  // Page reloaded while a PDF is being read (the API keeps reading it): show its progress again.
+  useEffect(() => {
+    if (wantedJob) return;
+    void (async () => {
+      const r = await fetch("/api/import", { cache: "no-store" }).catch(() => null);
+      if (!r?.ok) return;
+      const running = ((await r.json().catch(() => [])) as PdfJob[]).find((j) => j.status === "running");
+      if (!running) return;
+      setDeckId((d) => d || running.deckId);
+      setJobId((id) => id ?? running.id);
+      setJob((j) => j ?? running);
     })();
   }, [wantedJob]);
 
@@ -377,10 +411,39 @@ export function ImportWizard({ learner = false }: { learner?: boolean }) {
     }
     setResult(data);
     if (data && (data.examplesQueued ?? 0) > 0) window.dispatchEvent(new Event(EXAMPLES_STARTED_EVENT)); // progress popup
+    resetForm(); // success: back to a clean form; the result panel below reports what was imported
+    setTimeout(() => document.getElementById("import-result")?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
+  }
+
+  /** Clear the file, the PDF job, the column mapping and the preview (the chosen deck stays). */
+  function resetForm() {
     setPreview(null);
+    setFile(null);
+    setMapping({});
+    setJobId(null);
+    setJob(null);
+    setSavedJob(null);
+    setError(null);
+    autoPreviewed.current = null;
+    if (fileRef.current) fileRef.current.value = "";
   }
 
   const steps: string[] = ["1. Chọn file + bộ thẻ", "2. Ánh xạ cột", "3. Xác nhận"];
+
+  // Once the import succeeded the result panel says it all; the saved check stays on the deck page.
+  const pageReview = result
+    ? null
+    : job?.status === "done" && job.id === jobId && (job.pages?.length ?? 0) > 0 ? (
+      <PdfPageReview
+        job={job}
+        onChanged={(j) => {
+          setJob(j);
+          if (!j.retry) void runPreview(false);
+        }}
+      />
+    ) : (
+      (!jobId || (job?.pages?.length ?? 0) === 0) && savedJob && <PdfPageReview job={savedJob} onChanged={setSavedJob} />
+    );
 
   return (
     <div className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6">
@@ -577,15 +640,7 @@ export function ImportWizard({ learner = false }: { learner?: boolean }) {
         </p>
       )}
 
-      {job?.status === "done" && job.id === jobId && (
-        <PdfPageReview
-          job={job}
-          onChanged={(j) => {
-            setJob(j);
-            void runPreview(false);
-          }}
-        />
-      )}
+      {!(preview && preview.rows.length > 0 && !result) && pageReview}
 
       {/* ── Step 2: column mapping ─────────────────────────────────── */}
       {preview && preview.columns.length > 0 && !result && (
@@ -730,6 +785,13 @@ export function ImportWizard({ learner = false }: { learner?: boolean }) {
           </div>
 
           <DuplicatesPanel duplicates={preview.duplicates ?? []} total={preview.duplicateRows} />
+          <ErrorsPanel
+            errors={preview.rows
+              .filter((r) => r.status === "error")
+              .map((r) => ({ rowNumber: r.rowNumber, no: r.no, front: r.front, back: r.back, error: r.error ?? "" }))}
+            defaultOpen
+          />
+          {pageReview}
 
           <div className="mt-4">
             <button
@@ -751,9 +813,9 @@ export function ImportWizard({ learner = false }: { learner?: boolean }) {
 
       {/* ── Done ───────────────────────────────────────────────────── */}
       {result && (
-        <section className="mt-6 rounded-2xl border border-[var(--border)] bg-[#f0fdf4] p-5 dark:bg-[#0f2418]">
+        <section id="import-result" role="status" className="mt-6 rounded-2xl border border-[#15803d] bg-[#f0fdf4] p-5 dark:bg-[#0f2418]">
           <h2 className="text-sm font-semibold text-[#15803d] dark:text-[#86efac]">
-            Đã nhập: {result.imported} thẻ mới
+            ✓ Nhập thành công: {result.imported} thẻ mới
           </h2>
           <dl className="mt-2 space-y-1 text-sm text-[var(--muted-foreground)]">
             <div>
@@ -770,18 +832,6 @@ export function ImportWizard({ learner = false }: { learner?: boolean }) {
                 </dd>
               </div>
             )}
-            {result.errors.length > 0 && (
-              <div>
-                <dt className="inline">Dòng lỗi: </dt>
-                <dd className="ml-2 text-xs">
-                  {result.errors
-                    .slice(0, 10)
-                    .map((e) => `#${e.rowNumber}: ${e.error}`)
-                    .join(" · ")}
-                  {result.errors.length > 10 && ` · +${result.errors.length - 10} dòng khác`}
-                </dd>
-              </div>
-            )}
           </dl>
           {(result.examplesDeferred ?? 0) > 0 && (
             <ExampleStarter
@@ -792,16 +842,14 @@ export function ImportWizard({ learner = false }: { learner?: boolean }) {
               decksHref={backHref}
             />
           )}
+          <ErrorsPanel errors={result.errors} defaultOpen />
           <DuplicatesPanel duplicates={result.duplicates ?? []} total={result.skipped} />
           <div className="mt-4 flex gap-2">
             <button
               type="button"
               onClick={() => {
                 setResult(null);
-                setPreview(null);
-                setFile(null);
-                setMapping({});
-                if (fileRef.current) fileRef.current.value = "";
+                resetForm();
               }}
               className="rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-semibold text-[var(--primary-foreground)] hover:bg-[var(--primary-hover)]"
             >

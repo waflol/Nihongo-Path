@@ -31,10 +31,12 @@ export async function POST(request: Request) {
   if (action === "retry") {
     const job = url.searchParams.get("job") ?? "";
     const page = url.searchParams.get("page") ?? "";
-    if (!/^[\w-]+$/.test(job) || !/^\d{1,4}$/.test(page)) {
+    const pages = url.searchParams.get("pages") ?? "";
+    if (!/^[\w-]+$/.test(job) || !(/^\d{1,4}$/.test(page) || /^\d{1,4}(,\d{1,4}){0,299}$/.test(pages))) {
       return NextResponse.json({ error: "job/page không hợp lệ" }, { status: 400 });
     }
-    const r = await fetch(`${API_BASE_URL}/flashcards/import/jobs/${job}/pages/${page}/retry`, {
+    const target = pages ? `jobs/${job}/retry?pages=${pages}` : `jobs/${job}/pages/${page}/retry`;
+    const r = await fetch(`${API_BASE_URL}/flashcards/import/${target}`, {
       method: "POST",
       headers: { ...(await clientIpHeaders()), Authorization: `Bearer ${session.accessToken}` },
       cache: "no-store",
@@ -86,7 +88,8 @@ export async function GET(request: Request) {
   const params = new URL(request.url).searchParams;
   const job = params.get("job");
   const page = params.get("page");
-  let path = job ? `jobs/${encodeURIComponent(job)}` : "jobs";
+  const deck = params.get("deck");
+  let path = job ? `jobs/${encodeURIComponent(job)}` : deck ? `decks/${encodeURIComponent(deck)}/review` : "jobs";
   if (job && page && /^\d{1,4}$/.test(page)) {
     path += params.get("kind") === "image" ? `/pages/${page}/image` : `/pages/${page}`;
     if (params.get("kind") === "image") {

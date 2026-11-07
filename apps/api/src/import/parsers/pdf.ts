@@ -28,6 +28,15 @@ const OCR_CONCURRENCY = 3;
 /** Pages finished / total — drives the import progress bar. */
 export type ProgressFn = (done: number, total: number) => void;
 
+/**
+ * Per-page checkpoint of an OCR run: pages already read (`saved`) are skipped,
+ * and `save` is called after every page so a restart loses nothing.
+ */
+export interface PageStore {
+  saved: Map<number, OcrRow[]>;
+  save: (page: number, rows: OcrRow[] | null) => Promise<void> | void;
+}
+
 /** Reads one rendered page image; `null` = no service could read it. */
 export type PageOcr = (png: Buffer, page: number) => Promise<OcrRow[] | null>;
 /** Fragments closer than this (PDF units) are one word. */
@@ -170,19 +179,68 @@ export async function ocrWithRetry(
   return null;
 }
 
+const VARIANT_SEP = /[/／。、;；]/;
+const OPEN = "（(「[【";
+const CLOSE = "）)」]】";
+
+/** Split on variant separators that are not inside brackets (`割り合い（に・と）` stays whole). */
+function splitOutsideBrackets(text: string): string[] {
+  const parts: string[] = [];
+  let depth = 0;
+  let cur = "";
+  for (const ch of text) {
+    if (OPEN.includes(ch)) depth++;
+    else if (CLOSE.includes(ch)) depth = Math.max(0, depth - 1);
+    if (depth === 0 && VARIANT_SEP.test(ch)) {
+      parts.push(cur);
+      cur = "";
+    } else cur += ch;
+  }
+  parts.push(cur);
+  return parts.map((p) => p.trim()).filter(Boolean);
+}
+
+/**
+ * One printed line holding two spellings of the same word (`戦う。闘う`,
+ * `戦う/闘う`) becomes one entry per spelling: same number, reading, Hán Việt
+ * and meaning. Safe to apply twice.
+ */
+export function splitVariants(row: OcrRow): OcrRow[] {
+  const words = splitOutsideBrackets(row.word);
+  if (words.length < 2 || words.some((w) => w.length < 2 || !CJK.test(w))) return [row];
+  const readings = splitOutsideBrackets(row.reading);
+  return words.map((word, i) => ({
+    ...row,
+    word,
+    reading: readings.length === words.length ? readings[i] : row.reading,
+  }));
+}
+
 /** Assemble the import table from what each page yielded. */
-export function tableFromOcrPages(pages: (OcrRow[] | null)[]): Table {
+export function tableFromOcrPages(raw: (OcrRow[] | null)[]): Table {
+  const pages = raw.map((list) => (list ? list.flatMap(splitVariants) : list));
   const rows: Record<string, string>[] = [];
   let auto = 0;
+  // Entries sharing a printed number (variants of one word) or lacking one
+  // (sub-lines) keep that number and, when blank, its meaning.
+  let lastNo = "";
+  let lastMeaning = "";
   pages.forEach((list, i) => {
     for (const r of list ?? []) {
       auto++;
+      const numbered = /^\d{1,5}$/.test(r.no);
+      const no = numbered ? r.no : lastNo || String(auto);
+      const sameGroup = !numbered || r.no === lastNo;
+      const meaning = r.meaning || (sameGroup ? lastMeaning : "");
+      if (numbered) lastNo = r.no;
+      if (r.meaning) lastMeaning = r.meaning;
+      else if (!sameGroup) lastMeaning = "";
       rows.push({
-        STT: /^\d{1,5}$/.test(r.no) ? r.no : String(auto),
+        STT: no,
         "Từ vựng": r.word,
         Hiragana: r.reading,
         "Âm Hán Việt": r.hanViet ?? "",
-        Nghĩa: r.meaning,
+        Nghĩa: meaning,
         Trang: String(i + 1),
       });
     }
@@ -193,6 +251,22 @@ export function tableFromOcrPages(pages: (OcrRow[] | null)[]): Table {
     format: "pdf",
     ocr: { pages },
   };
+}
+
+/**
+ * Entries that share a printed number with another entry (variants of one
+ * word, e.g. 計る/測る/量る) or have no number at all (sub-lines). Returned per
+ * page, per row, so the review can point at the rows that make the count
+ * exceed the number of entries in the book.
+ */
+export function rowNumberIssues(pages: (OcrRow[] | null)[]): (("nonum" | "dupno" | undefined)[])[] {
+  const count = new Map<string, number>();
+  for (const list of pages) {
+    for (const r of list ?? []) if (/^\d{1,5}$/.test(r.no)) count.set(r.no, (count.get(r.no) ?? 0) + 1);
+  }
+  return pages.map((list) =>
+    (list ?? []).map((r) => (!/^\d{1,5}$/.test(r.no) ? "nonum" : (count.get(r.no) ?? 0) > 1 ? "dupno" : undefined)),
+  );
 }
 
 /** Render one page of a PDF (1-based) to PNG — for review and single-page retries. */
@@ -212,6 +286,7 @@ async function ocrTable(
   doc: import("pdfjs-dist/legacy/build/pdf.mjs").PDFDocumentProxy,
   ocr: PageOcr,
   onProgress?: ProgressFn,
+  store?: PageStore,
 ): Promise<Table> {
   if (doc.numPages > MAX_OCR_PAGES) {
     throw new UnsupportedFormatError(
@@ -221,14 +296,26 @@ async function ocrTable(
   const perPage: (OcrRow[] | null)[] = new Array(doc.numPages).fill(null);
   let next = 1;
   let finished = 0;
-  onProgress?.(0, doc.numPages);
+  for (const [n, rows] of store?.saved ?? []) {
+    if (n >= 1 && n <= doc.numPages) {
+      perPage[n - 1] = rows;
+      finished++;
+    }
+  }
+  onProgress?.(finished, doc.numPages);
   const worker = async () => {
     while (next <= doc.numPages) {
       const n = next++;
+      if (store?.saved.has(n)) continue; // read before the restart
       const page = await doc.getPage(n);
       const png = await renderPage(page);
       perPage[n - 1] = await ocrWithRetry(png, n, ocr);
       page.cleanup();
+      try {
+        await store?.save(n, perPage[n - 1]);
+      } catch {
+        /* checkpointing is best effort — never fail the read over it */
+      }
       finished++;
       onProgress?.(finished, doc.numPages);
     }
@@ -246,7 +333,12 @@ async function ocrTable(
   return table;
 }
 
-export async function parsePdf(buffer: Buffer, ocr?: PageOcr, onProgress?: ProgressFn): Promise<Table> {
+export async function parsePdf(
+  buffer: Buffer,
+  ocr?: PageOcr,
+  onProgress?: ProgressFn,
+  store?: PageStore,
+): Promise<Table> {
   let pdfjs: typeof import("pdfjs-dist/legacy/build/pdf.mjs");
   try {
     pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
@@ -273,6 +365,7 @@ export async function parsePdf(buffer: Buffer, ocr?: PageOcr, onProgress?: Progr
   let cols: Column[] | null = null;
   let sttIndex = 0;
   const records: string[][] = [];
+  const recordPages: number[] = [];
   let sawText = false;
   let garbagePages = 0;
   let judgedPages = 0;
@@ -351,11 +444,12 @@ export async function parsePdf(buffer: Buffer, ocr?: PageOcr, onProgress?: Progr
       });
       rec[sttIndex] = rec[sttIndex].replace(/\.$/, "");
       records.push(rec);
+      recordPages.push(n);
     });
   }
 
   const noUsableText = !sawText || (records.length === 0 && garbagePages > 0 && garbagePages >= judgedPages / 2);
-  if (noUsableText && ocr) return ocrTable(doc, ocr, onProgress);
+  if (noUsableText && ocr) return ocrTable(doc, ocr, onProgress, store);
   if (!sawText) {
     throw new UnsupportedFormatError(
       "This PDF has no text layer (scanned image) — OCR is not supported",
@@ -388,5 +482,9 @@ export async function parsePdf(buffer: Buffer, ocr?: PageOcr, onProgress?: Progr
     });
     return row;
   });
-  return { columns: unique, rows, format: "pdf" };
+  // Remember which PDF page each row came from, so the page can be shown next to it.
+  rows.forEach((row, i) => {
+    row["Trang"] ??= String(recordPages[i]);
+  });
+  return { columns: unique.includes("Trang") ? unique : [...unique, "Trang"], rows, format: "pdf" };
 }

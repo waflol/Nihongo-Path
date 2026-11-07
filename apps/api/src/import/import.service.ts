@@ -1,4 +1,7 @@
-import { createHash, randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { AiExampleService, lostKanji } from "../ai/ai-example.service.js";
 import {
   Optional,
@@ -27,7 +30,10 @@ import {
 import { parseCsv } from "./parsers/csv.js";
 import { parseXlsx } from "./parsers/xlsx.js";
 import { ExampleSuggestService } from "../flashcards/example-suggest.service.js";
-import { ocrWithRetry, parsePdf, renderPdfPage, tableFromOcrPages } from "./parsers/pdf.js";
+import { renderTableImage } from "./parsers/table-image.js";
+import { type PageStore, rowNumberIssues, ocrWithRetry, parsePdf, renderPdfPage, tableFromOcrPages } from "./parsers/pdf.js";
+import type { PdfJobPageDocument, PdfJobRecordDocument } from "./schemas/pdf-job.schema.js";
+import type { OcrRow } from "./parsers/types.js";
 
 /** What the multipart upload hands the service (multer, in-memory). */
 export interface UploadedImportFile {
@@ -148,7 +154,7 @@ export interface ImportConfirmResult {
   /** Existing cards updated (policy = overwrite). */
   overwritten: number;
   /** Rows rejected with a per-row reason (bad mapping values, etc.). */
-  errors: { rowNumber: number; error: string }[];
+  errors: { rowNumber: number; no?: number; front: string; back: string; error: string }[];
   /** New cards without an example: one is generated in the background. */
   examplesQueued: number;
   /** PDF imports: cards left without an example for now (generate later). */
@@ -185,26 +191,40 @@ interface PdfJob {
   error?: string;
   createdAt: number;
   finishedAt?: number;
+  /** Bytes of the PDF, loaded from `filePath` on demand. */
   file?: UploadedImportFile;
+  /** Table files read from a PDF: each block is one PDF page. */
+  byPage?: boolean;
+  /** `table`: a CSV/XLSX/text PDF whose rows are shown in blocks. */
+  kind: "pdf" | "table";
+  /** Pages being read again in the background; absent when idle. */
+  retry?: { total: number; done: number; queue: number[] };
+  /** Where the PDF is kept on disk (survives an API restart). */
+  filePath: string;
   /** Content hash = key of the parsed table in the PDF cache. */
   key: string;
   /** OCR'd PDFs: rows per page, for the page-by-page review. */
-  pages?: { n: number; rows: number; ok: boolean; lostKanji: number }[];
+  pages?: { n: number; rows: number; ok: boolean; lostKanji: number; numIssues: number }[];
+  /** Rows the last confirmed import rejected (kept so the page check can list them). */
+  importErrors?: { rowNumber: number; no?: number; front: string; back: string; error: string }[];
 }
 
 /** What the browser sees of a job (never the file bytes). */
-export type PdfJobView = Omit<PdfJob, "file" | "userId" | "key">;
+export type PdfJobView = Omit<PdfJob, "file" | "filePath" | "userId" | "key">;
 
 function viewOf(j: PdfJob): PdfJobView {
-  const { file: _file, userId: _userId, key: _key, ...view } = j;
+  const { file: _file, filePath: _filePath, userId: _userId, key: _key, ...view } = j;
   void _file;
+  void _filePath;
   void _userId;
   void _key;
   return view;
 }
 
 function pagesOf(table: Table): PdfJob["pages"] {
+  const issues = table.ocr ? rowNumberIssues(table.ocr.pages) : [];
   return table.ocr?.pages.map((p, i) => ({
+    numIssues: issues[i]?.filter(Boolean).length ?? 0,
     n: i + 1,
     rows: p?.length ?? 0,
     ok: p !== null,
@@ -223,17 +243,25 @@ export class ImportService implements OnApplicationBootstrap {
     private readonly card: Model<FlashcardDocument>,
     @InjectModel("FlashcardDeck")
     private readonly deck: Model<FlashcardDeckDocument>,
+    @InjectModel("PdfJobRecord")
+    private readonly jobRecord: Model<PdfJobRecordDocument>,
+    @InjectModel("PdfJobPage")
+    private readonly jobPage: Model<PdfJobPageDocument>,
     private readonly morph: ReadingService,
     private readonly exampleSuggest: ExampleSuggestService,
     @Optional() private readonly ai?: AiExampleService,
   ) {}
 
   /** Parse a PDF (OCR when needed), remembering the table by content hash. */
-  private async parsePdfCached(buffer: Buffer, onProgress?: (done: number, total: number) => void): Promise<Table> {
+  private async parsePdfCached(
+    buffer: Buffer,
+    onProgress?: (done: number, total: number) => void,
+    store?: PageStore,
+  ): Promise<Table> {
     const key = createHash("sha256").update(buffer).digest("hex");
     const hit = this.pdfCache.get(key);
     if (hit) return hit;
-    const table = await parsePdf(buffer, this.ai ? (png, n) => this.ai!.ocrVocabPage(png, n) : undefined, onProgress);
+    const table = await parsePdf(buffer, this.ai ? (png, n) => this.ai!.ocrVocabPage(png, n) : undefined, onProgress, store);
     // Preview runs this twice (columns, then rows): don't pay for OCR twice.
     this.pdfCache.set(key, table);
     if (this.pdfCache.size > 12) this.pdfCache.delete(this.pdfCache.keys().next().value!);
@@ -242,122 +270,473 @@ export class ImportService implements OnApplicationBootstrap {
 
   // ── Background PDF reading jobs ─────────────────────────────────────
   // Reading a scanned book through OCR takes minutes, so it runs as a job the
-  // browser can leave and come back to. State is in memory (lost on restart).
+  // browser can leave and come back to. The job, its PDF (on disk) and every
+  // page read are persisted, so an API restart resumes where it stopped.
   private readonly jobs = new Map<string, PdfJob>();
+  private readonly jobDir = process.env.IMPORT_JOB_DIR?.trim() || join(tmpdir(), "nihongo-import-jobs");
+
+  private jobOf(r: {
+    _id: unknown;
+    user: string;
+    deck: string;
+    fileName: string;
+    key: string;
+    filePath: string;
+    status: string;
+    done: number;
+    total: number;
+    rows?: number;
+    error?: string;
+    pages?: unknown;
+    pageMap?: number[];
+    retry?: unknown;
+    importErrors?: unknown;
+    kind?: string;
+    createdAt?: Date;
+    finishedAt?: Date;
+  }): PdfJob {
+    return {
+      id: String(r._id),
+      userId: r.user,
+      deckId: r.deck,
+      fileName: r.fileName,
+      key: r.key,
+      filePath: r.filePath,
+      status: r.status as PdfJob["status"],
+      done: r.done,
+      total: r.total,
+      rows: r.rows,
+      error: r.error,
+      pages: r.pages as PdfJob["pages"],
+      retry: r.retry as PdfJob["retry"],
+      importErrors: r.importErrors as PdfJob["importErrors"],
+      kind: r.kind === "table" ? "table" : "pdf",
+      byPage: !!r.pageMap?.length,
+      createdAt: r.createdAt?.getTime() ?? Date.now(),
+      finishedAt: r.finishedAt?.getTime(),
+    };
+  }
+
+  /** A job from memory (live progress) or, after a restart, from the database. */
+  private async loadJob(caller: AuthUser, id: string, readOnly = false): Promise<PdfJob> {
+    const gone = () => new NotFoundException("Không tìm thấy tác vụ đọc PDF (có thể đã hết hạn)");
+    const live = this.jobs.get(id);
+    if (live) {
+      if (live.userId !== caller.sub && !(readOnly && (await this.canReadDeck(caller, live.deckId)))) throw gone();
+      return live;
+    }
+    const rec = Types.ObjectId.isValid(id) ? await this.jobRecord.findById(id).lean().exec() : null;
+    if (!rec || (rec.user !== caller.sub && !(readOnly && (await this.canReadDeck(caller, rec.deck))))) throw gone();
+    const job = this.jobOf(rec);
+    if (job.status === "running") this.jobs.set(job.id, job); // being resumed by bootstrap
+    return job;
+  }
+
+  /**
+   * Any file other than a scanned PDF gets a check too: its rows, in blocks
+   * of 30, with the same number / meaning flags, saved with the deck.
+   */
+  private async saveTableReview(
+    deckId: string,
+    userId: string,
+    fileName: string,
+    table: Table,
+    mapping: ColumnMapping,
+    file: UploadedImportFile,
+    draft = false,
+  ): Promise<void> {
+    const cell = (row: Record<string, string>, col?: string) => (col ? (row[col] ?? "").trim() : "");
+    const rows: OcrRow[] = table.rows.map((r) => ({
+      no: cell(r, mapping.order).replace(/\.$/, ""),
+      word: cell(r, mapping.front),
+      reading: cell(r, mapping.reading),
+      hanViet: cell(r, mapping.hanViet),
+      meaning: cell(r, mapping.back),
+    }));
+    const BLOCK = 30;
+    const blocks: OcrRow[][] = [];
+    const rawBlocks: Record<string, string>[][] = [];
+    // A PDF with a text layer: one block per PDF page, so the page itself can be shown.
+    const isPdf = file.buffer.subarray(0, 5).toString("latin1") === "%PDF-" && table.columns.includes("Trang");
+    const pageMap: number[] = [];
+    if (isPdf) {
+      for (const [i, r] of table.rows.entries()) {
+        const pg = Number(r["Trang"]) || 1;
+        if (pageMap[pageMap.length - 1] !== pg) {
+          pageMap.push(pg);
+          blocks.push([]);
+          rawBlocks.push([]);
+        }
+        blocks[blocks.length - 1].push(rows[i]);
+        rawBlocks[rawBlocks.length - 1].push(r);
+      }
+    } else {
+      for (let i = 0; i < rows.length; i += BLOCK) {
+        blocks.push(rows.slice(i, i + BLOCK));
+        rawBlocks.push(table.rows.slice(i, i + BLOCK));
+      }
+    }
+    if (blocks.length === 0) return;
+    const issues = rowNumberIssues(blocks);
+    const pages = blocks.map((b, i) => ({
+      n: i + 1,
+      rows: b.length,
+      ok: true,
+      lostKanji: b.filter(lostKanji).length,
+      // without a number column there is nothing to compare
+      numIssues: mapping.order ? (issues[i]?.filter(Boolean).length ?? 0) : 0,
+    }));
+    // A draft only replaces the author's earlier draft; a confirmed review replaces everything of the deck.
+    const olds = await this.jobRecord.find(draft ? { deck: deckId, user: userId, draft: true } : { deck: deckId }).lean().exec();
+    for (const old of olds) await this.dropJob(String(old._id), old.filePath);
+    let filePath = "";
+    if (isPdf) {
+      await mkdir(this.jobDir, { recursive: true });
+      filePath = join(this.jobDir, `${createHash("sha256").update(file.buffer).digest("hex")}-${Date.now()}.pdf`);
+      await writeFile(filePath, file.buffer);
+    }
+    const rec = await this.jobRecord.create({
+      pageMap: isPdf ? pageMap : undefined,
+      draft,
+      user: userId,
+      deck: deckId,
+      fileName,
+      key: createHash("sha256").update(JSON.stringify(rows)).digest("hex"),
+      filePath,
+      kind: "table",
+      columns: table.columns,
+      status: "done",
+      done: blocks.length,
+      total: blocks.length,
+      rows: rows.length,
+      pages,
+      finishedAt: new Date(),
+    });
+    await this.jobPage.insertMany(blocks.map((b, i) => ({ job: String(rec._id), n: i + 1, rows: b, raw: rawBlocks[i] })));
+  }
+
+  /** Anyone who can open a deck may compare it with the PDF it was read from. */
+  private async canReadDeck(caller: AuthUser, deckId: string): Promise<boolean> {
+    if (!Types.ObjectId.isValid(deckId)) return false;
+    const d = await this.deck.findById(deckId).select("shared user").lean().exec();
+    return !!d && (d.shared || String(d.user) === caller.sub);
+  }
+
+  /** The page check saved with a deck (the latest finished read of its PDF). */
+  async deckReview(caller: AuthUser, deckId: string): Promise<(PdfJobView & { mine: boolean }) | null> {
+    if (!(await this.canReadDeck(caller, deckId))) return null;
+    const rec = await this.jobRecord.findOne({ deck: deckId, status: "done", draft: { $ne: true } }).sort({ createdAt: -1 }).lean().exec();
+    if (!rec) return null;
+    const job = await this.withNumberIssues(this.jobs.get(String(rec._id)) ?? this.jobOf(rec));
+    return { ...viewOf(job), mine: job.userId === caller.sub };
+  }
+
+  private async fileOf(job: PdfJob): Promise<UploadedImportFile> {
+    if (job.file) return job.file;
+    try {
+      job.file = { buffer: await readFile(job.filePath), originalname: job.fileName } as UploadedImportFile;
+    } catch {
+      throw new NotFoundException("File của tác vụ này đã hết hạn");
+    }
+    return job.file;
+  }
+
+  /** The pages already read (a `null` page is retried, so it is not stored). */
+  private async savedPages(jobId: string): Promise<Map<number, OcrRow[]>> {
+    const pages = await this.jobPage.find({ job: jobId }).lean().exec();
+    return new Map(pages.filter((p) => Array.isArray(p.rows)).map((p) => [p.n, p.rows as OcrRow[]]));
+  }
 
   /** Start (or reuse a finished) PDF read; returns at once. */
   async startPdfJob(caller: AuthUser, file: UploadedImportFile, deckId: string): Promise<PdfJobView> {
     await this.resolveWritableDeck(caller, deckId);
     const now = Date.now();
-    for (const [id, j] of this.jobs) if (now - j.createdAt > JOB_TTL_MS) this.jobs.delete(id);
-    const mine = [...this.jobs.values()].filter((j) => j.userId === caller.sub);
+    const mine = await this.jobRecord.find({ user: caller.sub }).sort({ createdAt: 1 }).lean().exec();
     if (mine.some((j) => j.status === "running")) {
       throw new ConflictException("Một PDF đang được đọc — đợi nó xong rồi hãy nhập file khác");
     }
-    if (mine.length >= 5) {
-      const oldest = mine.sort((a, b) => a.createdAt - b.createdAt)[0];
-      this.jobs.delete(oldest.id);
+    // A deck keeps its page check (read pages + PDF) for as long as it exists:
+    // only a newer read of the same deck, or a deleted deck, drops a job.
+    const alive = new Set(
+      (await this.deck.find({ _id: { $in: mine.map((j) => j.deck).filter((d) => Types.ObjectId.isValid(d)) } }).select("_id").lean().exec()).map((d) => String(d._id)),
+    );
+    for (const j of mine.filter((j) => j.deck === deckId || !alive.has(j.deck))) {
+      await this.dropJob(String(j._id), j.filePath);
     }
-    const job: PdfJob = {
-      id: randomUUID(),
-      userId: caller.sub,
-      deckId,
+
+    const key = createHash("sha256").update(file.buffer).digest("hex");
+    await mkdir(this.jobDir, { recursive: true });
+    const filePath = join(this.jobDir, `${key}-${now}.pdf`);
+    await writeFile(filePath, file.buffer);
+    const rec = await this.jobRecord.create({
+      user: caller.sub,
+      deck: deckId,
       fileName: file.originalname,
+      key,
+      filePath,
       status: "running",
-      done: 0,
-      total: 0,
-      createdAt: now,
-      file,
-      key: createHash("sha256").update(file.buffer).digest("hex"),
-    };
+      kind: "pdf",
+    });
+    const job = this.jobOf(rec.toObject());
+    job.file = file;
     this.jobs.set(job.id, job);
-    void this.parsePdfCached(file.buffer, (done, total) => {
-      job.done = done;
-      job.total = total;
-    })
-      .then((table) => {
-        job.status = "done";
-        job.rows = table.rows.length;
-        job.pages = pagesOf(table);
-        job.finishedAt = Date.now();
-      })
-      .catch((error: unknown) => {
-        job.status = "error";
-        job.error =
-          error instanceof UnsupportedFormatError || error instanceof EmptyTableError
-            ? error.detail
-            : "Không đọc được file PDF";
-        job.finishedAt = Date.now();
-        job.file = undefined;
-      });
+    void this.runPdfJob(job);
     return viewOf(job);
   }
 
-  listPdfJobs(caller: AuthUser): PdfJobView[] {
-    return [...this.jobs.values()]
-      .filter((j) => j.userId === caller.sub)
-      .sort((a, b) => b.createdAt - a.createdAt)
-      .map(viewOf);
+  private async dropJob(id: string, filePath: string): Promise<void> {
+    this.jobs.delete(id);
+    await this.jobPage.deleteMany({ job: id }).exec();
+    await this.jobRecord.deleteOne({ _id: id }).exec();
+    await rm(filePath, { force: true }).catch(() => undefined);
   }
 
-  getPdfJob(caller: AuthUser, id: string): PdfJobView {
-    return viewOf(this.ownJob(caller, id));
+  /** Read the job's PDF, skipping pages already read, saving each page as it finishes. */
+  private async runPdfJob(job: PdfJob): Promise<void> {
+    try {
+      const file = await this.fileOf(job);
+      const saved = await this.savedPages(job.id);
+      const hit = this.pdfCache.get(job.key);
+      const table =
+        hit ??
+        (await this.parsePdfCached(
+          file.buffer,
+          (done, total) => {
+            job.done = done;
+            job.total = total;
+            void this.jobRecord.updateOne({ _id: job.id }, { $set: { done, total } }).exec().catch(() => undefined);
+          },
+          {
+            saved,
+            save: async (n, rows) => {
+              if (!rows) return; // a failed page is read again on resume
+              await this.jobPage.updateOne({ job: job.id, n }, { $set: { rows } }, { upsert: true }).exec();
+            },
+          },
+        ));
+      job.status = "done";
+      job.rows = table.rows.length;
+      job.pages = pagesOf(table);
+      job.finishedAt = Date.now();
+      job.file = undefined;
+      this.jobs.delete(job.id); // from here the database is the source of truth
+      await this.jobRecord
+        .updateOne(
+          { _id: job.id },
+          { $set: { status: "done", rows: job.rows, pages: job.pages, finishedAt: new Date(job.finishedAt) } },
+        )
+        .exec();
+    } catch (error: unknown) {
+      job.status = "error";
+      job.error =
+        error instanceof UnsupportedFormatError || error instanceof EmptyTableError
+          ? error.detail
+          : "Không đọc được file PDF";
+      job.finishedAt = Date.now();
+      job.file = undefined;
+      this.jobs.delete(job.id);
+      await this.jobRecord
+        .updateOne({ _id: job.id }, { $set: { status: "error", error: job.error, finishedAt: new Date(job.finishedAt) } })
+        .exec()
+        .catch(() => undefined);
+    }
+  }
+
+  /** After a restart, pick up the jobs that were still being read. */
+  private async resumePdfJobs(): Promise<void> {
+    const running = await this.jobRecord.find({ status: "running" }).lean().exec();
+    for (const rec of running) {
+      const job = this.jobOf(rec);
+      this.jobs.set(job.id, job);
+      void this.runPdfJob(job);
+    }
+    const retrying = await this.jobRecord.find({ status: "done", "retry.queue.0": { $exists: true } }).lean().exec();
+    for (const rec of retrying) {
+      const job = this.jobOf(rec);
+      this.jobs.set(job.id, job);
+      void this.runRetry(job);
+    }
+  }
+
+  /** Jobs saved before the numbering check existed: fill it in once. */
+  private async withNumberIssues(job: PdfJob): Promise<PdfJob> {
+    if (job.status !== "done" || !job.pages?.length || job.pages[0].numIssues !== undefined) return job;
+    const table = await this.ocrTableOf(job);
+    if (table?.ocr) {
+      job.pages = pagesOf(table);
+      await this.jobRecord.updateOne({ _id: job.id }, { $set: { pages: job.pages } }).exec().catch(() => undefined);
+    }
+    return job;
+  }
+
+  async listPdfJobs(caller: AuthUser): Promise<PdfJobView[]> {
+    const recs = await this.jobRecord.find({ user: caller.sub }).sort({ createdAt: -1 }).limit(50).lean().exec();
+    const jobs = await Promise.all(recs.map((r) => this.withNumberIssues(this.jobs.get(String(r._id)) ?? this.jobOf(r))));
+    return jobs.map(viewOf);
+  }
+
+  async getPdfJob(caller: AuthUser, id: string): Promise<PdfJobView> {
+    return viewOf(await this.withNumberIssues(await this.loadJob(caller, id)));
   }
 
   /** The uploaded file of a finished job, so preview/confirm can run without re-uploading. */
-  pdfJobFile(caller: AuthUser, id: string): UploadedImportFile {
-    const job = this.ownJob(caller, id);
-    if (job.status !== "done" || !job.file) {
+  async pdfJobFile(caller: AuthUser, id: string): Promise<UploadedImportFile> {
+    const job = await this.loadJob(caller, id);
+    if (job.status !== "done") {
       throw new ConflictException("PDF này chưa đọc xong hoặc đã hết hạn — hãy chọn lại file");
     }
-    return job.file;
+    try {
+      return await this.fileOf(job);
+    } catch {
+      throw new ConflictException("PDF này chưa đọc xong hoặc đã hết hạn — hãy chọn lại file");
+    }
+  }
+
+  /** Remember the rows a confirmed import rejected, for the deck's page check. */
+  /**
+   * Keep the rows that failed to import with the deck's saved review. Best
+   * effort: the import has already been written, so this must never fail it.
+   */
+  async saveImportErrors(deckId: string, errors: NonNullable<PdfJob["importErrors"]>): Promise<void> {
+    try {
+      await this.jobRecord
+        .findOneAndUpdate({ deck: deckId, draft: { $ne: true } }, { $set: { importErrors: errors } }, { sort: { createdAt: -1 } })
+        .exec();
+    } catch {
+      /* ignore */
+    }
   }
 
   /** One page of the job's PDF as a PNG, so it can be compared with what was read. */
   async pdfJobPageImage(caller: AuthUser, id: string, n: number): Promise<Buffer> {
-    const job = this.ownJob(caller, id);
-    if (!job.file) throw new NotFoundException("File của tác vụ này đã hết hạn");
+    const job = await this.loadJob(caller, id, true);
+    if (job.kind === "table") return this.tableImage(job, n);
+    const file = await this.fileOf(job);
     try {
-      return await renderPdfPage(job.file.buffer, n);
+      return await renderPdfPage(file.buffer, n);
     } catch (error) {
       if (error instanceof UnsupportedFormatError) throw new NotFoundException(error.detail);
       throw error;
     }
   }
 
-  /** What was read from one page (OCR'd PDFs). */
-  pdfJobPageRows(caller: AuthUser, id: string, n: number) {
-    const job = this.ownJob(caller, id);
-    const page = this.pdfCache.get(job.key)?.ocr?.pages[n - 1];
-    if (page === undefined) throw new NotFoundException("Trang này không có dữ liệu OCR");
-    return { n, ok: page !== null, rows: (page ?? []).map((r) => ({ ...r, lostKanji: lostKanji(r) })) };
+  /** Picture to compare a block with: the PDF page itself, or the block's rows drawn as a grid. */
+  private async tableImage(job: PdfJob, n: number): Promise<Buffer> {
+    const meta = await this.jobRecord.findById(job.id).select("columns pageMap filePath").lean().exec();
+    if (meta?.filePath && meta.pageMap?.[n - 1]) {
+      try {
+        return await renderPdfPage(await readFile(meta.filePath), meta.pageMap[n - 1]);
+      } catch {
+        /* fall through to the grid */
+      }
+    }
+    const rec = await this.jobPage.findOne({ job: job.id, n }).select("raw").lean().exec();
+    if (!rec) throw new NotFoundException("Nhóm dòng này không có dữ liệu");
+    return renderTableImage(
+      `${job.fileName} — nhóm ${n}`,
+      meta?.columns ?? [],
+      (rec.raw as Record<string, string>[] | undefined) ?? [],
+    );
   }
 
-  /** Read one page again (after a failure, or when the result looked wrong). */
-  async retryPdfJobPage(caller: AuthUser, id: string, n: number): Promise<PdfJobView> {
-    const job = this.ownJob(caller, id);
-    const table = this.pdfCache.get(job.key);
-    if (job.status !== "done" || !job.file || !table?.ocr || !this.ai) {
+  /** The OCR'd table of a job: from the cache, else rebuilt from the saved pages. */
+  private async ocrTableOf(job: PdfJob): Promise<Table | undefined> {
+    const hit = this.pdfCache.get(job.key);
+    if (hit) return hit;
+    const saved = await this.savedPages(job.id);
+    if (saved.size === 0 || job.total === 0) return undefined;
+    const table = tableFromOcrPages(Array.from({ length: job.total }, (_, i) => saved.get(i + 1) ?? null));
+    this.pdfCache.set(job.key, table);
+    return table;
+  }
+
+  /** What was read from one page (OCR'd PDFs). */
+  async pdfJobPageRows(caller: AuthUser, id: string, n: number) {
+    const job = await this.loadJob(caller, id, true);
+    if (job.kind === "table") {
+      const saved = await this.savedPages(job.id);
+      const pages = Array.from({ length: job.total }, (_, i) => saved.get(i + 1) ?? null);
+      const list = pages[n - 1];
+      if (!list) throw new NotFoundException("Nhóm dòng này không có dữ liệu");
+      const issues = rowNumberIssues(pages)[n - 1];
+      const rec = await this.jobPage.findOne({ job: job.id, n }).select("raw").lean().exec();
+      const meta = await this.jobRecord.findById(job.id).select("columns").lean().exec();
+      return {
+        n,
+        ok: true,
+        rows: list.map((r, i) => ({ ...r, lostKanji: lostKanji(r), issue: issues[i] })),
+        raw: { columns: meta?.columns ?? [], rows: (rec?.raw as Record<string, string>[] | undefined) ?? [] },
+      };
+    }
+    const ocr = (await this.ocrTableOf(job))?.ocr;
+    const page = ocr?.pages[n - 1];
+    if (!ocr || page === undefined) throw new NotFoundException("Trang này không có dữ liệu OCR");
+    const issues = rowNumberIssues(ocr.pages)[n - 1];
+    return {
+      n,
+      ok: page !== null,
+      rows: (page ?? []).map((r, i) => ({ ...r, lostKanji: lostKanji(r), issue: issues[i] })),
+    };
+  }
+
+  /**
+   * Read pages again in the background (after a failure, or when the result
+   * looked wrong). Returns at once; progress is `retry` on the job, the queue
+   * is persisted so it continues after a restart.
+   */
+  async retryPdfJobPages(caller: AuthUser, id: string, pages: number[]): Promise<PdfJobView> {
+    const job = await this.loadJob(caller, id);
+    const table = job.kind === "table" ? undefined : await this.ocrTableOf(job);
+    if (job.status !== "done" || !table?.ocr || !this.ai) {
       throw new ConflictException("Không đọc lại được trang này (tác vụ đã hết hạn hoặc không phải PDF scan)");
     }
-    if (n < 1 || n > table.ocr.pages.length) throw new NotFoundException("Trang không tồn tại");
-    const png = await this.pdfJobPageImage(caller, id, n);
-    const rows = await ocrWithRetry(png, n, (img) => this.ai!.ocrVocabPage(img, n));
-    const pages = [...table.ocr.pages];
-    pages[n - 1] = rows;
-    const next = tableFromOcrPages(pages);
-    this.pdfCache.set(job.key, next);
-    job.rows = next.rows.length;
-    job.pages = pagesOf(next);
+    if (job.retry?.queue.length) throw new ConflictException("Đang đọc lại các trang khác — đợi xong rồi hãy chọn tiếp");
+    const queue = [...new Set(pages)].filter((n) => Number.isInteger(n) && n >= 1 && n <= table.ocr!.pages.length);
+    if (queue.length === 0) throw new NotFoundException("Trang không tồn tại");
+    job.retry = { total: queue.length, done: 0, queue };
+    this.jobs.set(job.id, job);
+    await this.jobRecord.updateOne({ _id: job.id }, { $set: { retry: job.retry } }).exec();
+    void this.runRetry(job);
     return viewOf(job);
   }
 
-  private ownJob(caller: AuthUser, id: string): PdfJob {
-    const job = this.jobs.get(id);
-    if (!job || job.userId !== caller.sub) {
-      throw new NotFoundException("Không tìm thấy tác vụ đọc PDF (có thể đã hết hạn)");
+  private async runRetry(job: PdfJob): Promise<void> {
+    try {
+      while (job.retry && job.retry.queue.length > 0 && this.ai) {
+        const n = job.retry.queue[0];
+        try {
+          const file = await this.fileOf(job);
+          const png = await renderPdfPage(file.buffer, n);
+          const rows = await ocrWithRetry(png, n, (img) => this.ai!.ocrVocabPage(img, n));
+          const table = await this.ocrTableOf(job);
+          if (table?.ocr) {
+            const pages = [...table.ocr.pages];
+            pages[n - 1] = rows ?? pages[n - 1]; // a failed retry keeps what was there
+            const next = tableFromOcrPages(pages);
+            this.pdfCache.set(job.key, next);
+            job.rows = next.rows.length;
+            job.pages = pagesOf(next);
+          }
+          if (rows) await this.jobPage.updateOne({ job: job.id, n }, { $set: { rows } }, { upsert: true }).exec();
+        } catch {
+          /* this page stays as it was; carry on with the next */
+        }
+        job.retry.queue.shift();
+        job.retry.done++;
+        await this.jobRecord
+          .updateOne({ _id: job.id }, { $set: { retry: job.retry, rows: job.rows, pages: job.pages } })
+          .exec()
+          .catch(() => undefined);
+      }
+    } finally {
+      job.retry = undefined;
+      job.file = undefined;
+      this.jobs.delete(job.id);
+      await this.jobRecord
+        .updateOne({ _id: job.id }, { $unset: { retry: 1 }, $set: { rows: job.rows, pages: job.pages } })
+        .exec()
+        .catch(() => undefined);
     }
-    return job;
   }
 
   /** Parsed PDF tables by content hash (OCR'd scans are slow and cost AI calls). */
@@ -380,6 +759,11 @@ export class ImportService implements OnApplicationBootstrap {
 
   /** After a restart, resume decks whose examples were still being generated. */
   async onApplicationBootstrap(): Promise<void> {
+    try {
+      await this.resumePdfJobs();
+    } catch {
+      /* best effort — never block startup */
+    }
     try {
       const decks = await this.deck
         .find({ exampleTotal: { $gt: 0 }, examplePaused: { $ne: true } })
@@ -724,6 +1108,10 @@ export class ImportService implements OnApplicationBootstrap {
     await this.resolveWritableDeck(caller, deckId);
     const table = await this.parseTable(file);
     const targetDeck = await this.resolveWritableDeck(caller, deckId);
+    // Any file other than a scanned PDF gets its page check as soon as it is mapped.
+    if (!table.ocr && mapping?.front && mapping.back) {
+      await this.saveTableReview(deckId, caller.sub, file.originalname, table, mapping, file, true).catch((e: unknown) => console.error("[import] draft review failed", e));
+    }
 
     // Mapping step 1: no mapping chosen yet — report the columns only.
     if (!mapping || !mapping.front || !mapping.back) {
@@ -858,6 +1246,9 @@ export class ImportService implements OnApplicationBootstrap {
   ): Promise<ImportConfirmResult> {
     const targetDeck = await this.resolveWritableDeck(caller, deckId);
     const table = await this.parseTable(file);
+    if (!table.ocr) {
+      await this.saveTableReview(deckId, caller.sub, file.originalname, table, mapping, file).catch(() => undefined);
+    }
 
     // Rebuild the exact rows the preview showed, in the same order.
     const extrasByRow = await this.rowExtras(table, mapping);
@@ -899,7 +1290,7 @@ export class ImportService implements OnApplicationBootstrap {
     const toInsert: ImportCardDoc[] = [];
     const toOverwrite: ImportCardDoc[] = [];
     let skipped = 0;
-    const errors: { rowNumber: number; error: string }[] = [];
+    const errors: { rowNumber: number; no?: number; front: string; back: string; error: string }[] = [];
     let rowNo = 1;
 
     for (const [rowIdx, row] of table.rows.entries()) {
@@ -909,7 +1300,13 @@ export class ImportService implements OnApplicationBootstrap {
       const tags = this.parseTags(row[mapping.tags ?? ""]);
 
       if (front === "" || back === "") {
-        errors.push({ rowNumber: rowNo, error: "front and back are required" });
+        errors.push({
+          rowNumber: rowNo,
+          no: extrasByRow[rowIdx]?.order,
+          front,
+          back,
+          error: "front and back are required",
+        });
         continue;
       }
 

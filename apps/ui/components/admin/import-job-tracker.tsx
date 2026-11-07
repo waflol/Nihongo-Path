@@ -14,7 +14,17 @@ export interface PdfJob {
   rows?: number;
   error?: string;
   /** OCR'd PDFs: rows per page (for the page-by-page check). */
-  pages?: { n: number; rows: number; ok: boolean; lostKanji?: number }[];
+  pages?: { n: number; rows: number; ok: boolean; lostKanji?: number; numIssues?: number }[];
+  /** Rows the last confirmed import rejected. */
+  importErrors?: { rowNumber: number; no?: number; front: string; back: string; error: string }[];
+  /** `table`: a CSV/XLSX/text-PDF file shown in blocks of rows (no page images, no re-reading). */
+  kind?: "pdf" | "table";
+  /** Table files read from a PDF: each block is one PDF page. */
+  byPage?: boolean;
+  /** Set on a deck's saved review: false when the viewer did not import it (read-only). */
+  mine?: boolean;
+  /** Pages being read again in the background. */
+  retry?: { total: number; done: number; queue: number[] };
 }
 
 /** Fired by the wizard right after it starts a job, so the tracker starts polling at once. */
@@ -78,7 +88,7 @@ export function ImportJobTracker() {
         }
       }
     }
-    if (list.some((j) => j.status === "running")) {
+    if (list.some((j) => j.status === "running" || j.retry)) {
       timer.current = setTimeout(() => void pollRef.current(), POLL_MS);
     }
   }, []);
@@ -104,7 +114,7 @@ export function ImportJobTracker() {
   }
 
   if (!signedIn) return null;
-  const visible = jobs.filter((j) => j.status === "running" || !seenIds.includes(j.id));
+  const visible = jobs.filter((j) => j.status === "running" || j.retry || !seenIds.includes(j.id));
   if (visible.length === 0) return null;
 
   return (
@@ -148,7 +158,26 @@ export function ImportJobTracker() {
                 </p>
               </>
             )}
-            {j.status === "done" && (
+            {j.status === "done" && j.retry && (
+              <>
+                <div
+                  role="progressbar"
+                  aria-valuenow={Math.round((j.retry.done / j.retry.total) * 100)}
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  className="mt-2 h-2 overflow-hidden rounded-full bg-[var(--layer)]"
+                >
+                  <div
+                    className="h-full bg-[var(--primary)] transition-all"
+                    style={{ width: `${Math.max((j.retry.done / j.retry.total) * 100, 3)}%` }}
+                  />
+                </div>
+                <p className="mt-1 text-xs text-[var(--muted-foreground)]">
+                  Đang đọc lại trang {Math.min(j.retry.done + 1, j.retry.total)}/{j.retry.total} — bạn có thể làm việc khác
+                </p>
+              </>
+            )}
+            {j.status === "done" && !j.retry && (
               <p className="mt-1 text-xs text-[var(--muted-foreground)]">
                 Đã đọc xong · {j.rows ?? 0} dòng
                 {(j.pages?.filter((p) => !p.ok || p.rows === 0 || (p.lostKanji ?? 0) > 0).length ?? 0) > 0 &&

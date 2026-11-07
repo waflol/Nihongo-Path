@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isGarbageText, ocrWithRetry, parsePdf, tableFromOcrPages } from "./pdf.js";
+import { isGarbageText, ocrWithRetry, parsePdf, splitVariants, tableFromOcrPages } from "./pdf.js";
 
 describe("isGarbageText", () => {
   it("flags failed-OCR symbol soup", () => {
@@ -74,5 +74,44 @@ describe("OCR retry and page table", () => {
     const t = tableFromOcrPages([[{ no: "1", word: "a", reading: "a", meaning: "x" }], null, []]);
     expect(t.rows[0].Trang).toBe("1");
     expect(t.ocr?.pages.map((p) => p === null)).toEqual([false, true, false]);
+  });
+});
+
+describe("tableFromOcrPages numbering", () => {
+  it("keeps the shared number and meaning for variants and unnumbered sub-lines", () => {
+    const t = tableFromOcrPages([
+      [
+        { no: "131", word: "計る", reading: "はかる", meaning: "Đo" },
+        { no: "131", word: "測る", reading: "はかる", meaning: "" },
+        { no: "", word: "量る", reading: "はかる", meaning: "" },
+      ],
+      [{ no: "132", word: "次", reading: "つぎ", meaning: "Tiếp" }],
+    ]);
+    expect(t.rows.map((r) => [r["STT"], r["Nghĩa"]])).toEqual([
+      ["131", "Đo"],
+      ["131", "Đo"],
+      ["131", "Đo"],
+      ["132", "Tiếp"],
+    ]);
+  });
+});
+
+
+describe("splitVariants", () => {
+  const row = (word: string, reading = "たたかう") => ({ no: "7", word, reading, hanViet: "CHIẾN", meaning: "Chiến đấu" });
+  it("splits two spellings of one word into rows with the same number and meaning", () => {
+    for (const w of ["戦う。闘う", "戦う/闘う", "戦う／闘う", "戦う、闘う"]) {
+      const out = splitVariants(row(w));
+      expect(out.map((r) => r.word)).toEqual(["戦う", "闘う"]);
+      expect(out.every((r) => r.no === "7" && r.reading === "たたかう" && r.meaning === "Chiến đấu")).toBe(true);
+    }
+  });
+  it("pairs readings when each variant has its own", () => {
+    expect(splitVariants(row("計る/測る", "はかる/はかる")).map((r) => r.reading)).toEqual(["はかる", "はかる"]);
+  });
+  it("leaves brackets, single words and trailing punctuation alone", () => {
+    expect(splitVariants(row("割り合い（に・と）"))).toHaveLength(1);
+    expect(splitVariants(row("戦う。"))).toHaveLength(1);
+    expect(splitVariants(row("が/は"))).toHaveLength(1);
   });
 });

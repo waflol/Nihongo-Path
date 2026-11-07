@@ -5,6 +5,7 @@ import {
   HttpStatus,
   PayloadTooLargeException,
   Param,
+  Query,
   Get,
   StreamableFile,
   Post,
@@ -123,13 +124,19 @@ export class ImportController {
 
   @Get("jobs")
   @ApiOperation({ summary: "The caller's recent PDF reading jobs (progress)" })
-  listJobs(@CurrentUser() caller: AuthUser) {
+  async listJobs(@CurrentUser() caller: AuthUser) {
     return this.imports.listPdfJobs(caller);
+  }
+
+  @Get("decks/:deckId/review")
+  @ApiOperation({ summary: "The page-by-page check saved with a deck (null when the deck was not imported from a scanned PDF)" })
+  async deckReview(@CurrentUser() caller: AuthUser, @Param("deckId") deckId: string) {
+    return (await this.imports.deckReview(caller, deckId)) ?? {};
   }
 
   @Get("jobs/:id")
   @ApiOperation({ summary: "One PDF reading job" })
-  getJob(@CurrentUser() caller: AuthUser, @Param("id") id: string) {
+  async getJob(@CurrentUser() caller: AuthUser, @Param("id") id: string) {
     return this.imports.getPdfJob(caller, id);
   }
 
@@ -146,7 +153,7 @@ export class ImportController {
 
   @Get("jobs/:id/pages/:n")
   @ApiOperation({ summary: "What was read from one page of the job's PDF" })
-  jobPageRows(@CurrentUser() caller: AuthUser, @Param("id") id: string, @Param("n") n: string) {
+  async jobPageRows(@CurrentUser() caller: AuthUser, @Param("id") id: string, @Param("n") n: string) {
     return this.imports.pdfJobPageRows(caller, id, Number(n));
   }
 
@@ -154,7 +161,14 @@ export class ImportController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: "Read one page of the job's PDF again" })
   retryJobPage(@CurrentUser() caller: AuthUser, @Param("id") id: string, @Param("n") n: string) {
-    return this.imports.retryPdfJobPage(caller, id, Number(n));
+    return this.imports.retryPdfJobPages(caller, id, [Number(n)]);
+  }
+
+  @Post("jobs/:id/retry")
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: "Read several pages of the job's PDF again, in the background (?pages=1,4,7)" })
+  retryJobPages(@CurrentUser() caller: AuthUser, @Param("id") id: string, @Query("pages") pages = "") {
+    return this.imports.retryPdfJobPages(caller, id, pages.split(",").map(Number));
   }
 
   @Post("preview")
@@ -175,7 +189,7 @@ export class ImportController {
     const mapping = this.parseMapping(body.mapping);
     return this.imports.preview(
       caller,
-      file ? this.asUploaded(file) : this.imports.pdfJobFile(caller, body.jobId!),
+      file ? this.asUploaded(file) : await this.imports.pdfJobFile(caller, body.jobId!),
       body.deckId,
       mapping,
     );
@@ -205,14 +219,16 @@ export class ImportController {
     }
     // Duplicates are always skipped (existing cards are never overwritten).
     const policy: "skip" | "overwrite" = "skip";
-    return this.imports.confirm(
+    const result = await this.imports.confirm(
       caller,
-      file ? this.asUploaded(file) : this.imports.pdfJobFile(caller, body.jobId!),
+      file ? this.asUploaded(file) : await this.imports.pdfJobFile(caller, body.jobId!),
       body.deckId,
       mapping,
       policy,
       body.newDeck === "true",
     );
+    await this.imports.saveImportErrors(body.deckId, result.errors);
+    return result;
   }
 
   private parseMapping(raw: string | undefined): ColumnMapping | undefined {
