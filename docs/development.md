@@ -142,6 +142,7 @@ DDoS thật cần chặn ở hạ tầng (Cloudflare / nginx / firewall).
   pnpm --filter @nihongo/api tatoeba:import -- --write
   ```
   Cần `MONGODB_URL`; ~35 MB dữ liệu / ~80 MB cả chỉ mục. Chưa nạp → fallback gọi API Tatoeba.
+- **Kanji Jōyō** (2136 chữ, kèm thứ tự nét): `pnpm --filter @nihongo/api kanji:import` (cần `MONGODB_URL`; xem `docs/plans/plan-kanji.md`).
 - **Redis** (`REDIS_URL`, tuỳ chọn): không bắt buộc; thiếu thì bỏ qua. Console ở `/admin/redis`.
 - **Giới hạn file nhập:** CSV/XLSX ≤ **10 MB**, PDF ≤ **50 MB** (vượt → 413). PDF có text
   cần bảng có cột STT; text hỏng (OCR rác) bị phát hiện và bỏ, báo lỗi rõ.

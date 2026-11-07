@@ -157,8 +157,8 @@ apps/api (NestJS) ── REST + Swagger
 | Module | Vai trò |
 |---|---|
 | `auth`, `users` | Đăng nhập email/Google, JWT access + refresh xoay vòng, vai trò USER/ADMIN/SUPER_ADMIN |
-| `content` | Giáo trình, bài, từ vựng, ngữ pháp (CRUD admin, đọc công khai) |
-| `flashcards` | Deck (cá nhân/chia sẻ), card, trùng lặp (`dedupeKey`), đọc hiragana, gợi ý ví dụ/ảnh |
+| `content` | Giáo trình, bài, từ vựng, ngữ pháp, **kanji Jōyō 2136** (CRUD admin, đọc công khai `/kanji*`) |
+| `flashcards` | Deck (cá nhân/chia sẻ), card, trùng lặp (`dedupeKey`), đọc hiragana, gợi ý ví dụ/ảnh, báo lỗi thẻ (`card-reports`), câu luyện thi 問題 (`exercise-questions`), quiz đồng nghĩa/kanji dễ nhầm, chấm câu |
 | `import` | Nhập CSV/XLSX (≤ 10 MB) và PDF bảng STT (≤ 50 MB): preview → confirm idempotent; PDF scan đọc bằng OCR (AI có hỗ trợ ảnh) chạy nền như job, cache theo hash file |
 | `srs` | SM-2, hàng đợi ôn theo ngày tz user, giới hạn thẻ mới/ngày (`newCardsPerDay`), thống kê tiến độ (Mongo aggregation), ôn chéo deck |
 | `ai` | Dịch vụ AI do admin quản lý (key mã hoá), benchmark, gọi song song, cache kết quả, nhật ký gọi |
@@ -169,8 +169,8 @@ apps/api (NestJS) ── REST + Swagger
 ### 8.2. Frontend — route `apps/ui/app`
 
 - Công khai: `/`, `/login`, `/register`.
-- Học viên: `/learn` (tiến độ), `/learn/decks`, `/learn/decks/[id]` (quản lý thẻ), `/learn/study`, `/learn/import`, `/learn/exercises`.
-- Admin (`/admin/(panel)`): `content`, `decks`, `decks/[id]`, `import`, `users`, `ai`, `ai-activity`, `ai-playground`, `redis`, `logs`.
+- Học viên: `/learn` (tiến độ), `/learn/decks`, `/learn/decks/[id]` (quản lý thẻ), `/learn/study`, `/learn/import`, `/learn/exercises` (luyện từ), `/learn/exam` (luyện thi), `/learn/kanji`, `/learn/kanji/[char]`.
+- Admin (`/admin/(panel)`): `content`, `decks`, `decks/[id]`, `import`, `users`, `ai`, `ai-activity`, `ai-playground`, `reports` (báo lỗi thẻ), `redis`, `logs`.
 - UI gọi API qua route handler proxy `app/api/*` (trình duyệt không gọi thẳng API).
 
 ### 8.3. Luồng nhập & tạo ví dụ
