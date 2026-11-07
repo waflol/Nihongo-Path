@@ -112,6 +112,18 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
   const [formKey, setFormKey] = useState(0);
   const [form, setForm] = useState(emptyForm);
   const [showHanViet, toggleHanViet] = useHanVietPref();
+  const [view, setView] = useState<"cards" | "table">("cards");
+  useEffect(() => {
+    try {
+      if (window.localStorage.getItem("deck-view") === "table") setView("table");
+    } catch {}
+  }, []);
+  function changeView(v: "cards" | "table") {
+    setView(v);
+    try {
+      window.localStorage.setItem("deck-view", v);
+    } catch {}
+  }
 
   // Deck info editor (rename / level / category / summary).
   const [editInfo, setEditInfo] = useState(false);
@@ -370,6 +382,24 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <div role="group" aria-label="Chế độ xem" className="inline-flex overflow-hidden rounded-lg border border-[var(--border)] text-xs font-semibold">
+            {(["cards", "table"] as const).map((v) => (
+              <button
+                key={v}
+                type="button"
+                aria-pressed={view === v}
+                onClick={() => changeView(v)}
+                className={
+                  "h-9 px-3 " +
+                  (view === v
+                    ? "bg-[var(--primary)] text-[var(--primary-foreground)]"
+                    : "text-[var(--foreground)] hover:bg-[var(--layer-hover)]")
+                }
+              >
+                {v === "cards" ? "Thẻ" : "Bảng"}
+              </button>
+            ))}
+          </div>
           <HanVietToggle on={showHanViet} onToggle={toggleHanViet} />
           {canWrite && deck && (
             <button type="button" className={btn} onClick={() => (editInfo ? setEditInfo(false) : void openInfo())} aria-expanded={editInfo}>
@@ -635,7 +665,128 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
             {q || tag || missing ? "Không có thẻ nào khớp bộ lọc." : "Bộ này chưa có thẻ."}
           </p>
         )}
-        <ul className={"space-y-3 transition-opacity " + (loading && data ? "opacity-60" : "")}>
+        {view === "table" && items.length > 0 && (
+          <div className={"overflow-x-auto rounded-2xl border border-[var(--border)] transition-opacity " + (loading && data ? "opacity-60" : "")}>
+            <table className="w-full min-w-[760px] border-collapse text-left text-sm">
+              <thead className="bg-[var(--layer)] text-xs text-[var(--muted-foreground)]">
+                <tr>
+                  {canWrite && (
+                    <th className="w-10 px-3 py-2">
+                      <input
+                        type="checkbox"
+                        aria-label="Chọn cả trang"
+                        checked={pageAllSelected || allMatching}
+                        onChange={(e) => togglePage(e.target.checked)}
+                        className="size-4 accent-[var(--primary)]"
+                      />
+                    </th>
+                  )}
+                  <th className="w-10 px-3 py-2 font-medium">#</th>
+                  <th className="px-3 py-2 font-medium">Mặt trước</th>
+                  <th className="px-3 py-2 font-medium">Cách đọc</th>
+                  {showHanViet && <th className="px-3 py-2 font-medium">Hán Việt</th>}
+                  <th className="px-3 py-2 font-medium">Mặt sau</th>
+                  <th className="px-3 py-2 font-medium">Loại từ</th>
+                  <th className="px-3 py-2 font-medium">Ví dụ</th>
+                  <th className="px-3 py-2 font-medium">Tags</th>
+                  {canWrite && <th className="w-28 px-3 py-2" />}
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((card, i) =>
+                  editingId === card._id ? (
+                    <tr key={card._id} className="border-t border-[var(--border)]">
+                      <td colSpan={20} className="bg-[var(--background)] p-4">
+                        <CardEditForm
+                          card={card}
+                          onCancel={() => setEditingId(null)}
+                          onError={setError}
+                          onSaved={() => {
+                            setEditingId(null);
+                            setError(null);
+                            reload();
+                          }}
+                        />
+                      </td>
+                    </tr>
+                  ) : (
+                    <tr key={card._id} className="border-t border-[var(--border)] align-top hover:bg-[var(--layer-hover)]">
+                      {canWrite && (
+                        <td className="px-3 py-2">
+                          <input
+                            type="checkbox"
+                            aria-label="Chọn thẻ"
+                            checked={allMatching || selected.has(card._id)}
+                            onChange={(e) => {
+                              const on = e.target.checked;
+                              setAllMatching(false);
+                              setSelected((prev) => {
+                                const next = new Set(prev);
+                                if (on) next.add(card._id);
+                                else next.delete(card._id);
+                                return next;
+                              });
+                            }}
+                            className="size-4 accent-[var(--primary)]"
+                          />
+                        </td>
+                      )}
+                      <td className="px-3 py-2 text-xs text-[var(--muted-foreground)]">{(page - 1) * PAGE_SIZE + i + 1}</td>
+                      <td className="px-3 py-2 text-base font-semibold text-[var(--foreground)]">{card.front}</td>
+                      <td className="px-3 py-2 text-[var(--foreground)]">{card.reading ?? ""}</td>
+                      {showHanViet && <td className="px-3 py-2 text-[var(--foreground)]">{card.hanViet ?? ""}</td>}
+                      <td className="px-3 py-2 text-[var(--foreground)]">{card.back}</td>
+                      <td className="px-3 py-2 text-xs text-[var(--muted-foreground)]">{card.partOfSpeech ?? ""}</td>
+                      <td className="max-w-64 px-3 py-2 text-xs text-[var(--muted-foreground)]">
+                        {card.examples && card.examples.length > 0 ? (
+                          <span title={card.examples.map((e) => e.sentence).join("\n")} className="line-clamp-2">
+                            {card.examples[0].sentence}
+                            {card.examples.length > 1 ? ` (+${card.examples.length - 1})` : ""}
+                          </span>
+                        ) : (
+                          <span className="text-[#b45309]">—</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2">
+                        <div className="flex flex-wrap gap-1">
+                          {(card.tags ?? []).map((t) => (
+                            <button
+                              key={t}
+                              type="button"
+                              onClick={() => setFilter({ tag: t })}
+                              className="rounded-full bg-[var(--layer)] px-2 py-0.5 text-xs text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+                            >
+                              {isJlptLevel(t) ? t.toUpperCase() : "#" + t}
+                            </button>
+                          ))}
+                        </div>
+                      </td>
+                      {canWrite && (
+                        <td className="px-3 py-2">
+                          <div className="flex items-center justify-end gap-1.5">
+                            <button type="button" onClick={() => setEditingId(card._id)} className={btn}>
+                              Sửa
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void removeCard(card._id)}
+                              title="Xoá thẻ"
+                              aria-label="Xoá thẻ"
+                              className="inline-flex size-9 items-center justify-center rounded-lg border border-[var(--destructive)] text-[var(--destructive)] hover:bg-[#fef2f2] dark:hover:bg-[#2a1215]"
+                            >
+                              <Icon name="trash" />
+                            </button>
+                          </div>
+                        </td>
+                      )}
+                    </tr>
+                  ),
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <ul className={"space-y-3 transition-opacity " + (loading && data ? "opacity-60" : "") + (view === "table" ? " hidden" : "")}>
           {items.map((card, i) =>
             editingId === card._id ? (
               <li key={card._id} className="rounded-2xl border border-[var(--primary)] bg-[var(--background)] p-4 shadow-sm">
@@ -695,15 +846,48 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
         </ul>
 
         {pages > 1 && (
-          <nav className="mt-5 flex items-center justify-center gap-3" aria-label="Phân trang">
-            <button type="button" className={btn} disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
-              ← Trước
+          <nav className="mt-6 flex items-center justify-center gap-2" aria-label="Phân trang">
+            <button
+              type="button"
+              className="inline-flex size-9 items-center justify-center rounded-lg border border-[var(--border)] text-[var(--foreground)] hover:bg-[var(--layer-hover)] disabled:opacity-40"
+              disabled={page <= 1}
+              onClick={() => setPage((p) => p - 1)}
+              aria-label="Trang trước"
+            >
+              ←
             </button>
-            <span className="text-sm text-[var(--muted-foreground)]">
-              Trang {page}/{pages}
-            </span>
-            <button type="button" className={btn} disabled={page >= pages} onClick={() => setPage((p) => p + 1)}>
-              Sau →
+            <form
+              className="inline-flex h-9 items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--background-1)] px-3 text-sm text-[var(--muted-foreground)] focus-within:border-[var(--primary-focus)] focus-within:ring-1 focus-within:ring-[var(--primary-focus)]"
+              onSubmit={(e) => {
+                e.preventDefault();
+                const n = Number(new FormData(e.currentTarget).get("page"));
+                if (Number.isFinite(n)) setPage(Math.min(pages, Math.max(1, Math.trunc(n))));
+              }}
+            >
+              <span>Trang</span>
+              <input
+                key={page}
+                name="page"
+                type="number"
+                inputMode="numeric"
+                min={1}
+                max={pages}
+                defaultValue={page}
+                aria-label="Nhập số trang rồi nhấn Enter"
+                title="Nhập số trang rồi nhấn Enter"
+                onFocus={(e) => e.currentTarget.select()}
+                className="w-12 bg-transparent text-center font-semibold text-[var(--foreground)] [appearance:textfield] focus:outline-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+              />
+              <span>/ {pages}</span>
+            </form>
+            <button
+              type="button"
+              className="inline-flex size-9 items-center justify-center rounded-lg border border-[var(--border)] text-[var(--foreground)] hover:bg-[var(--layer-hover)] disabled:opacity-40"
+              disabled={page >= pages}
+              onClick={() => setPage((p) => p + 1)}
+              aria-label="Trang sau"
+            >
+              →
             </button>
           </nav>
         )}
