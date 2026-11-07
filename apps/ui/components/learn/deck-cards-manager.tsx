@@ -48,6 +48,8 @@ interface PageCard {
   order?: number;
   /** Import warnings: why this card should be double-checked. */
   reviewIssues?: string[];
+  /** The warnings as actionable items: the field each is about and a suggested fix, if any. */
+  reviewItems?: { text: string; field: "hanViet" | "reading" | "back"; fix?: string }[];
 }
 
 interface PageData {
@@ -258,33 +260,82 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
     setAllMatching(false);
   }
 
-  /** An admin looked at a card's import warnings: clear them. */
-  async function markReviewed(cardId: string) {
+  /** Apply the suggested fix of one import warning, or just dismiss it (Bỏ qua). */
+  async function resolveIssue(cardId: string, item: { field: "hanViet" | "reading" | "back"; fix?: string }, apply: boolean) {
     const res = await fetch(`/api/flashcards/cards/${cardId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ reviewed: true }),
+      body: JSON.stringify({ resolve: item.field, ...(apply && item.fix ? { [item.field]: item.fix } : {}) }),
     }).catch(() => null);
     if (!res?.ok) {
-      setError("Không đánh dấu được đã xem xét");
+      setError(apply ? "Không áp dụng được gợi ý" : "Không bỏ qua được cảnh báo");
       return;
     }
     reload();
   }
 
-  const reviewNote = (card: PageCard) =>
-    (card.reviewIssues?.length ?? 0) > 0 ? (
-      <div className="mt-1 rounded-md bg-[#fffbeb] px-2 py-1 text-xs text-[#92400e] dark:bg-[#2a2008] dark:text-[#fcd34d]">
-        {card.reviewIssues!.map((m) => (
-          <span key={m} className="block">⚠ {m}</span>
-        ))}
-        {canWrite && (
-          <button type="button" onClick={() => void markReviewed(card._id)} className="mt-0.5 font-medium underline">
-            Đã xem xét
-          </button>
-        )}
+  const FIELD_LABEL = { hanViet: "Hán Việt", reading: "Cách đọc", back: "Nghĩa" } as const;
+
+  const reviewNote = (card: PageCard) => {
+    const items = card.reviewItems ?? (card.reviewIssues ?? []).map((text) => ({ text, field: "back" as const, fix: undefined }));
+    if (items.length === 0) return null;
+    return (
+      <div className="mx-4 mb-4 mt-1 overflow-hidden rounded-xl border border-[#f59e0b]/40 bg-[#f59e0b]/10">
+        <div className="flex items-center gap-2 border-b border-[#f59e0b]/25 px-3 py-1.5 text-xs font-semibold text-[#b45309] dark:text-[#fbbf24]">
+          <span aria-hidden="true">⚠</span> Cần xem xét
+        </div>
+        <ul className="divide-y divide-[#f59e0b]/20">
+          {items.map((it) => {
+            const current = it.field === "hanViet" ? card.hanViet : it.field === "reading" ? card.reading : card.back;
+            return (
+              <li key={it.text} className="flex flex-wrap items-center gap-x-4 gap-y-2 px-3 py-2.5">
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="rounded-md bg-[#f59e0b]/20 px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-[#b45309] dark:text-[#fbbf24]">
+                      {FIELD_LABEL[it.field]}
+                    </span>
+                    <span className="text-xs text-[var(--muted-foreground)]">{it.text.replace(/ → đã tự sửa thành .*$/, "")}</span>
+                  </div>
+                  {it.fix && (
+                    <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
+                      <span className="rounded-md bg-[#ef4444]/10 px-2 py-0.5 font-medium text-[#dc2626] line-through decoration-[#dc2626]/60 dark:text-[#fca5a5]">
+                        {current || "—"}
+                      </span>
+                      <span aria-hidden="true" className="text-[var(--muted-foreground)]">→</span>
+                      <span className="rounded-md bg-[#22c55e]/15 px-2 py-0.5 font-semibold text-[#15803d] dark:text-[#86efac]">
+                        ✨ {it.fix}
+                      </span>
+                      <span className="text-[11px] text-[var(--muted-foreground)]">gợi ý</span>
+                    </div>
+                  )}
+                </div>
+                {canWrite && (
+                  <div className="flex shrink-0 gap-2">
+                    {it.fix && (
+                      <button
+                        type="button"
+                        onClick={() => void resolveIssue(card._id, it, true)}
+                        className="inline-flex items-center gap-1 rounded-lg bg-[#16a34a] px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-[#15803d] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#16a34a]"
+                      >
+                        ✓ Áp dụng
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => void resolveIssue(card._id, it, false)}
+                      className="inline-flex items-center rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-1.5 text-xs font-medium text-[var(--muted-foreground)] hover:bg-[var(--layer-hover)] hover:text-[var(--foreground)]"
+                    >
+                      Bỏ qua
+                    </button>
+                  </div>
+                )}
+              </li>
+            );
+          })}
+        </ul>
       </div>
-    ) : null;
+    );
+  };
 
   function setFilter(next: { tag?: string; missing?: boolean; review?: boolean }) {
     if (next.tag !== undefined) setTag(next.tag);

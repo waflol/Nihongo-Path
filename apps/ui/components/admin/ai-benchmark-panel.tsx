@@ -43,6 +43,10 @@ export interface Bench {
   grammarHit?: number;
   grammarSplit?: number;
   grammarTrans?: number;
+  pronounceReading?: number;
+  pronounceRomaji?: number;
+  pronounceWords?: number;
+  pronounceViet?: number;
 }
 
 /** One line of a task's history: how a past run of that task went. */
@@ -58,7 +62,7 @@ export interface HistoryEntry {
 
 export interface BenchDetail {
   id: number;
-  kind: "translate" | "write" | "grammar";
+  kind: "translate" | "write" | "grammar" | "pronounce";
   term: string;
   meaning: string;
   source?: string;
@@ -76,6 +80,12 @@ export interface BenchDetail {
   hit?: number;
   split?: number;
   points?: string[];
+  readingScore?: number;
+  romajiScore?: number;
+  wordsScore?: number;
+  gotReading?: string;
+  gotRomaji?: string;
+  gotViet?: string;
 }
 
 export interface BenchService {
@@ -122,8 +132,10 @@ const HOW: Record<BenchTask, string> = {
   write: "4 từ mẫu. Chính xác = câu model viết có dùng đúng từ (100), quá 25 ký tự (60) hoặc thiếu từ / không phải tiếng Nhật (0), trung bình 4 từ.",
   grammar:
     "3 câu mẫu. Chính xác = 60% nêu đúng các mẫu ngữ pháp cần có + 25% tách câu thành đủ từ có chú thích (từ loại / nghĩa) + 15% có bản dịch tiếng Việt.",
+  pronounce:
+    "2 từ mẫu (一人住まい — ひとりずまい, 放っておく — ほうっておく). Chính xác = 55% hiragana đúng với cách đọc chuẩn + 20% romaji khớp (cách viết trường âm ō/ou coi như nhau) + 15% tách từ có kèm cách đọc + 10% có cách đọc theo tiếng Việt.",
 };
-const ITEMS: Record<BenchTask, string> = { translate: "10 câu dịch", write: "4 từ đặt câu", grammar: "3 câu ngữ pháp" };
+const ITEMS: Record<BenchTask, string> = { translate: "10 câu dịch", write: "4 từ đặt câu", grammar: "3 câu ngữ pháp", pronounce: "2 từ phát âm" };
 
 export function AiBenchmarkPanel({
   services,
@@ -594,6 +606,13 @@ function Compare({ rows, task, onClear }: { rows: Row[]; task: BenchTask; onClea
           { label: "Đủ ý", get: (r: Row) => r.bench.completeness, fmt: (n: number) => n.toFixed(1), higherIsBetter: true },
           { label: "Đúng nghĩa của từ", get: (r: Row) => (r.bench.translateOnly ? undefined : r.bench.matchAcc), fmt: (n: number) => n.toFixed(1), higherIsBetter: true },
         ]
+      : task === "pronounce"
+        ? [
+            { label: "Hiragana đúng", get: (r: Row) => r.bench.pronounceReading, fmt: (n: number) => n.toFixed(1), higherIsBetter: true },
+            { label: "Romaji đúng", get: (r: Row) => r.bench.pronounceRomaji, fmt: (n: number) => n.toFixed(1), higherIsBetter: true },
+            { label: "Tách từ có cách đọc", get: (r: Row) => r.bench.pronounceWords, fmt: (n: number) => n.toFixed(1), higherIsBetter: true },
+            { label: "Có đọc theo tiếng Việt", get: (r: Row) => r.bench.pronounceViet, fmt: (n: number) => n.toFixed(1), higherIsBetter: true },
+          ]
       : task === "grammar"
         ? [
             { label: "Nêu đúng mẫu ngữ pháp", get: (r: Row) => r.bench.grammarHit, fmt: (n: number) => n.toFixed(1), higherIsBetter: true },
@@ -688,6 +707,13 @@ function ResultDetails({ bench, label, task }: { bench: Bench; label: string; ta
                   ] as [string, number | undefined][])
                 : task === "write"
                   ? ([["Viết câu", bench.writeScore]] as [string, number | undefined][])
+                  : task === "pronounce"
+                    ? ([
+                        ["Hiragana đúng", bench.pronounceReading],
+                        ["Romaji đúng", bench.pronounceRomaji],
+                        ["Tách từ có cách đọc", bench.pronounceWords],
+                        ["Có đọc theo tiếng Việt", bench.pronounceViet],
+                      ] as [string, number | undefined][])
                   : ([
                       ["Nêu đúng mẫu ngữ pháp", bench.grammarHit],
                       ["Tách từ có chú thích", bench.grammarSplit],
@@ -769,7 +795,7 @@ function ResultDetails({ bench, label, task }: { bench: Bench; label: string; ta
                 <tr key={d.id}>
                   <td className="px-2 py-1.5 tabular-nums">{d.id}</td>
                   <td className="px-2 py-1.5">
-                    {d.kind === "grammar" ? (
+                    {d.kind === "grammar" || d.kind === "pronounce" ? (
                       <div lang="ja">{d.source}</div>
                     ) : d.kind === "translate" ? (
                       <>
@@ -788,7 +814,11 @@ function ResultDetails({ bench, label, task }: { bench: Bench; label: string; ta
                     )}
                   </td>
                   <td className="px-2 py-1.5">
-                    {d.kind === "grammar" ? (
+                    {d.kind === "pronounce" ? (
+                      <div className="text-[var(--muted-foreground)]">
+                        hiragana: <span lang="ja">{d.expected}</span>
+                      </div>
+                    ) : d.kind === "grammar" ? (
                       <div className="text-[var(--muted-foreground)]">
                         phải nêu: <span lang="ja">{d.expected}</span>
                       </div>
@@ -808,6 +838,14 @@ function ResultDetails({ bench, label, task }: { bench: Bench; label: string; ta
                   <td className="px-2 py-1.5">
                     {!d.answered ? (
                       <span className="text-[#b91c1c]">✗ Không có câu trả lời đọc được</span>
+                    ) : d.kind === "pronounce" ? (
+                      <>
+                        <div lang="ja">{d.gotReading}</div>
+                        <div className="text-[var(--muted-foreground)]">
+                          {d.gotRomaji}
+                          {d.gotViet ? ` · ${d.gotViet}` : ""}
+                        </div>
+                      </>
                     ) : d.kind === "grammar" ? (
                       <>
                         <div>{d.vi}</div>
@@ -832,7 +870,15 @@ function ResultDetails({ bench, label, task }: { bench: Bench; label: string; ta
                     )}
                   </td>
                   <td className="whitespace-nowrap px-2 py-1.5">
-                    {d.kind === "grammar" ? (
+                    {d.kind === "pronounce" ? (
+                      <>
+                        <div className="tabular-nums">hiragana {d.readingScore ?? 0}</div>
+                        <div className="tabular-nums text-[var(--muted-foreground)]">
+                          romaji {d.romajiScore ?? 0} · từ {d.wordsScore ?? 0}
+                        </div>
+                        <Verdict ok={(d.readingScore ?? 0) === 100} yes="đọc đúng" no="đọc sai" />
+                      </>
+                    ) : d.kind === "grammar" ? (
                       <>
                         <div className="tabular-nums">mẫu ngữ pháp {d.hit ?? 0}</div>
                         <div className="tabular-nums text-[var(--muted-foreground)]">tách từ {d.split ?? 0}</div>

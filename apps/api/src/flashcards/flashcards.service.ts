@@ -1,3 +1,5 @@
+import { suggestHanViet } from "../import/han-viet-suggest.js";
+import { ReadingService } from "./reading.service.js";
 import {
   BadRequestException,
   ConflictException,
@@ -29,6 +31,9 @@ import type { GrammarPointDocument } from "../content/schemas/grammar-point.sche
 import type { UserCardProgressDocument } from "../srs/schemas/progress.schema.js";
 
 /** Personal deck write input (the caller's own deck). */
+/** Which card field an import warning is about. */
+export type ReviewField = "hanViet" | "reading" | "back";
+
 export interface DeckWriteInput {
   title: string;
   summary?: string;
@@ -123,7 +128,34 @@ export class FlashcardsService implements OnModuleInit {
     private readonly grammar: Model<GrammarPointDocument>,
     private readonly exampleSuggest: ExampleSuggestService,
     @Optional() private readonly aiCache?: AiResultCacheService,
+    @Optional() private readonly morph?: ReadingService,
   ) {}
+
+  /**
+   * The import warnings of a card as actionable items: which field each is
+   * about and, where one can be worked out, the value that would fix it
+   * (Hán Việt from the curated table, reading from the analyser).
+   */
+  private async reviewItems(c: FlashcardDocument): Promise<{ text: string; field: ReviewField; fix?: string }[]> {
+    const out: { text: string; field: ReviewField; fix?: string }[] = [];
+    for (const text of c.reviewIssues ?? []) {
+      const field: ReviewField = /^Hán Việt/.test(text) ? "hanViet" : /^cách đọc/.test(text) ? "reading" : "back";
+      let fix: string | undefined;
+      if (field === "hanViet") {
+        const v = suggestHanViet(c.front);
+        if (v && v !== (c.hanViet ?? "")) fix = v;
+      } else if (field === "reading" && this.morph) {
+        try {
+          const g = (await this.morph.analyze(c.front.replace(/[（(][^）)]*[）)]/g, ""))).reading;
+          if (g && g !== (c.reading ?? "")) fix = g;
+        } catch {
+          /* analyser unavailable — no suggestion */
+        }
+      }
+      out.push({ text, field, fix });
+    }
+    return out;
+  }
 
   /**
    * One-off, idempotent: cards that have a reading were keyed on
@@ -437,7 +469,13 @@ export class FlashcardsService implements OnModuleInit {
         .exec(),
     ]);
     return {
-      items,
+      items: await Promise.all(
+        items.map(async (c) =>
+          (c.reviewIssues?.length ?? 0) > 0
+            ? Object.assign(c.toObject(), { reviewItems: await this.reviewItems(c) })
+            : c,
+        ),
+      ) as FlashcardDocument[],
       total,
       missingExamples,
       needsReview,
@@ -757,6 +795,10 @@ export class FlashcardsService implements OnModuleInit {
       tags?: string[];
       /** true = an admin looked at the import warnings: clear them. */
       reviewed?: boolean;
+      /** Âm Hán Việt (applying a suggested fix). */
+      hanViet?: string;
+      /** Close the warnings about one field (applied or dismissed). */
+      resolve?: ReviewField;
     },
   ): Promise<FlashcardDocument> {
     let cardDoc: FlashcardDocument | null;
@@ -801,7 +843,12 @@ export class FlashcardsService implements OnModuleInit {
     if (input.examples !== undefined) cardDoc.examples = cleanExamples(input.examples);
     if (input.tags !== undefined) cardDoc.tags = input.tags;
     // Fixing the meaning / reading, or an explicit "reviewed", closes the import warnings.
-    if (input.reviewed || (input.back !== undefined && back !== "") || input.reading !== undefined) cardDoc.reviewIssues = [];
+    if (input.hanViet !== undefined) cardDoc.hanViet = input.hanViet.trim();
+    if (input.reviewed || (input.back !== undefined && back !== "")) cardDoc.reviewIssues = [];
+    if (input.resolve) {
+      const of = (t: string): ReviewField => (/^Hán Việt/.test(t) ? "hanViet" : /^cách đọc/.test(t) ? "reading" : "back");
+      cardDoc.reviewIssues = (cardDoc.reviewIssues ?? []).filter((t) => of(t) !== input.resolve);
+    }
     cardDoc.dedupeKey = key;
     await cardDoc.save();
     return cardDoc;

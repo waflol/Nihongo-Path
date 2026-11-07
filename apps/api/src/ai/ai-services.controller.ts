@@ -22,8 +22,8 @@ import { AiServicesService } from "./ai-services.service.js";
 
 /** The task a request names; anything else is a client error. */
 function parseTask(v: unknown): BenchTask {
-  if (v === "translate" || v === "write" || v === "grammar") return v;
-  throw new BadRequestException("task must be translate, write or grammar");
+  if (v === "translate" || v === "write" || v === "grammar" || v === "pronounce") return v;
+  throw new BadRequestException("task must be translate, write, grammar or pronounce");
 }
 
 /**
@@ -170,11 +170,11 @@ export class AiServicesController {
   @Post("services/:id/play")
   @HttpCode(HttpStatus.OK)
   @ContentAdmin()
-  @ApiOperation({ summary: "Playground: translate or analyse the grammar of one text on one service — nothing is saved" })
+  @ApiOperation({ summary: "Playground: translate, analyse the grammar of, or give pronunciation help for one text on one service — nothing is saved" })
   async play(@Param("id") id: string, @Body() body: { mode?: string; text?: string }) {
     const text = String(body?.text ?? "").trim().slice(0, 500);
     if (!text) throw new BadRequestException("Nhập nội dung cần xử lý");
-    const mode = body?.mode === "grammar" ? "grammar" : "translate";
+    const mode = body?.mode === "grammar" ? "grammar" : body?.mode === "pronounce" ? "pronounce" : "translate";
     return this.examples.play(await this.services.runtimeOf(id), mode, text);
   }
 

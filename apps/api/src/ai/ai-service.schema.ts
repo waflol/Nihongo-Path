@@ -60,7 +60,7 @@ export class AiServiceConfig {
 
   /** Own order per task (lower = first); a task without one falls back to `priority`. */
   @Prop({ type: Object })
-  taskPriority?: Partial<Record<"translate" | "write" | "grammar", number>>;
+  taskPriority?: Partial<Record<BenchTask, number>>;
 
   /** `ok` | `cooldown` (rate-limited) | `invalid` (key/model rejected) | `error`. */
   @Prop({ type: String, default: "unknown" })

@@ -1024,7 +1024,10 @@ export class ImportService implements OnApplicationBootstrap {
       sentence,
       translation: translations[i] ?? "",
     }));
-    const hanViet = (mapping.hanViet ? (row[mapping.hanViet] ?? "").trim() : "") || suggestHanViet(front);
+    // A Hán Việt cell that disagrees with the curated table (a missing / wrong syllable,
+    // e.g. 一家 = "GIA") is replaced by the table's value; the review warning says so.
+    const givenHv = mapping.hanViet ? (row[mapping.hanViet] ?? "").trim() : "";
+    const hanViet = !givenHv || checkHanViet(front, givenHv) ? suggestHanViet(front) || givenHv : givenHv;
     const rawNo = mapping.order ? (row[mapping.order] ?? "").trim().replace(/\.$/, "") : "";
     const order = /^\d{1,6}$/.test(rawNo) ? Number(rawNo) : undefined;
     return { reading, partOfSpeech: pos, examples, hanViet, order };
@@ -1037,7 +1040,10 @@ export class ImportService implements OnApplicationBootstrap {
     if (meaning) issues.push(meaning);
     const hv = mapping.hanViet ? (row[mapping.hanViet] ?? "").trim() : "";
     const hvIssue = checkHanViet(front, hv);
-    if (hvIssue) issues.push(hvIssue);
+    if (hvIssue) {
+      const fixed = suggestHanViet(front);
+      issues.push(fixed ? `${hvIssue} → đã tự sửa thành ${fixed}` : hvIssue);
+    }
     const givenReading = mapping.reading ? (row[mapping.reading] ?? "").trim() : "";
     if (givenReading && KANJI_RE.test(front)) {
       try {

@@ -533,9 +533,9 @@ export function AiServicesConsole() {
                     </p>
                     <p className="mt-1 text-xs text-[var(--muted-foreground)]">
                       {s.providerName} · <code>{s.model}</code> · {s.keyHint ? `khoá ····${s.keyHint}` : "không dùng khoá"} · {s.rpm} yêu cầu/phút{s.provider === "custom" && s.baseUrl ? ` · ${s.baseUrl}` : ""}
-                      {(["translate", "write", "grammar"] as const)
+                      {(["translate", "write", "grammar", "pronounce"] as const)
                         .filter((t) => s.benchTasks?.[t]?.ok)
-                        .map((t) => ` · ${{ translate: "dịch", write: "đặt câu", grammar: "ngữ pháp" }[t]} ${s.benchTasks![t]!.accuracy.toFixed(0)}`)
+                        .map((t) => ` · ${{ translate: "dịch", write: "đặt câu", grammar: "ngữ pháp", pronounce: "phát âm" }[t]} ${s.benchTasks![t]!.accuracy.toFixed(0)}`)
                         .join("")}
                     </p>
                   </div>

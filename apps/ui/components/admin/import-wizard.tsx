@@ -534,7 +534,7 @@ export function ImportWizard({ learner = false }: { learner?: boolean }) {
         }}
       />
     ) : (
-      (file || jobId) && (!jobId || (job?.pages?.length ?? 0) === 0) && savedJob && <PdfPageReview job={savedJob} onChanged={setSavedJob} />
+      preview && (!jobId || (job?.pages?.length ?? 0) === 0) && savedJob && <PdfPageReview job={savedJob} onChanged={setSavedJob} />
     );
 
   return (
@@ -859,19 +859,24 @@ export function ImportWizard({ learner = false }: { learner?: boolean }) {
                         {r.no ?? r.rowNumber}
                       </td>
                       <td className="px-3 py-2">
-                        {r.status === "ok" && (
-                          <span className="rounded-full bg-[#f0fdf4] px-2 py-0.5 text-xs font-medium text-[#15803d] dark:bg-[#0f2418] dark:text-[#86efac]">
-                            Hợp lệ
+                        {r.status === "ok" && !((r.issues?.length ?? 0) > 0 || r.blankBack) && (
+                          <span title="Hợp lệ" aria-label="Hợp lệ" className="rounded-full bg-[#f0fdf4] px-2 py-0.5 text-xs font-medium text-[#15803d] dark:bg-[#0f2418] dark:text-[#86efac]">
+                            ✓
+                          </span>
+                        )}
+                        {r.status === "ok" && ((r.issues?.length ?? 0) > 0 || r.blankBack) && (
+                          <span title="Cảnh báo" aria-label="Cảnh báo" className="rounded-full bg-[#fef9c3] px-2 py-0.5 text-xs font-medium text-[#a16207] dark:bg-[#3a3210] dark:text-[#fde047]">
+                            ⚠
                           </span>
                         )}
                         {r.status === "duplicate" && (
-                          <span className="rounded-full bg-[#fef9c3] px-2 py-0.5 text-xs font-medium text-[#a16207] dark:bg-[#3a3210] dark:text-[#fde047]">
-                            Trùng
+                          <span title="Trùng" aria-label="Trùng" className="rounded-full bg-[#fef9c3] px-2 py-0.5 text-xs font-medium text-[#a16207] dark:bg-[#3a3210] dark:text-[#fde047]">
+                            ⚠
                           </span>
                         )}
                         {r.status === "error" && (
-                          <span className="rounded-full bg-[#fef2f2] px-2 py-0.5 text-xs font-medium text-[#b91c1c] dark:bg-[#2a1215] dark:text-[#fca5a5]">
-                            Lỗi
+                          <span title="Lỗi" aria-label="Lỗi" className="rounded-full bg-[#fef2f2] px-2 py-0.5 text-xs font-medium text-[#b91c1c] dark:bg-[#2a1215] dark:text-[#fca5a5]">
+                            ✕
                           </span>
                         )}
                       </td>

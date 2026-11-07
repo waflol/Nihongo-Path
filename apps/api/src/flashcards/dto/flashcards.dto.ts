@@ -244,6 +244,17 @@ export class UpdateCardDto {
   @IsBoolean()
   reviewed?: boolean;
 
+  @ApiPropertyOptional({ description: "Âm Hán Việt (e.g. applying a suggested fix)" })
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  hanViet?: string;
+
+  @ApiPropertyOptional({ enum: ["hanViet", "reading", "back"], description: "Close the import warnings about this field" })
+  @IsOptional()
+  @IsIn(["hanViet", "reading", "back"])
+  resolve?: "hanViet" | "reading" | "back";
+
   @ApiPropertyOptional({ enum: PARTS_OF_SPEECH })
   @IsOptional()
   @IsIn([...PARTS_OF_SPEECH, ""])

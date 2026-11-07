@@ -47,8 +47,32 @@ export const BENCH_ITEMS: readonly BenchItem[] = [
 export const ACCURACY_WEIGHTS = { chrf: 0.35, terminology: 0.15, completeness: 0.1, match: 0.2, write: 0.2 } as const;
 
 /** The jobs a service can be asked to do; each has its own score and its own priority order. */
-export type BenchTask = "translate" | "write" | "grammar";
-export const BENCH_TASKS: readonly BenchTask[] = ["translate", "write", "grammar"];
+export type BenchTask = "translate" | "write" | "grammar" | "pronounce";
+export const BENCH_TASKS: readonly BenchTask[] = ["translate", "write", "grammar", "pronounce"];
+
+/** One pronunciation answer, as parsed from the model. */
+export interface PronounceAnswer {
+  reading: string;
+  romaji: string;
+  viet: string;
+  words: { text?: string; reading?: string; romaji?: string; accent?: string }[];
+  tips: string[];
+}
+
+/** Pronunciation test set: the exact hiragana reading expected for each sentence. */
+export interface PronounceBenchItem {
+  ja: string;
+  /** Expected whole-text reading in hiragana (no punctuation). */
+  reading: string;
+  /** The sentence should be split into at least this many words. */
+  minWords: number;
+}
+export const PRONOUNCE_ITEMS: readonly PronounceBenchItem[] = [
+  // 連濁 (ひとり + すまい → ひとりずまい)
+  { ja: "一人住まい", reading: "ひとりずまい", minWords: 1 },
+  // long vowel ほう + small っ
+  { ja: "放っておく", reading: "ほうっておく", minWords: 1 },
+];
 
 /** One grammar-analysis answer, as parsed from the model. */
 export interface GrammarAnswer {
@@ -88,7 +112,7 @@ export const MAX_RUNS = 5;
 /** What one test item looked like and how the model did on it. */
 export interface BenchDetail {
   id: number;
-  kind: "translate" | "write" | "grammar";
+  kind: "translate" | "write" | "grammar" | "pronounce";
   /** The word being tested and its meaning (grammar: the sentence). */
   term: string;
   meaning: string;
@@ -118,6 +142,13 @@ export interface BenchDetail {
   hit?: number;
   split?: number;
   points?: string[];
+  /** pronounce: how close the hiragana / romaji are to the expected reading (0–100), words with a reading, and what the model gave. */
+  readingScore?: number;
+  romajiScore?: number;
+  wordsScore?: number;
+  gotReading?: string;
+  gotRomaji?: string;
+  gotViet?: string;
 }
 
 /** One repetition of the benchmark, kept for the record (failures too). */
@@ -190,6 +221,11 @@ export interface BenchResult {
   grammarHit?: number;
   grammarSplit?: number;
   grammarTrans?: number;
+  /** pronounce: mean 0–100 of hiragana exactness / romaji exactness / words given a reading / Vietnamese-style reading given. */
+  pronounceReading?: number;
+  pronounceRomaji?: number;
+  pronounceWords?: number;
+  pronounceViet?: number;
 }
 
 /** Lower-case, NFC, no punctuation, single-spaced. */
@@ -458,6 +494,171 @@ export function scoreGrammar(answers: Map<number, GrammarAnswer>, ms: number, ra
   };
 }
 
+/** Pull `{items:[{id, reading, romaji, viet, words, tips}]}` out of the model's text, keyed by 1-based id. */
+export function parsePronounce(text: string): Map<number, PronounceAnswer> {
+  const out = new Map<number, PronounceAnswer>();
+  const m = text.match(/[\[{][\s\S]*[\]}]/);
+  let data: unknown;
+  try {
+    data = JSON.parse(m ? m[0] : text);
+  } catch {
+    return out;
+  }
+  const arr = Array.isArray(data) ? data : (data as { items?: unknown })?.items;
+  if (!Array.isArray(arr)) return out;
+  const str = (v: unknown) => (typeof v === "string" ? v.trim() : "");
+  for (const row of arr as Record<string, unknown>[]) {
+    const id = Number(row?.id);
+    if (!Number.isFinite(id)) continue;
+    out.set(id, {
+      reading: str(row.reading),
+      romaji: str(row.romaji),
+      viet: str(row.viet),
+      words: Array.isArray(row.words) ? (row.words as PronounceAnswer["words"]).filter((w) => w && typeof w === "object") : [],
+      tips: Array.isArray(row.tips) ? (row.tips as unknown[]).filter((t): t is string => typeof t === "string") : [],
+    });
+  }
+  return out;
+}
+
+/** Katakana → hiragana, then only the kana / letters are kept (no punctuation, spaces, long-vowel marks aside). */
+const kanaOnly = (s: string) =>
+  s
+    .normalize("NFKC")
+    .replace(/[ァ-ヶ]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0x60))
+    .replace(/[^\p{Script=Hiragana}ー]/gu, "");
+
+/** Romaji folded so macron / "ou" / "oo" spellings of a long vowel compare equal. */
+const romajiFold = (s: string) =>
+  s
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z]/g, "")
+    .replace(/ou|oo/g, "o")
+    .replace(/uu/g, "u")
+    .replace(/aa/g, "a")
+    .replace(/ii/g, "i")
+    .replace(/ee/g, "e");
+
+/** Hepburn romaji of a hiragana string, only as precise as needed for `romajiFold` comparison. */
+export function hiraganaToRomaji(h: string): string {
+  const base: Record<string, string> = {
+    あ: "a", い: "i", う: "u", え: "e", お: "o", か: "ka", き: "ki", く: "ku", け: "ke", こ: "ko",
+    さ: "sa", し: "shi", す: "su", せ: "se", そ: "so", た: "ta", ち: "chi", つ: "tsu", て: "te", と: "to",
+    な: "na", に: "ni", ぬ: "nu", ね: "ne", の: "no", は: "ha", ひ: "hi", ふ: "fu", へ: "he", ほ: "ho",
+    ま: "ma", み: "mi", む: "mu", め: "me", も: "mo", や: "ya", ゆ: "yu", よ: "yo",
+    ら: "ra", り: "ri", る: "ru", れ: "re", ろ: "ro", わ: "wa", を: "o", ん: "n",
+    が: "ga", ぎ: "gi", ぐ: "gu", げ: "ge", ご: "go", ざ: "za", じ: "ji", ず: "zu", ぜ: "ze", ぞ: "zo",
+    だ: "da", ぢ: "ji", づ: "zu", で: "de", ど: "do", ば: "ba", び: "bi", ぶ: "bu", べ: "be", ぼ: "bo",
+    ぱ: "pa", ぴ: "pi", ぷ: "pu", ぺ: "pe", ぽ: "po",
+  };
+  const small: Record<string, string> = { ゃ: "ya", ゅ: "yu", ょ: "yo" };
+  let out = "";
+  for (let i = 0; i < h.length; i++) {
+    const c = h[i];
+    if (c === "っ") {
+      const next = base[h[i + 1]] ?? "";
+      out += next.startsWith("ch") ? "t" : next[0] ?? "";
+      continue;
+    }
+    if (c === "ー") continue;
+    const b = base[c] ?? "";
+    if (small[h[i + 1]] && b.endsWith("i")) {
+      const stem = b === "shi" || b === "chi" || b === "ji" ? b.slice(0, -1) : b.slice(0, -1) + "y";
+      out += stem + small[h[i + 1]].slice(1);
+      i++;
+    } else out += b;
+  }
+  return out;
+}
+
+/** Normalised edit similarity of two strings, 0–100 (100 = identical). */
+function similarity(a: string, b: string): number {
+  if (a === b) return 100;
+  if (!a || !b) return 0;
+  const dp: number[] = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    let prev = dp[0];
+    dp[0] = i;
+    for (let j = 1; j <= b.length; j++) {
+      const tmp = dp[j];
+      dp[j] = Math.min(dp[j] + 1, dp[j - 1] + 1, prev + (a[i - 1] === b[j - 1] ? 0 : 1));
+      prev = tmp;
+    }
+  }
+  return 100 * (1 - dp[b.length] / Math.max(a.length, b.length));
+}
+
+/**
+ * Pronunciation result of ONE run, mean over the test sentences: 55% the
+ * hiragana matches the expected reading, 20% the romaji matches the romaji of
+ * that reading (long-vowel spellings folded), 15% the sentence is split into
+ * enough words that each carry a reading, 10% an approximate Vietnamese-style
+ * reading is given. An unanswered sentence scores 0.
+ */
+export function scorePronounce(answers: Map<number, PronounceAnswer>, ms: number, raw?: string): BenchResult {
+  const details: BenchDetail[] = [];
+  let readSum = 0;
+  let romSum = 0;
+  let wordSum = 0;
+  let vietSum = 0;
+  let outChars = 0;
+  PRONOUNCE_ITEMS.forEach((item, i) => {
+    const a = answers.get(i + 1);
+    const base = { id: i + 1, kind: "pronounce" as const, term: item.ja, meaning: "", source: item.ja, expected: item.reading, answered: Boolean(a) };
+    if (!a) {
+      details.push({ ...base, readingScore: 0, romajiScore: 0, wordsScore: 0 });
+      return;
+    }
+    outChars += a.reading.length + a.romaji.length + a.viet.length;
+    const reading = similarity(kanaOnly(a.reading), item.reading);
+    const romaji = similarity(romajiFold(a.romaji), romajiFold(hiraganaToRomaji(item.reading)));
+    const withReading = a.words.filter((w) => (w.text ?? "").trim() && (w.reading ?? "").trim()).length;
+    const words = 100 * Math.min(1, withReading / item.minWords);
+    const viet = a.viet ? 100 : 0;
+    readSum += reading;
+    romSum += romaji;
+    wordSum += words;
+    vietSum += viet;
+    details.push({
+      ...base,
+      readingScore: round1(reading),
+      romajiScore: round1(romaji),
+      wordsScore: round1(words),
+      gotReading: a.reading,
+      gotRomaji: a.romaji,
+      gotViet: a.viet,
+    });
+  });
+  const n = PRONOUNCE_ITEMS.length;
+  const reading = readSum / n;
+  const romaji = romSum / n;
+  const words = wordSum / n;
+  const viet = vietSum / n;
+  return {
+    ok: answers.size > 0,
+    at: new Date().toISOString(),
+    ms,
+    task: "pronounce",
+    accuracy: round1(0.55 * reading + 0.2 * romaji + 0.15 * words + 0.1 * viet),
+    chrf: 0,
+    terminology: 0,
+    completeness: 0,
+    matchAcc: 0,
+    writeScore: 0,
+    pronounceReading: round1(reading),
+    pronounceRomaji: round1(romaji),
+    pronounceWords: round1(words),
+    pronounceViet: round1(viet),
+    items: n,
+    answered: answers.size,
+    details,
+    raw: raw?.slice(0, 6000),
+    outChars,
+  };
+}
+
 const median = (xs: number[]) => {
   const s = [...xs].sort((a, b) => a - b);
   const m = s.length >> 1;
@@ -535,6 +736,10 @@ export function aggregateRuns(attempts: BenchAttempt[], itemCount = BENCH_ITEMS.
     grammarHit: opt((r) => r.grammarHit),
     grammarSplit: opt((r) => r.grammarSplit),
     grammarTrans: opt((r) => r.grammarTrans),
+    pronounceReading: opt((r) => r.pronounceReading),
+    pronounceRomaji: opt((r) => r.pronounceRomaji),
+    pronounceWords: opt((r) => r.pronounceWords),
+    pronounceViet: opt((r) => r.pronounceViet),
     items: last.items,
     answered: Math.round(avg(good.map((r) => r.answered))),
     translateOnly: last.translateOnly,
@@ -675,7 +880,7 @@ export const historyEntry = (r: BenchResult): BenchHistoryEntry => ({
  * visible until the service is scored again. Grammar was never measured then.
  */
 export function legacyTaskResult(bench: BenchResult | null | undefined, task: BenchTask): BenchResult | undefined {
-  if (!bench?.ok || bench.task || task === "grammar") return undefined;
+  if (!bench?.ok || bench.task || task === "grammar" || task === "pronounce") return undefined;
   if (task === "write" && bench.translateOnly) return undefined;
   const details = bench.details?.filter((d) => d.kind === task);
   const w = ACCURACY_WEIGHTS;

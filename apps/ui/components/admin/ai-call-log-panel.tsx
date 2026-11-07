@@ -5,7 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 
 interface LogRow {
   _id: string;
-  purpose: "example" | "test" | "vocab" | "ocr" | "translate" | "grammar";
+  purpose: "example" | "test" | "vocab" | "ocr" | "translate" | "grammar" | "pronounce";
   serviceId: string;
   serviceLabel: string;
   provider: string;
@@ -180,6 +180,7 @@ export function AiCallLogPanel() {
           <option value="ocr">Đọc từ vựng từ file PDF</option>
           <option value="translate">Dịch</option>
           <option value="grammar">Phân tích ngữ pháp</option>
+          <option value="pronounce">Cách phát âm</option>
           <option value="test">Kiểm tra / benchmark</option>
         </select>
         <input
@@ -275,6 +276,7 @@ function RowGroup({
             {r.purpose === "ocr" ? " · đọc từ vựng từ PDF" : ""}
             {r.purpose === "translate" ? " · dịch" : ""}
             {r.purpose === "grammar" ? " · phân tích ngữ pháp" : ""}
+            {r.purpose === "pronounce" ? " · cách phát âm" : ""}
             {r.purpose === "test" ? " · kiểm tra" : ""}
             {r.purpose === "vocab" ? "tạo ví dụ cho từ vựng" : ""}
           </div>

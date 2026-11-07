@@ -20,7 +20,7 @@ interface PlayService {
   priority?: number;
 }
 
-type Mode = "write" | "translate" | "grammar";
+type Mode = "write" | "translate" | "grammar" | "pronounce";
 
 interface Reply {
   ok: boolean;
@@ -37,6 +37,12 @@ interface Reply {
     note?: string;
     tokens?: { text?: string; reading?: string; pos?: string; meaning?: string }[];
     grammar?: { pattern?: string; level?: string; explanation?: string }[];
+    /** pronounce */
+    reading?: string;
+    romaji?: string;
+    viet?: string;
+    words?: { text?: string; reading?: string; romaji?: string; accent?: string }[];
+    tips?: string[];
   };
 }
 
@@ -75,6 +81,13 @@ const MODES: { id: Mode; label: string; hint: string; placeholder: string; sampl
     placeholder: "例: 雨が降っているにもかかわらず、出かけた。",
     sample: "雨が降っているにもかかわらず、出かけた。",
   },
+  {
+    id: "pronounce",
+    label: "Cách phát âm",
+    hint: "Nhập từ hoặc câu tiếng Nhật để xem hiragana, romaji, cách đọc theo tiếng Việt, trọng âm và lưu ý khi phát âm.",
+    placeholder: "例: 東京へ行きます。",
+    sample: "東京へ行きます。",
+  },
 ];
 
 /** Admin sandbox: example sentences, translation and grammar analysis on a chosen AI service. Nothing is saved. */
@@ -87,6 +100,7 @@ export function AiPlayground() {
     write: MODES[0].sample,
     translate: MODES[1].sample,
     grammar: MODES[2].sample,
+    pronounce: MODES[3].sample,
   });
   const [busy, setBusy] = useState(false);
   const [runs, setRuns] = useState<Run[]>([]);
@@ -157,7 +171,7 @@ export function AiPlayground() {
     <div className="mx-auto w-full max-w-3xl px-4 py-8 sm:px-6">
       <h1 className="text-2xl font-semibold tracking-tight text-[var(--foreground)]">Sân chơi AI</h1>
       <p className="mt-1 text-sm text-[var(--muted-foreground)]">
-        Thử tạo câu ví dụ, dịch và phân tích ngữ pháp trên từng dịch vụ AI. Kết quả chỉ để xem — không lưu vào thẻ hay bộ nhớ đệm.
+        Thử tạo câu ví dụ, dịch, phân tích ngữ pháp và gợi ý cách phát âm trên từng dịch vụ AI. Kết quả chỉ để xem — không lưu vào thẻ hay bộ nhớ đệm.
       </p>
       {loadError && <p className="mt-3 text-sm text-[var(--destructive,#dc2626)]">{loadError}</p>}
 
@@ -275,6 +289,54 @@ function RunCard({ run: r }: { run: Run }) {
         <div className="mt-2 space-y-1">
           <p className="text-base text-[var(--foreground)]">{d.translation ?? d.vi}</p>
           {d.note && <p className="text-xs text-[var(--muted-foreground)]">{d.note}</p>}
+        </div>
+      )}
+
+      {r.ok && r.mode === "pronounce" && d && (
+        <div className="mt-3 space-y-3">
+          {d.reading && (
+            <div className="rounded-lg bg-[var(--background)] px-3 py-2">
+              <p className="text-[11px] font-medium uppercase tracking-wide text-[var(--muted-foreground)]">Hiragana</p>
+              <p lang="ja" className="text-lg text-[var(--foreground)]">{d.reading}</p>
+            </div>
+          )}
+          <div className="grid gap-2 sm:grid-cols-2">
+            {d.romaji && (
+              <div className="rounded-lg bg-[var(--background)] px-3 py-2">
+                <p className="text-[11px] font-medium uppercase tracking-wide text-[var(--muted-foreground)]">Romaji</p>
+                <p className="text-[var(--foreground)]">{d.romaji}</p>
+              </div>
+            )}
+            {d.viet && (
+              <div className="rounded-lg border border-[var(--primary)]/30 bg-[var(--primary)]/10 px-3 py-2">
+                <p className="text-[11px] font-medium uppercase tracking-wide text-[var(--primary)]">Đọc theo tiếng Việt (gần đúng)</p>
+                <p className="font-medium text-[var(--foreground)]">{d.viet}</p>
+              </div>
+            )}
+          </div>
+          {d.words && d.words.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {d.words.map((w, i) => (
+                <div key={i} className="rounded-lg border border-[var(--border)] bg-[var(--background)] px-2 py-1 text-center">
+                  <div lang="ja" className="text-[10px] text-[var(--muted-foreground)]">{w.reading || " "}</div>
+                  <div lang="ja" className="text-base text-[var(--foreground)]">{w.text}</div>
+                  <div className="text-[10px] text-[var(--muted-foreground)]">{w.romaji}</div>
+                  {w.accent && (
+                    <div className="mt-0.5 rounded bg-[#f59e0b]/15 px-1 text-[10px] font-medium text-[#b45309] dark:text-[#fbbf24]">
+                      {w.accent}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+          {d.tips && d.tips.length > 0 && (
+            <ul className="space-y-1 rounded-lg border border-[#f59e0b]/30 bg-[#f59e0b]/10 px-3 py-2 text-xs text-[var(--foreground)]">
+              {d.tips.map((t, i) => (
+                <li key={i}>💡 {t}</li>
+              ))}
+            </ul>
+          )}
         </div>
       )}
 
