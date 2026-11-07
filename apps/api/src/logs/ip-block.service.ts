@@ -24,6 +24,8 @@ export function clientIpv4(req: { headers: Record<string, unknown>; ip?: string 
   const v = (Array.isArray(raw) ? raw[0] : raw);
   if (typeof v === "string" && IPV4_RE.test(v.trim())) return v.trim();
   const conn = normalizeIp(req.ip);
+  // IPv6 loopback → its IPv4 form so local/dev requests don't show as "::1".
+  if (conn === "::1") return "127.0.0.1";
   return IPV4_RE.test(conn) ? conn : undefined;
 }
 

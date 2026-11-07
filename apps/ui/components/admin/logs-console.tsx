@@ -3,6 +3,27 @@
 import { TrafficPanel } from "@/components/admin/traffic-panel";
 import { Fragment, useCallback, useEffect, useState } from "react";
 
+/** Short "Browser · OS · Mobile/Desktop" label from a User-Agent string. */
+function deviceLabel(ua: string | null | undefined): string {
+  if (!ua) return "—";
+  const os =
+    /Windows/i.test(ua) ? "Windows" :
+    /Android/i.test(ua) ? "Android" :
+    /iPhone|iPad|iPod/i.test(ua) ? "iOS" :
+    /Mac OS X|Macintosh/i.test(ua) ? "macOS" :
+    /Linux/i.test(ua) ? "Linux" : "";
+  const browser =
+    /Edg\//.test(ua) ? "Edge" :
+    /OPR\/|Opera/.test(ua) ? "Opera" :
+    /Firefox\//.test(ua) ? "Firefox" :
+    /Chrome\//.test(ua) ? "Chrome" :
+    /Safari\//.test(ua) ? "Safari" :
+    /curl\//i.test(ua) ? "curl" :
+    /node|undici|axios|python|postman/i.test(ua) ? "Script/API" : "";
+  const kind = /Mobi|Android|iPhone|iPad/i.test(ua) ? "Mobile" : os || browser ? "Desktop" : "";
+  return [browser, os, kind].filter(Boolean).join(" · ") || ua.slice(0, 30);
+}
+
 interface LogItem {
   id: string;
   method: string;
@@ -335,7 +356,7 @@ export function LogsConsole() {
   ];
 
   return (
-    <div className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6">
+    <div className="mx-auto w-full max-w-[1800px] px-4 py-8 sm:px-6">
       <h1 className="text-2xl font-semibold tracking-tight text-[var(--foreground)]">Nhật ký hệ thống</h1>
       <p className="mt-1 text-sm text-[var(--muted-foreground)]">
         Request, log ứng dụng & lỗi, thao tác admin và truy cập tới backend (log lưu 30 ngày, thao tác admin lưu 1 năm).
@@ -522,7 +543,7 @@ export function LogsConsole() {
           )}
         </ul>
       ) : (
-      <div className="mt-4 overflow-x-auto rounded-2xl border border-[var(--border)]">
+      <div className="mt-4 rounded-2xl border border-[var(--border)]">
         <table className="w-full text-left text-sm">
           <thead className="bg-[var(--background-1)] text-xs uppercase tracking-wide text-[var(--muted-foreground)]">
             <tr>
@@ -533,6 +554,7 @@ export function LogsConsole() {
               <th className="px-3 py-2">ms</th>
               <th className="px-3 py-2">Người dùng</th>
               <th className="px-3 py-2">IPv4 / IP</th>
+              <th className="px-3 py-2">Thiết bị</th>
               <th className="px-3 py-2">Chi tiết</th>
             </tr>
           </thead>
@@ -544,17 +566,18 @@ export function LogsConsole() {
                   {new Date(r.createdAt).toLocaleString("vi-VN")}
                 </td>
                 <td className="px-3 py-2 font-mono text-xs">{r.method}</td>
-                <td className="max-w-xs px-3 py-2 font-mono text-xs" title={r.path}>
-                  <div className="truncate">{r.path}</div>
-                  {r.error && <div className="truncate text-red-500" title={r.error}>{r.error}</div>}
+                <td className="px-3 py-2 font-mono text-xs" title={r.path}>
+                  <div className="break-all">{r.path}</div>
+                  {r.error && <div className="max-w-xs truncate text-red-500" title={r.error}>{r.error}</div>}
                 </td>
                 <td className={"px-3 py-2 font-semibold tabular-nums " + statusColor(r.status)}>{r.status}</td>
                 <td className="px-3 py-2 tabular-nums">{r.durationMs}</td>
                 <td className="max-w-40 truncate px-3 py-2">{r.user ?? "—"}</td>
                 <td className="px-3 py-2 font-mono text-xs">
                   <div>{r.ipv4 ?? "—"}</div>
-                  {r.ip && r.ip !== r.ipv4 && <div className="text-[10px] text-[var(--muted-foreground)]" title={r.ip}>{r.ip.length > 22 ? `${r.ip.slice(0, 22)}…` : r.ip}</div>}
+                  {r.ip && r.ip !== r.ipv4 && r.ip !== "::1" && <div className="text-[10px] text-[var(--muted-foreground)]" title={r.ip}>{r.ip.length > 22 ? `${r.ip.slice(0, 22)}…` : r.ip}</div>}
                 </td>
+                <td className="px-3 py-2 text-xs" title={r.userAgent ?? undefined}>{deviceLabel(r.userAgent)}</td>
                 <td className="px-3 py-2">
                   <button className="rounded-md border border-[var(--border)] px-2 py-1 text-xs hover:bg-[var(--background-1)]" onClick={() => void toggle(r.id)}>
                     {openId === r.id ? "Ẩn" : "Xem"}
@@ -563,7 +586,7 @@ export function LogsConsole() {
               </tr>
               {openId === r.id && (
                 <tr>
-                  <td colSpan={8} className="bg-[var(--background-1)]/50 px-3 py-3">
+                  <td colSpan={9} className="bg-[var(--background-1)]/50 px-3 py-3">
                     {detailErr ? <div className="text-red-500">{detailErr}</div> : !detail ? <div className="text-[var(--muted-foreground)]">Đang tải…</div> : (
                       <DetailTabs detail={detail} />
                     )}
