@@ -57,8 +57,20 @@ export default function LearnPage() {
             Bài tập
           </h2>
           <p className="mt-1 text-sm text-[var(--muted-foreground)]">
-            Trắc nghiệm 4 lựa chọn và gõ đáp án theo bộ thẻ — luyện không tính
-            vào lịch ôn tập.
+            Trắc nghiệm, gõ đáp án và đặt câu (AI chấm) theo bộ thẻ — luyện
+            không tính vào lịch ôn tập.
+          </p>
+        </Link>
+        <Link
+          href="/learn/exam"
+          className="rounded-2xl border border-[var(--border)] bg-[var(--background-1)] p-6 transition-colors hover:bg-[var(--layer-hover)]"
+        >
+          <h2 className="text-sm font-semibold text-[var(--foreground)]">
+            Luyện thi
+          </h2>
+          <p className="mt-1 text-sm text-[var(--muted-foreground)]">
+            6 dạng 問題 kiểu JLPT/Nattest: cách đọc, cấu tạo từ, đồng nghĩa,
+            biểu hiện từ, cách dùng từ.
           </p>
         </Link>
         <div className="rounded-2xl border border-dashed border-[var(--border)] bg-[var(--background-1)] p-6">

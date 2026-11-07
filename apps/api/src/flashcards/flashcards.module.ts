@@ -19,6 +19,8 @@ import { ReadingModule } from "./reading.module.js";
 import { ImageSuggestService } from "./image-suggest.service.js";
 import { buildAiModule } from "../ai/ai.module.js";
 import { ExampleSuggestService } from "./example-suggest.service.js";
+import { ExerciseQuestion, ExerciseQuestionSchema } from "./schemas/exercise-question.schema.js";
+import { ExerciseQuestionsService } from "./exercise-questions.service.js";
 import { CardReport, CardReportSchema } from "./schemas/card-report.schema.js";
 import { CardReportsService } from "./card-reports.service.js";
 
@@ -50,6 +52,7 @@ export function buildFlashcardsModule(): DynamicModule {
         { name: Vocabulary.name, schema: VocabularySchema },
         { name: GrammarPoint.name, schema: GrammarPointSchema },
         { name: "TatoebaSentence", schema: TatoebaSentenceSchema },
+        { name: ExerciseQuestion.name, schema: ExerciseQuestionSchema },
         { name: CardReport.name, schema: CardReportSchema },
       ]),
     ],
@@ -58,6 +61,7 @@ export function buildFlashcardsModule(): DynamicModule {
       FlashcardsService,
       ImageSuggestService,
       ExampleSuggestService,
+      ExerciseQuestionsService,
       CardReportsService,
     ],
   };

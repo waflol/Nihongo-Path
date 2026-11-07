@@ -3,6 +3,8 @@ import {
   Controller,
   Delete,
   Get,
+  NotFoundException,
+  ServiceUnavailableException,
   HttpCode,
   HttpStatus,
   Param,
@@ -14,7 +16,9 @@ import {
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from "@nestjs/swagger";
 import { Type } from "class-transformer";
 import type { Response } from "express";
-import { IsArray, IsIn, IsInt, IsOptional, IsString, Max, MaxLength, Min, ValidateNested } from "class-validator";
+import { ArrayMaxSize, IsArray, IsIn, IsInt, IsOptional, IsString, Max, MaxLength, Min, MinLength, ValidateNested } from "class-validator";
+import { AiExampleService } from "../ai/ai-example.service.js";
+import { ExerciseQuestionsService } from "./exercise-questions.service.js";
 import { CardReportsService } from "./card-reports.service.js";
 import { REPORT_KINDS, REPORT_STATUSES, type ReportKind, type ReportStatus } from "./schemas/card-report.schema.js";
 import { ContentAdmin } from "../auth/decorators/roles.decorator.js";
@@ -59,6 +63,37 @@ class CardFilterDto {
   @IsOptional() missing?: boolean;
 }
 
+class SynonymQuizDto {
+  @IsArray()
+  @ArrayMaxSize(10)
+  @IsString({ each: true })
+  cardIds: string[];
+}
+
+class SaveQuestionDto {
+  @IsString() cardId: string;
+  @IsString() kind: string;
+  @IsString() @MaxLength(400) prompt: string;
+  @IsOptional() @IsString() @MaxLength(400) sub?: string;
+  @IsArray() @ArrayMaxSize(4) @IsString({ each: true }) options: string[];
+  @IsString() @MaxLength(400) answer: string;
+  @IsOptional() @IsString() @MaxLength(400) explain?: string;
+  @IsOptional() @IsString() source?: string;
+}
+
+class SaveQuestionsDto {
+  @IsArray()
+  @ArrayMaxSize(50)
+  @ValidateNested({ each: true })
+  @Type(() => SaveQuestionDto)
+  items: SaveQuestionDto[];
+}
+
+class GradeSentenceDto {
+  @IsString() cardId: string;
+  @IsString() @MinLength(1) @MaxLength(300) sentence: string;
+}
+
 class CardReportDto {
   @IsIn(REPORT_KINDS as unknown as string[]) kind: ReportKind;
   @IsOptional() @IsString() @MaxLength(1000) message?: string;
@@ -92,6 +127,8 @@ export class FlashcardsController {
     private readonly flashcards: FlashcardsService,
     private readonly reading: ReadingService,
     private readonly images: ImageSuggestService,
+    private readonly ai: AiExampleService,
+    private readonly questionBank: ExerciseQuestionsService,
     private readonly reports: CardReportsService,
   ) {}
 
@@ -199,6 +236,91 @@ export class FlashcardsController {
     @Query() query: ListCardsQuery,
   ) {
     return this.flashcards.listCards(caller, id, query.limit ?? 100);
+  }
+
+  @Post("decks/:id/synonym-quiz")
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: "Synonym drill data (AI): a synonym + 3 wrong words for up to 10 cards of a deck",
+  })
+  async synonymQuiz(
+    @CurrentUser() caller: AuthUser,
+    @Param("id") id: string,
+    @Body() body: SynonymQuizDto,
+  ) {
+    const wanted = new Set(body.cardIds);
+    const cards = (await this.flashcards.listCards(caller, id, 500)).filter((c) =>
+      wanted.has(String(c._id)),
+    );
+    const map = await this.ai.synonymQuiz(
+      cards.map((c) => ({ term: c.front, reading: c.reading ?? "", meaning: c.back })),
+    );
+    const items = cards.flatMap((c) => {
+      const q = map?.get(c.front);
+      return q ? [{ cardId: String(c._id), synonym: q.synonym, wrong: q.wrong }] : [];
+    });
+    return { items };
+  }
+
+  @Post("decks/:id/kanji-lookalikes")
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: "Look-alike kanji drill data (AI): similar kanji for each kanji of each card",
+  })
+  async kanjiLookalikes(
+    @CurrentUser() caller: AuthUser,
+    @Param("id") id: string,
+    @Body() body: SynonymQuizDto,
+  ) {
+    const wanted = new Set(body.cardIds);
+    const cards = (await this.flashcards.listCards(caller, id, 500)).filter((c) =>
+      wanted.has(String(c._id)),
+    );
+    const map = await this.ai.kanjiLookalikes(
+      cards.map((c) => ({ term: c.front, reading: c.reading ?? "", meaning: c.back })),
+    );
+    const items = cards.flatMap((c) => {
+      const chars = map?.get(c.front);
+      return chars ? [{ cardId: String(c._id), chars }] : [];
+    });
+    return { items };
+  }
+
+  @Post("decks/:id/exercise-questions")
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: "Keep generated exercise questions in the question bank (JLPT / Nattest practice later)",
+  })
+  saveExerciseQuestions(
+    @CurrentUser() caller: AuthUser,
+    @Param("id") id: string,
+    @Body() body: SaveQuestionsDto,
+  ) {
+    return this.questionBank.saveMany(caller, id, body.items);
+  }
+
+  @Post("decks/:id/grade-sentence")
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: "AI grades a sentence I wrote with a studied word: score, mistakes, corrected sentence, usage examples",
+  })
+  async gradeSentence(
+    @CurrentUser() caller: AuthUser,
+    @Param("id") id: string,
+    @Body() body: GradeSentenceDto,
+  ) {
+    const card = (await this.flashcards.listCards(caller, id, 500)).find(
+      (c) => String(c._id) === body.cardId,
+    );
+    if (!card) throw new NotFoundException("Card not found in this deck");
+    const grade = await this.ai.gradeSentence({
+      term: card.front,
+      reading: card.reading ?? "",
+      meaning: card.back,
+      sentence: body.sentence.trim(),
+    });
+    if (!grade) throw new ServiceUnavailableException("AI chưa chấm được câu này — thử lại sau");
+    return grade;
   }
 
   @Get("decks/:id/cards/page")

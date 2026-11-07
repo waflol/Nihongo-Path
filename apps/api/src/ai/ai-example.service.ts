@@ -80,7 +80,43 @@ export function lostKanji(r: { word: string; reading: string; hanViet?: string }
   );
 }
 
-const HAS_JAPANESE = /[぀-ヿ㐀-鿿]/;
+/** The AI's verdict on a learner-written sentence. */
+export interface SentenceGrade {
+  score: number;
+  usesWord: boolean;
+  corrected: string;
+  summary: string;
+  mistakes: { part: string; problem: string; fix: string }[];
+  usage: { ja: string; vi: string; note: string }[];
+}
+
+/** Validate/clean the model's JSON; `null` when it is not a usable grade. */
+export function parseSentenceGrade(raw: unknown): SentenceGrade | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const o = raw as Record<string, unknown>;
+  const score = Number(o.score);
+  if (!Number.isFinite(score)) return null;
+  const str = (v: unknown) => String(v ?? "").trim();
+  const list = (v: unknown) => (Array.isArray(v) ? v : []).filter((x): x is Record<string, unknown> => typeof x === "object" && x !== null);
+  const summary = str(o.summary);
+  if (!summary) return null;
+  return {
+    score: Math.max(0, Math.min(10, Math.round(score))),
+    usesWord: o.usesWord !== false,
+    corrected: str(o.corrected),
+    summary,
+    mistakes: list(o.mistakes)
+      .map((m) => ({ part: str(m.part), problem: str(m.problem), fix: str(m.fix) }))
+      .filter((m) => m.problem !== "")
+      .slice(0, 8),
+    usage: list(o.usage)
+      .map((u) => ({ ja: str(u.ja), vi: str(u.vi), note: str(u.note) }))
+      .filter((u) => u.ja !== "")
+      .slice(0, 4),
+  };
+}
+
+const HAS_JAPANESE =/[぀-ヿ㐀-鿿]/;
 const BATCH = 20;
 const FLUSH_MS = 1500;
 
@@ -581,6 +617,144 @@ export class AiExampleService {
       }
     }
     return best?.rows ?? null;
+  }
+
+  /**
+   * Synonym drill data: for each word, one Japanese synonym plus three words
+   * that are NOT synonyms (plausible but different meaning). Tries the
+   * available services in order; returns `null` when none could answer.
+   * Keyed by the word as sent.
+   */
+  async synonymQuiz(
+    items: { term: string; reading: string; meaning: string }[],
+  ): Promise<Map<string, { synonym: string; wrong: string[] }> | null> {
+    if (items.length === 0) return new Map();
+    const prompt = [
+      "You write multiple-choice synonym questions for Japanese learners (JLPT).",
+      "For each word below give ONE Japanese synonym (a different word with nearly the same meaning, written the way it is usually written) and THREE wrong options: real Japanese words of the same part of speech that look plausible but do NOT mean the same thing.",
+      "Never repeat the word itself; the wrong options must not be synonyms of it. If the word has no real synonym, use an empty string for \"synonym\".",
+      'Return JSON only: {"items":[{"term":string,"synonym":string,"wrong":[string,string,string]}]} with "term" copied exactly from the input.',
+      "Words:",
+      ...items.map((i) => `- ${i.term}${i.reading ? `（${i.reading}）` : ""}: ${i.meaning}`),
+    ].join("\n");
+    for (const svc of await this.services.available()) {
+      if (this.isTranslator(svc)) continue;
+      try {
+        await this.pace(svc);
+        const text = await this.call(svc, prompt, "example", items.map((i) => i.term));
+        await this.services.reportOk(svc.id);
+        const json = /\{[\s\S]*\}/.exec(text)?.[0];
+        const parsed = json ? (JSON.parse(json) as { items?: unknown }) : null;
+        if (!parsed || !Array.isArray(parsed.items)) continue;
+        const out = new Map<string, { synonym: string; wrong: string[] }>();
+        for (const r of parsed.items) {
+          if (typeof r !== "object" || r === null) continue;
+          const o = r as Record<string, unknown>;
+          const term = String(o.term ?? "").trim();
+          const synonym = String(o.synonym ?? "").trim();
+          const wrong = (Array.isArray(o.wrong) ? o.wrong : [])
+            .map((w) => String(w).trim())
+            .filter((w) => w !== "" && w !== term && w !== synonym);
+          if (!term || !synonym || synonym === term || new Set(wrong).size < 3) continue;
+          out.set(term, { synonym, wrong: [...new Set(wrong)].slice(0, 3) });
+        }
+        if (out.size > 0) return out;
+      } catch (err) {
+        if (err instanceof AiFailure) await this.services.reportFailure(svc.id, err.kind, err.message, err.retryAfterMs);
+        // else: unparsable answer — try the next service
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Look-alike kanji drill data: for each word, and for each kanji in it, a few
+   * OTHER real kanji that look almost the same (same radical/component or a
+   * near-identical shape, e.g. 魂 → 塊 魅 魔, 事 → 時, 情 → 状, 依 → 委 為 偉).
+   * The caller combines them into wrong spellings (swap one kanji, or several).
+   * Keyed by the word as sent; a word with no usable look-alike is left out.
+   */
+  async kanjiLookalikes(
+    items: { term: string; reading: string; meaning: string }[],
+  ): Promise<Map<string, Record<string, string[]>> | null> {
+    if (items.length === 0) return new Map();
+    const prompt = [
+      "You write kanji-spelling questions for JLPT learners: the learner reads a word in hiragana and must pick its kanji spelling among look-alikes.",
+      "For each word below and for EACH kanji it contains, list 3 or 4 OTHER real, commonly known kanji that look very similar to it: sharing the same radical/component or having a nearly identical shape, or the same on-reading when the shape differs (examples: 魂 → 塊 魅 魔; 事 → 時 士; 情 → 状 清 精; 依 → 委 為 偉; 認 → 許 識 譲; 象 → 像 家).",
+      "Never include the kanji itself, hiragana, or katakana. One character per entry. Only list kanji that really occur in the word (kana such as okurigana are not listed).",
+      'Return JSON only: {"items":[{"term":string,"chars":{"<kanji>":[string,...]}}]} with "term" copied exactly from the input.',
+      "Words:",
+      ...items.map((i) => `- ${i.term}（${i.reading}）: ${i.meaning}`),
+    ].join("\n");
+    const HAN = /^\p{Script=Han}$/u;
+    for (const svc of await this.services.available()) {
+      if (this.isTranslator(svc)) continue;
+      try {
+        await this.pace(svc);
+        const text = await this.call(svc, prompt, "example", items.map((i) => i.term));
+        await this.services.reportOk(svc.id);
+        const json = /\{[\s\S]*\}/.exec(text)?.[0];
+        const parsed = json ? (JSON.parse(json) as { items?: unknown }) : null;
+        if (!parsed || !Array.isArray(parsed.items)) continue;
+        const out = new Map<string, Record<string, string[]>>();
+        for (const r of parsed.items) {
+          if (typeof r !== "object" || r === null) continue;
+          const o = r as Record<string, unknown>;
+          const term = String(o.term ?? "").trim();
+          if (!term || typeof o.chars !== "object" || o.chars === null) continue;
+          const chars: Record<string, string[]> = {};
+          for (const [k, v] of Object.entries(o.chars as Record<string, unknown>)) {
+            if (!HAN.test(k) || !term.includes(k) || !Array.isArray(v)) continue;
+            const alts = [...new Set(v.map((x) => String(x).trim()).filter((x) => HAN.test(x) && x !== k))];
+            if (alts.length > 0) chars[k] = alts.slice(0, 5);
+          }
+          if (Object.keys(chars).length > 0) out.set(term, chars);
+        }
+        if (out.size > 0) return out;
+      } catch (err) {
+        if (err instanceof AiFailure) await this.services.reportFailure(svc.id, err.kind, err.message, err.retryAfterMs);
+        // else: unparsable answer — try the next service
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Grade a learner's own sentence for a studied word. The model scores it,
+   * lists each mistake with an explanation, gives a corrected sentence and
+   * model usage examples as evidence. Returns `null` when no service could
+   * answer. All explanations are in Vietnamese.
+   */
+  async gradeSentence(input: {
+    term: string;
+    reading: string;
+    meaning: string;
+    sentence: string;
+  }): Promise<SentenceGrade | null> {
+    const prompt = [
+      "You are a strict but kind Japanese teacher grading a Vietnamese learner (JLPT level).",
+      `The learner studied the word: ${input.term}${input.reading ? `（${input.reading}）` : ""} — ${input.meaning}`,
+      `The learner wrote this sentence using it: ${input.sentence}`,
+      "Judge: (1) does it use the target word, in a correct form; (2) is the word's meaning and collocation natural here; (3) grammar, particles, conjugation; (4) naturalness.",
+      "Write every explanation in Vietnamese. Quote the learner's wrong fragment exactly in \"part\".",
+      'Return JSON only: {"score":integer 0-10,"usesWord":boolean,"corrected":string (the minimal fix of the learner\'s sentence; same as the original if perfect),"summary":string (1-2 sentences),"mistakes":[{"part":string,"problem":string,"fix":string}],"usage":[{"ja":string,"vi":string,"note":string}]}.',
+      '"usage" = 2 or 3 correct example sentences of the target word showing the pattern the learner got wrong (or typical collocations if there was no mistake); "note" explains the pattern in Vietnamese. Use an empty "mistakes" array when the sentence is correct. Never invent facts about the word.',
+    ].join("\n");
+    for (const svc of await this.services.available()) {
+      if (this.isTranslator(svc)) continue;
+      try {
+        await this.pace(svc);
+        const text = await this.call(svc, prompt, "example", [input.term]);
+        await this.services.reportOk(svc.id);
+        const json = /\{[\s\S]*\}/.exec(text)?.[0];
+        const g = json ? parseSentenceGrade(JSON.parse(json)) : null;
+        if (g) return g;
+      } catch (err) {
+        if (err instanceof AiFailure) await this.services.reportFailure(svc.id, err.kind, err.message, err.retryAfterMs);
+        // else: unparsable answer — try the next service
+      }
+    }
+    return null;
   }
 
   /** True for a task-specific translation model (Cloudflare m2m100): it only translates. */
