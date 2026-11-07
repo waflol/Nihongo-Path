@@ -100,7 +100,7 @@ export class ExampleSuggestService {
     via: string,
   ): void {
     const label = hit
-      ? { tatoeba: "Tatoeba", "ai-translated": "Tatoeba + AI dịch", ai: "AI viết" }[hit.source ?? "tatoeba"]
+      ? { tatoeba: "Tatoeba", "ai-translated": "Tatoeba + AI dịch", ai: "AI tạo" }[hit.source ?? "tatoeba"]
       : "Không tìm được ví dụ";
     void this.callLog?.record({
       purpose: "vocab",

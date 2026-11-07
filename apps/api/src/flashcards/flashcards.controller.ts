@@ -55,6 +55,7 @@ class PageCardsQuery {
   @IsOptional() @IsString() tag?: string;
   @IsOptional() @IsString() missing?: string;
   @IsOptional() @IsString() card?: string;
+  @IsOptional() @IsString() review?: string;
 }
 
 class CardFilterDto {
@@ -337,6 +338,7 @@ export class FlashcardsController {
       tag: query.tag,
       missing: query.missing === "1" || query.missing === "true",
       card: query.card,
+      review: query.review === "1" || query.review === "true",
     });
   }
 

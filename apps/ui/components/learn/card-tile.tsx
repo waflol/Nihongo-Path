@@ -38,6 +38,7 @@ export function CardTile({
   index,
   showHanViet,
   actions,
+  note,
   selected,
   onSelect,
   onTagClick,
@@ -46,6 +47,8 @@ export function CardTile({
   index: number;
   showHanViet: boolean;
   actions?: ReactNode;
+  /** Full-width strip under the tile (e.g. import warnings). */
+  note?: ReactNode;
   /** When `onSelect` is given, a checkbox appears under the number. */
   selected?: boolean;
   onSelect?: (checked: boolean) => void;
@@ -113,10 +116,10 @@ export function CardTile({
                   <span lang="ja" className="text-[var(--foreground)]">{ex.sentence}</span>
                   {ex.source === "ai" || ex.source === "ai-translated" ? (
                     <span
-                      title={ex.source === "ai" ? "Câu do AI viết" : "Câu thật (Tatoeba), bản dịch do AI"}
+                      title={ex.source === "ai" ? "Câu do AI tạo" : "Câu thật (Tatoeba), bản dịch do AI"}
                       className="ml-2 rounded bg-[var(--layer)] px-1.5 py-0.5 align-middle text-[10px] font-semibold text-[var(--muted-foreground)]"
                     >
-                      {ex.source === "ai" ? "AI viết" : "AI dịch"}
+                      AI tạo
                     </span>
                   ) : null}
                   {ex.translation ? (
@@ -163,6 +166,7 @@ export function CardTile({
 
         {actions ? <div className="flex shrink-0 items-start gap-1.5">{actions}</div> : null}
       </div>
+      {note}
     </li>
   );
 }

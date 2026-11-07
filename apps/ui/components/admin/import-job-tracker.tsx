@@ -40,6 +40,12 @@ function readSeen(): string[] {
     return [];
   }
 }
+/** Hide a job's card for good (used when the wizard cancels or abandons it). */
+export function dismissImportJob(id: string) {
+  writeSeen([...new Set([...readSeen(), id])]);
+  window.dispatchEvent(new Event(JOB_STARTED_EVENT)); // tracker: re-read the list + the seen ids
+}
+
 function writeSeen(ids: string[]) {
   try {
     localStorage.setItem(SEEN_KEY, JSON.stringify(ids.slice(-30)));
@@ -98,6 +104,7 @@ export function ImportJobTracker() {
     timer.current = setTimeout(() => void poll(), 0);
     const onStart = () => {
       if (timer.current) clearTimeout(timer.current);
+      setSeenIds(readSeen());
       void poll();
     };
     window.addEventListener(JOB_STARTED_EVENT, onStart);

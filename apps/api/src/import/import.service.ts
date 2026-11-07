@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { checkHanViet, checkMeaning, suggestHanViet } from "./han-viet-suggest.js";
 import { AiExampleService, lostKanji } from "../ai/ai-example.service.js";
 import {
   Optional,
@@ -18,7 +19,7 @@ import { Model, Types, type Document } from "mongoose";
 import type { FlashcardDeckDocument } from "../flashcards/schemas/deck.schema.js";
 import type { FlashcardDocument } from "../flashcards/schemas/card.schema.js";
 import { cardDedupeKey } from "../flashcards/dedupe.js";
-import { ReadingService } from "../flashcards/reading.service.js";
+import { KANJI_RE, ReadingService, readingVariants } from "../flashcards/reading.service.js";
 import type { CardExample } from "../flashcards/schemas/card.schema.js";
 import { CONTENT_ADMIN } from "../common/roles.js";
 import type { AuthUser } from "../auth/auth.types.js";
@@ -102,6 +103,11 @@ export interface PreviewRow {
   /** The source's own number (STT column), shown first in the preview. */
   no?: number;
   hanViet?: string;
+  /** The meaning cell was blank: `back` is an AI suggestion (or empty when none could be made). */
+  blankBack?: boolean;
+  suggestedBack?: boolean;
+  /** Cells that look wrong (meaning / reading / Hán Việt) — to be reviewed by a person. */
+  issues?: string[];
   /** Why the row is unusable, when `status === "error"`. */
   error?: string;
 }
@@ -155,6 +161,9 @@ export interface ImportConfirmResult {
   overwritten: number;
   /** Rows rejected with a per-row reason (bad mapping values, etc.). */
   errors: { rowNumber: number; no?: number; front: string; back: string; error: string }[];
+  /** Cards imported with a blank meaning — the learner fills them in (STT list). */
+  needsReview?: { rowNumber: number; no?: number; front: string; issues: string[] }[];
+  needsMeaning?: { rowNumber: number; no?: number; front: string; suggested: boolean }[];
   /** New cards without an example: one is generated in the background. */
   examplesQueued: number;
   /** PDF imports: cards left without an example for now (generate later). */
@@ -191,6 +200,8 @@ interface PdfJob {
   error?: string;
   createdAt: number;
   finishedAt?: number;
+  /** Set when the user cancelled the read: the worker stops at its next page. */
+  cancelled?: boolean;
   /** Bytes of the PDF, loaded from `filePath` on demand. */
   file?: UploadedImportFile;
   /** Table files read from a PDF: each block is one PDF page. */
@@ -484,6 +495,13 @@ export class ImportService implements OnApplicationBootstrap {
     return viewOf(job);
   }
 
+  /** The user gave up on a PDF read: stop it and forget the job + its file. */
+  async cancelPdfJob(caller: AuthUser, id: string): Promise<void> {
+    const job = await this.loadJob(caller, id);
+    job.cancelled = true;
+    await this.dropJob(job.id, job.filePath);
+  }
+
   private async dropJob(id: string, filePath: string): Promise<void> {
     this.jobs.delete(id);
     await this.jobPage.deleteMany({ job: id }).exec();
@@ -502,6 +520,7 @@ export class ImportService implements OnApplicationBootstrap {
         (await this.parsePdfCached(
           file.buffer,
           (done, total) => {
+            if (job.cancelled) throw new Error("cancelled"); // stops the page workers
             job.done = done;
             job.total = total;
             void this.jobRecord.updateOne({ _id: job.id }, { $set: { done, total } }).exec().catch(() => undefined);
@@ -509,7 +528,7 @@ export class ImportService implements OnApplicationBootstrap {
           {
             saved,
             save: async (n, rows) => {
-              if (!rows) return; // a failed page is read again on resume
+              if (!rows || job.cancelled) return; // a failed page is read again on resume
               await this.jobPage.updateOne({ job: job.id, n }, { $set: { rows } }, { upsert: true }).exec();
             },
           },
@@ -527,6 +546,7 @@ export class ImportService implements OnApplicationBootstrap {
         )
         .exec();
     } catch (error: unknown) {
+      if (job.cancelled) return; // dropped by cancelPdfJob — nothing to record
       job.status = "error";
       job.error =
         error instanceof UnsupportedFormatError || error instanceof EmptyTableError
@@ -1004,10 +1024,66 @@ export class ImportService implements OnApplicationBootstrap {
       sentence,
       translation: translations[i] ?? "",
     }));
-    const hanViet = mapping.hanViet ? (row[mapping.hanViet] ?? "").trim() : "";
+    const hanViet = (mapping.hanViet ? (row[mapping.hanViet] ?? "").trim() : "") || suggestHanViet(front);
     const rawNo = mapping.order ? (row[mapping.order] ?? "").trim().replace(/\.$/, "") : "";
     const order = /^\d{1,6}$/.test(rawNo) ? Number(rawNo) : undefined;
     return { reading, partOfSpeech: pos, examples, hanViet, order };
+  }
+
+  /** Why a row's own (not derived) meaning / reading / Hán Việt looks wrong. */
+  private async reviewIssues(row: Record<string, string>, mapping: ColumnMapping, front: string): Promise<string[]> {
+    const issues: string[] = [];
+    const meaning = checkMeaning((row[mapping.back] ?? "").trim());
+    if (meaning) issues.push(meaning);
+    const hv = mapping.hanViet ? (row[mapping.hanViet] ?? "").trim() : "";
+    const hvIssue = checkHanViet(front, hv);
+    if (hvIssue) issues.push(hvIssue);
+    const givenReading = mapping.reading ? (row[mapping.reading] ?? "").trim() : "";
+    if (givenReading && KANJI_RE.test(front)) {
+      try {
+        const guess = readingVariants((await this.morph.analyze(front.replace(/[（(][^）)]*[）)]/g, ""))).reading)[0] ?? "";
+        const given = readingVariants(givenReading);
+        if (guess && given.length > 0 && !given.some((g) => g === guess || g.includes(guess) || guess.includes(g))) {
+          issues.push(`cách đọc “${givenReading}” khác cách đọc tự nhận (${guess})`);
+        }
+      } catch {
+        /* analyser unavailable — cannot judge */
+      }
+    }
+    return issues;
+  }
+
+  private readonly meaningCache = new Map<string, string>();
+
+  /**
+   * Suggested Vietnamese meanings for rows that have a word but a blank
+   * meaning (row index → suggestion). Cached per word so the preview and the
+   * confirm of the same file agree. Best effort: no AI service → no entry.
+   */
+  private async suggestMeanings(table: Table, mapping: ColumnMapping): Promise<Map<number, string>> {
+    const out = new Map<number, string>();
+    const wanted: { idx: number; term: string; reading: string }[] = [];
+    table.rows.forEach((row, idx) => {
+      const front = (row[mapping.front] ?? "").trim();
+      if (!front || (row[mapping.back] ?? "").trim()) return;
+      const term = front.split(/[（(]/)[0].trim();
+      const reading = mapping.reading ? (row[mapping.reading] ?? "").trim() : "";
+      wanted.push({ idx, term, reading });
+    });
+    const todo = [...new Map(wanted.filter((w) => !this.meaningCache.has(w.term)).map((w) => [w.term, w])).values()].slice(0, 100);
+    if (this.ai && todo.length > 0) {
+      for (let i = 0; i < todo.length; i += 20) {
+        const got = await this.ai
+          .translateWords(todo.slice(i, i + 20).map((w) => ({ term: w.term, reading: w.reading, glossEn: "" })))
+          .catch(() => null);
+        got?.forEach((vi, term) => this.meaningCache.set(term, vi));
+      }
+    }
+    for (const w of wanted) {
+      const m = this.meaningCache.get(w.term);
+      if (m) out.set(w.idx, m);
+    }
+    return out;
   }
 
   /**
@@ -1022,8 +1098,7 @@ export class ImportService implements OnApplicationBootstrap {
     const out: (Awaited<ReturnType<ImportService["extras"]>> | null)[] = [];
     for (const row of table.rows) {
       const front = (row[mapping.front] ?? "").trim();
-      const back = (row[mapping.back] ?? "").trim();
-      out.push(front && back ? await this.extras(row, mapping, front) : null);
+      out.push(front ? await this.extras(row, mapping, front) : null);
     }
     return out;
   }
@@ -1149,6 +1224,7 @@ export class ImportService implements OnApplicationBootstrap {
     const seenInFile = new Map<string, { no?: number; rowNumber: number; front: string; reading: string; back: string }>();
     const dupList: DuplicateInfo[] = [];
 
+    const suggested = await this.suggestMeanings(table, mapping);
     const rows: PreviewRow[] = [];
     let ok = 0;
     let errors = 0;
@@ -1160,14 +1236,14 @@ export class ImportService implements OnApplicationBootstrap {
       const rawBack = (row[mapping.back] ?? "").trim();
       const tags = this.parseTags(row[mapping.tags ?? ""]);
 
-      if (rawFront === "" || rawBack === "") {
+      if (rawFront === "") {
         rows.push({
           rowNumber: i + 2,
           front: rawFront,
           back: rawBack,
           tags,
           status: "error",
-          error: `missing ${rawFront === "" ? "front" : ""}${rawFront === "" && rawBack === "" ? " & " : ""}${rawBack === "" ? "back" : ""} value`,
+          error: "missing front value",
         });
         errors += 1;
         continue;
@@ -1205,10 +1281,14 @@ export class ImportService implements OnApplicationBootstrap {
         continue;
       }
 
+      const issues = await this.reviewIssues(row, mapping, rawFront);
       rows.push({
         rowNumber: i + 2,
         front: rawFront,
-        back: rawBack,
+        back: rawBack || suggested.get(i) || "",
+        issues: issues.length > 0 ? issues : undefined,
+        blankBack: rawBack === "" || undefined,
+        suggestedBack: (rawBack === "" && suggested.has(i)) || undefined,
         tags,
         status: "ok",
         reading: extra.reading,
@@ -1252,6 +1332,9 @@ export class ImportService implements OnApplicationBootstrap {
 
     // Rebuild the exact rows the preview showed, in the same order.
     const extrasByRow = await this.rowExtras(table, mapping);
+    const suggested = await this.suggestMeanings(table, mapping);
+    const needsReview: NonNullable<ImportConfirmResult["needsReview"]> = [];
+    const needsMeaning: NonNullable<ImportConfirmResult["needsMeaning"]> = [];
     const existing = await this.card
       .find({
         deck: targetDeck._id,
@@ -1285,6 +1368,7 @@ export class ImportService implements OnApplicationBootstrap {
       examples: CardExample[];
       hanViet: string;
       order?: number;
+      reviewIssues: string[];
     }
 
     const toInsert: ImportCardDoc[] = [];
@@ -1299,23 +1383,24 @@ export class ImportService implements OnApplicationBootstrap {
       const back = (row[mapping.back] ?? "").trim();
       const tags = this.parseTags(row[mapping.tags ?? ""]);
 
-      if (front === "" || back === "") {
+      if (front === "") {
         errors.push({
           rowNumber: rowNo,
           no: extrasByRow[rowIdx]?.order,
           front,
           back,
-          error: "front and back are required",
+          error: "front is required",
         });
         continue;
       }
 
       const extra = extrasByRow[rowIdx]!;
       const key = cardDedupeKey(front, back, extra.reading);
+      const reviewIssues = await this.reviewIssues(row, mapping, front);
       const doc: ImportCardDoc = {
         deck: targetDeck._id,
         front,
-        back,
+        back: back || suggested.get(rowIdx) || "",
         tags,
         origin: "import",
         dedupeKey: key,
@@ -1324,6 +1409,12 @@ export class ImportService implements OnApplicationBootstrap {
         examples: extra.examples,
         hanViet: extra.hanViet,
         order: extra.order,
+        reviewIssues: [
+          ...reviewIssues,
+          ...(back === ""
+            ? [suggested.has(rowIdx) ? "nghĩa do AI gợi ý — cần kiểm tra" : "chưa có nghĩa — cần tự nhập"]
+            : []),
+        ],
       };
 
       const noteDuplicate = () => {
@@ -1342,6 +1433,11 @@ export class ImportService implements OnApplicationBootstrap {
         });
       };
 
+      const noteBlank = () => {
+        if (reviewIssues.length > 0) needsReview.push({ rowNumber: rowNo, no: extra.order, front, issues: reviewIssues });
+        if (back === "") needsMeaning.push({ rowNumber: rowNo, no: extra.order, front, suggested: suggested.has(rowIdx) });
+      };
+
       if (seenInFile.has(key)) {
         skipped += 1; // a later copy of the same row in the file
         noteDuplicate();
@@ -1351,6 +1447,7 @@ export class ImportService implements OnApplicationBootstrap {
       if (existingKeys.has(key)) {
         if (policy === "overwrite") {
           toOverwrite.push(doc);
+          noteBlank();
         } else {
           skipped += 1;
           noteDuplicate();
@@ -1359,6 +1456,7 @@ export class ImportService implements OnApplicationBootstrap {
       } else {
         seenInFile.set(key, { no: extra.order, rowNumber: rowNo, front, reading: extra.reading, back });
         toInsert.push(doc);
+        noteBlank();
       }
     }
 
@@ -1413,6 +1511,7 @@ export class ImportService implements OnApplicationBootstrap {
                 examples: doc.examples,
                 hanViet: doc.hanViet,
                 order: doc.order,
+                reviewIssues: doc.reviewIssues,
               },
               $setOnInsert: {
                 deck: targetDeck._id,
@@ -1454,6 +1553,8 @@ export class ImportService implements OnApplicationBootstrap {
       skipped,
       overwritten,
       errors,
+      needsMeaning,
+      needsReview,
       examplesQueued: 0,
       examplesDeferred: pending.length,
       duplicates: dupList,

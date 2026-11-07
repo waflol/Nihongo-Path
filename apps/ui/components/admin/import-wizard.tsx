@@ -8,7 +8,8 @@ import { ErrorsPanel, type ImportErrorInfo } from "@/components/admin/errors-pan
 import { DuplicatesPanel, type DuplicateInfo } from "@/components/admin/duplicates-panel";
 import { ExampleStarter } from "@/components/admin/example-starter";
 import { PdfPageReview } from "@/components/admin/pdf-page-review";
-import { JOB_STARTED_EVENT, type PdfJob } from "@/components/admin/import-job-tracker";
+import { JOB_STARTED_EVENT, dismissImportJob, type PdfJob } from "@/components/admin/import-job-tracker";
+import { clearImportDraft, loadImportDraft, saveImportDraft } from "@/lib/import-draft";
 
 /**
  * Bulk-import wizard (P3-UI-02, spec §4.2 "preview, ánh xạ cột, kiểm tra
@@ -42,6 +43,11 @@ interface PreviewRow {
   examples?: number;
   no?: number;
   hanViet?: string;
+  /** Meaning cell blank → `back` is a suggestion (suggestedBack) or empty. */
+  blankBack?: boolean;
+  suggestedBack?: boolean;
+  /** Cells that look wrong (meaning / reading / Hán Việt): a person should review them. */
+  issues?: string[];
   error?: string;
 }
 
@@ -65,6 +71,8 @@ interface ConfirmResult {
   examplesDeferred?: number;
   duplicates?: DuplicateInfo[];
   errors: ImportErrorInfo[];
+  needsReview?: { rowNumber: number; no?: number; front: string; issues: string[] }[];
+  needsMeaning?: { rowNumber: number; no?: number; front: string; suggested: boolean }[];
 }
 
 const inputClass =
@@ -133,6 +141,9 @@ export function ImportWizard({ learner = false }: { learner?: boolean }) {
   const [mapping, setMapping] = useState<Record<string, string>>({});
   const [preview, setPreview] = useState<Preview | null>(null);
     const [result, setResult] = useState<ConfirmResult | null>(null);
+  // true once the row-by-row preview is on screen (step 3); false = still mapping columns (step 2).
+  const [reviewed, setReviewed] = useState(false);
+  const [dupPolicy, setDupPolicy] = useState<"skip" | "overwrite">("skip");
 
   const [error, setError] = useState<string | null>(null);
   const [running, setRunning] = useState<
@@ -149,6 +160,39 @@ export function ImportWizard({ learner = false }: { learner?: boolean }) {
   const [jobId, setJobId] = useState<string | null>(null);
   const [job, setJob] = useState<PdfJob | null>(null);
   const autoPreviewed = useRef<string | null>(null);
+
+  // F5 keeps an unfinished import: restore the file/deck/mapping until cancel or confirm.
+  const draftReady = useRef(false);
+  const restoreNow = useRef<{ mapping: Record<string, string> } | null>(null);
+  useEffect(() => {
+    if (wantedJob) {
+      draftReady.current = true;
+      return;
+    }
+    void loadImportDraft().then((d) => {
+      if (d && !d.file.name.toLowerCase().endsWith(".pdf")) {
+        setFile(d.file);
+        setDeckId(d.deckId);
+        setMapping(d.mapping);
+        setDupPolicy(d.dupPolicy ?? "skip");
+        if (d.previewed) restoreNow.current = { mapping: d.mapping };
+      }
+      draftReady.current = true;
+    });
+  }, [wantedJob]);
+  useEffect(() => {
+    if (!file || !deckId || !restoreNow.current) return;
+    restoreNow.current = null;
+    void runPreview(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [file, deckId]);
+
+  useEffect(() => {
+    if (!draftReady.current) return;
+    if (file && !file.name.toLowerCase().endsWith(".pdf") && !result) {
+      void saveImportDraft({ file, deckId, mapping, previewed: reviewed, dupPolicy });
+    }
+  }, [file, deckId, mapping, reviewed, dupPolicy, result]);
 
   useEffect(() => {
     if (!jobId || job?.status !== "running") return;
@@ -242,7 +286,7 @@ export function ImportWizard({ learner = false }: { learner?: boolean }) {
       if (selectId && list.some((d) => d._id === selectId)) return selectId;
       if (cur) return cur;
       if (wantedDeck && list.some((d) => d._id === wantedDeck)) return wantedDeck;
-      return list[0]?._id ?? "";
+      return list.length === 1 ? list[0]._id : "";
     });
   }
 
@@ -295,6 +339,7 @@ export function ImportWizard({ learner = false }: { learner?: boolean }) {
     setRunning("preview");
     setError(null);
     setPreview(null);
+    setReviewed(false);
 
     // PDF → start the background read first; the preview follows when it is done.
     if (file && !jobId && file.name.toLowerCase().endsWith(".pdf")) {
@@ -372,6 +417,10 @@ export function ImportWizard({ learner = false }: { learner?: boolean }) {
       });
     }
     setPreview(data);
+    // Rows came back → straight to the row-by-row review; otherwise stay on column mapping.
+    const hasRows = !!data && data.rows.length > 0;
+    setReviewed(hasRows);
+    if (revealed && !hasRows) setError("Không đọc được dòng nào — kiểm tra lại cột câu hỏi / đáp án");
   }
 
   async function runConfirm() {
@@ -390,7 +439,7 @@ export function ImportWizard({ learner = false }: { learner?: boolean }) {
       "mapping",
       JSON.stringify(mappingPayload(mapping)),
     );
-    form.append("duplicatePolicy", "skip");
+    form.append("duplicatePolicy", dupPolicy);
     if (createdDeckIds.current.has(deckId)) form.append("newDeck", "true");
 
     const res = await fetch("/api/import?action=confirm", {
@@ -415,9 +464,30 @@ export function ImportWizard({ learner = false }: { learner?: boolean }) {
     setTimeout(() => document.getElementById("import-result")?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
   }
 
+  /**
+   * The user gave up (Hủy / another file): a PDF still being read is stopped on the
+   * server, and its progress / "đã đọc xong" card disappears from the floating tracker.
+   */
+  function abandonJob() {
+    const id = jobId;
+    if (id && job?.status === "running") {
+      void fetch(`/api/import?job=${encodeURIComponent(id)}`, { method: "DELETE" })
+        .catch(() => null)
+        .finally(() => window.dispatchEvent(new Event(JOB_STARTED_EVENT)));
+    }
+    if (id) dismissImportJob(id);
+  }
+
+  function cancelImport() {
+    abandonJob();
+    resetForm();
+  }
+
   /** Clear the file, the PDF job, the column mapping and the preview (the chosen deck stays). */
   function resetForm() {
     setPreview(null);
+    setReviewed(false);
+    setDupPolicy("skip");
     setFile(null);
     setMapping({});
     setJobId(null);
@@ -425,10 +495,32 @@ export function ImportWizard({ learner = false }: { learner?: boolean }) {
     setSavedJob(null);
     setError(null);
     autoPreviewed.current = null;
+    void clearImportDraft();
     if (fileRef.current) fileRef.current.value = "";
   }
 
-  const steps: string[] = ["1. Chọn file + bộ thẻ", "2. Ánh xạ cột", "3. Xác nhận"];
+  const steps: string[] = ["1. Chọn file + bộ thẻ", "2. Ánh xạ cột", "3. Xem trước & xác nhận", "4. Kết quả"];
+  // One step on screen at a time, derived from state (so F5 restore lands on the right one).
+  const step = result ? 4 : preview && reviewed ? 3 : preview ? 2 : 1;
+  const reviewRows = preview ? preview.rows.filter((r) => (r.issues?.length ?? 0) > 0 && r.status !== "duplicate") : [];
+  const blankRows = preview ? preview.rows.filter((r) => r.blankBack && r.status !== "duplicate") : [];
+  const deckTitle = decks.find((d) => d._id === deckId)?.title ?? "";
+  const summary = (
+    <p className="mt-4 text-xs text-[var(--muted-foreground)]">
+      File: <strong className="text-[var(--foreground)]">{file?.name ?? "PDF đang đọc"}</strong>
+      {" · "}Bộ thẻ: <strong className="text-[var(--foreground)]">{deckTitle || "—"}</strong>
+    </p>
+  );
+  const cancelBtn = (
+    <button
+      type="button"
+      disabled={running === "confirm"}
+      onClick={cancelImport}
+      className="rounded-lg border border-[var(--border)] px-4 py-2 text-sm font-medium text-[var(--foreground)] hover:bg-[var(--layer-hover)] disabled:opacity-60"
+    >
+      Hủy
+    </button>
+  );
 
   // Once the import succeeded the result panel says it all; the saved check stays on the deck page.
   const pageReview = result
@@ -442,7 +534,7 @@ export function ImportWizard({ learner = false }: { learner?: boolean }) {
         }}
       />
     ) : (
-      (!jobId || (job?.pages?.length ?? 0) === 0) && savedJob && <PdfPageReview job={savedJob} onChanged={setSavedJob} />
+      (file || jobId) && (!jobId || (job?.pages?.length ?? 0) === 0) && savedJob && <PdfPageReview job={savedJob} onChanged={setSavedJob} />
     );
 
   return (
@@ -466,10 +558,7 @@ export function ImportWizard({ learner = false }: { learner?: boolean }) {
       {/* Step indicator */}
       <ol className="mt-6 flex flex-wrap gap-2 text-xs text-[var(--muted-foreground)]" aria-label="Các bước nhập">
         {steps.map((s, i) => {
-          const active =
-            (i === 0 && !preview) ||
-            (i === 1 && preview && !result) ||
-            (i === 2 && result);
+          const active = i + 1 === step;
           return (
             <li
               key={s}
@@ -496,6 +585,7 @@ export function ImportWizard({ learner = false }: { learner?: boolean }) {
       )}
 
       {/* ── Step 1: file + target deck ─────────────────────────────── */}
+      {step === 1 && (
       <section className="mt-6 rounded-2xl border border-[var(--border)] bg-[var(--background-1)] p-5">
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
@@ -516,13 +606,15 @@ export function ImportWizard({ learner = false }: { learner?: boolean }) {
               type="file"
               accept=".csv,.xlsx,.pdf,text/csv,application/pdf"
               onChange={(e) => {
+                abandonJob();
                 setFile(e.target.files?.[0] ?? null);
                 setJobId(null);
                 setJob(null);
                 setPreview(null);
+                setReviewed(false);
                 setResult(null);
                 setMapping({});
-              }}
+                          }}
               className={`mt-1 ${inputClass} file:mr-3 file:rounded file:border-0 file:bg-[var(--layer)] file:px-3 file:py-1 file:text-xs file:font-medium file:text-[var(--foreground)]`}
             />
             {file && (
@@ -551,6 +643,7 @@ export function ImportWizard({ learner = false }: { learner?: boolean }) {
                 onChange={(e) => {
                   setDeckId(e.target.value);
                   setPreview(null);
+                  setReviewed(false);
                   setResult(null);
                 }}
                 className={inputClass}
@@ -594,17 +687,19 @@ export function ImportWizard({ learner = false }: { learner?: boolean }) {
           </div>
         </div>
 
-        <div className="mt-4">
+        <div className="mt-4 flex flex-wrap items-center gap-2">
           <button
             type="button"
             disabled={(!file && !jobId) || !deckId || running !== null || job?.status === "running"}
             onClick={() => void runPreview(false)}
             className="rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-semibold text-[var(--primary-foreground)] hover:bg-[var(--primary-hover)] disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {running === "preview" || job?.status === "running"
-              ? "Đang đọc file…"
-              : "Đọc file (nháp, chưa nhập)"}
+            {running === "preview" || job?.status === "running" ? "Đang đọc file…" : "Đọc file (nháp, chưa nhập)"}
           </button>
+          {(file || jobId) && cancelBtn}
+          <span className="text-xs text-[var(--muted-foreground)]" aria-live="polite">
+            {!file && !jobId ? "Chọn file và bộ thẻ đích, rồi bấm Đọc file." : !deckId ? "Chọn bộ thẻ đích." : ""}
+          </span>
         </div>
 
         {job && job.status === "running" && (
@@ -630,8 +725,9 @@ export function ImportWizard({ learner = false }: { learner?: boolean }) {
           </div>
         )}
       </section>
+      )}
 
-      {file?.name.toLowerCase().endsWith(".pdf") && (
+      {step < 4 && file?.name.toLowerCase().endsWith(".pdf") && (
         <p className="mt-4 rounded-lg bg-[#fef9c3] px-4 py-3 text-sm text-[#a16207] dark:bg-[#3a3210] dark:text-[#fde047]">
           Chỉ nhập PDF do bạn tự soạn hoặc có quyền sử dụng — không nhập giáo
           trình có bản quyền. PDF có lớp văn bản sạch và bảng STT được đọc
@@ -640,10 +736,10 @@ export function ImportWizard({ learner = false }: { learner?: boolean }) {
         </p>
       )}
 
-      {!(preview && preview.rows.length > 0 && !result) && pageReview}
+      {step < 3 && pageReview}
 
       {/* ── Step 2: column mapping ─────────────────────────────────── */}
-      {preview && preview.columns.length > 0 && !result && (
+      {step === 2 && preview && (
         <section className="mt-6 rounded-2xl border border-[var(--border)] bg-[var(--background-1)] p-5">
           <h2 className="text-sm font-semibold text-[var(--foreground)]">
             Ánh xạ cột ({preview.format.toUpperCase()}, {preview.totalRows} dòng)
@@ -683,23 +779,34 @@ export function ImportWizard({ learner = false }: { learner?: boolean }) {
             hiragana/katakana để trống) và tự nhận động từ / danh từ / tính từ.
           </p>
 
-          <div className="mt-4">
+          {summary}
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              type="button"
+              disabled={running !== null}
+              onClick={cancelImport}
+              className="rounded-lg border border-[var(--border)] px-4 py-2 text-sm font-medium text-[var(--foreground)] hover:bg-[var(--layer-hover)] disabled:opacity-60"
+            >
+              ← Chọn file khác
+            </button>
             <button
               type="button"
               disabled={running !== null || !mapping.front || !mapping.back}
               onClick={() => void runPreview(true)}
-              className="rounded-lg border border-[var(--border)] px-4 py-2 text-sm font-medium text-[var(--foreground)] hover:bg-[var(--layer-hover)] disabled:cursor-not-allowed disabled:opacity-60"
+              className="rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-semibold text-[var(--primary-foreground)] hover:bg-[var(--primary-hover)] disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {running === "preview" ? "Đang xem trước…" : "Xem trước từng dòng"}
+              {running === "preview" ? "Đang xem trước…" : "Tiếp tục: xem trước →"}
             </button>
+            {cancelBtn}
           </div>
         </section>
       )}
 
       {/* ── Step 3: preview rows + policy + confirm ─────────────────── */}
-      {preview && preview.rows.length > 0 && !result && (
+      {step === 3 && preview && (
         <section className="mt-6 rounded-2xl border border-[var(--border)] bg-[var(--background-1)] p-5">
-          <div className="flex flex-wrap items-center justify-between gap-2">
+          {summary}
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-sm font-semibold text-[var(--foreground)]">
               Xem trước —{" "}
               <span className="text-[var(--primary)]">
@@ -707,9 +814,26 @@ export function ImportWizard({ learner = false }: { learner?: boolean }) {
               </span>
               , {preview.duplicateRows} trùng, {preview.errorRows} lỗi
             </h2>
-            <p className="text-xs text-[var(--muted-foreground)]">
-              Thẻ trùng sẽ được bỏ qua (giữ thẻ cũ).
-            </p>
+            <fieldset className="flex flex-wrap items-center gap-3 text-xs text-[var(--muted-foreground)]">
+              <legend className="sr-only">Khi thẻ trùng</legend>
+              <span>Thẻ trùng:</span>
+              {(
+                [
+                  ["skip", "Bỏ qua (giữ thẻ cũ)"],
+                  ["overwrite", "Ghi đè thẻ cũ"],
+                ] as const
+              ).map(([v, l]) => (
+                <label key={v} className="flex items-center gap-1">
+                  <input
+                    type="radio"
+                    name="dup-policy"
+                    checked={dupPolicy === v}
+                    onChange={() => setDupPolicy(v)}
+                  />
+                  {l}
+                </label>
+              ))}
+            </fieldset>
           </div>
 
           <div className="mt-3 overflow-hidden rounded-xl border border-[var(--border)]">
@@ -755,7 +879,12 @@ export function ImportWizard({ learner = false }: { learner?: boolean }) {
                         {r.front || "—"}
                       </td>
                       <td className="px-3 py-2 text-[var(--foreground)]">
-                        {r.back || "—"}
+                        {r.back || (r.blankBack ? <span className="text-[#a16207] dark:text-[#fde047]">(trống — tự nhập sau)</span> : "—")}
+                        {r.suggestedBack && (
+                          <span className="ml-1 rounded-full bg-[#fef9c3] px-1.5 py-0.5 text-[10px] font-medium text-[#a16207] dark:bg-[#3a3210] dark:text-[#fde047]">
+                            gợi ý
+                          </span>
+                        )}
                       </td>
                       <td lang="ja" className="px-3 py-2 text-[var(--muted-foreground)]">
                         {r.reading || "—"}
@@ -771,6 +900,9 @@ export function ImportWizard({ learner = false }: { learner?: boolean }) {
                       </td>
                       <td className="px-3 py-2 text-xs text-[#b91c1c]">
                         {r.error ?? ""}
+                        {r.issues?.map((m) => (
+                          <span key={m} className="block text-[#a16207] dark:text-[#fde047]">⚠ {m}</span>
+                        ))}
                       </td>
                     </tr>
                   ))}
@@ -784,6 +916,27 @@ export function ImportWizard({ learner = false }: { learner?: boolean }) {
             )}
           </div>
 
+          {reviewRows.length > 0 && (
+            <div className="mt-3 rounded-lg border border-[#f59e0b] bg-[#fffbeb] px-4 py-3 text-sm text-[#92400e] dark:bg-[#2a2008] dark:text-[#fcd34d]">
+              <p className="font-medium">⚠ {reviewRows.length} thẻ có nghĩa / cách đọc / âm Hán Việt nghi sai — nên xem xét:</p>
+              <ul className="mt-1 list-disc space-y-0.5 pl-5 text-xs">
+                {reviewRows.slice(0, 30).map((r) => (
+                  <li key={r.rowNumber}>
+                    STT {r.no ?? r.rowNumber} <span lang="ja">{r.front}</span>: {r.issues!.join("; ")}
+                  </li>
+                ))}
+              </ul>
+              {reviewRows.length > 30 && <p className="mt-1 text-xs">… và {reviewRows.length - 30} thẻ khác (xem cột Lỗi trong bảng).</p>}
+              <p className="mt-1 text-xs">Thẻ vẫn được nhập; sửa lại trong bộ thẻ sau nếu đúng là sai.</p>
+            </div>
+          )}
+          {blankRows.length > 0 && (
+            <p className="mt-3 rounded-lg bg-[#fef9c3] px-4 py-3 text-sm text-[#a16207] dark:bg-[#3a3210] dark:text-[#fde047]">
+              {blankRows.length} từ chưa có nghĩa vẫn được nhập. STT: {blankRows.map((r) => r.no ?? r.rowNumber).join(", ")}.
+              Nghĩa và âm Hán Việt đã được gợi ý sẵn nếu hệ thống đoán được (nhãn “gợi ý”) — hãy kiểm tra và tự nhập/sửa
+              nghĩa cho các từ này sau khi nhập.
+            </p>
+          )}
           <DuplicatesPanel duplicates={preview.duplicates ?? []} total={preview.duplicateRows} />
           <ErrorsPanel
             errors={preview.rows
@@ -793,7 +946,15 @@ export function ImportWizard({ learner = false }: { learner?: boolean }) {
           />
           {pageReview}
 
-          <div className="mt-4">
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              disabled={running === "confirm"}
+              onClick={() => setReviewed(false)}
+              className="rounded-lg border border-[var(--border)] px-4 py-2 text-sm font-medium text-[var(--foreground)] hover:bg-[var(--layer-hover)] disabled:opacity-60"
+            >
+              ← Quay lại ánh xạ
+            </button>
             <button
               type="button"
               disabled={running !== null || preview.okRows === 0}
@@ -804,7 +965,8 @@ export function ImportWizard({ learner = false }: { learner?: boolean }) {
                 ? "Đang nhập…"
                 : `Xác nhận nhập ${preview.okRows} thẻ`}
             </button>
-            <p className="mt-2 text-xs text-[var(--muted-foreground)]">
+            {cancelBtn}
+            <p className="w-full text-xs text-[var(--muted-foreground)]">
               Nhập idempotent: gửi lại đúng file này không tạo thẻ trùng.
             </p>
           </div>
@@ -841,6 +1003,24 @@ export function ImportWizard({ learner = false }: { learner?: boolean }) {
               learner={learner}
               decksHref={backHref}
             />
+          )}
+          {(result.needsReview?.length ?? 0) > 0 && (
+            <div className="mt-3 rounded-lg border border-[#f59e0b] bg-[#fffbeb] px-4 py-3 text-sm text-[#92400e] dark:bg-[#2a2008] dark:text-[#fcd34d]">
+              <p className="font-medium">⚠ Cần xem xét {result.needsReview!.length} thẻ nghi sai:</p>
+              <ul className="mt-1 list-disc space-y-0.5 pl-5 text-xs">
+                {result.needsReview!.slice(0, 50).map((n) => (
+                  <li key={n.rowNumber}>
+                    STT {n.no ?? n.rowNumber} <span lang="ja">{n.front}</span>: {n.issues.join("; ")}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {(result.needsMeaning?.length ?? 0) > 0 && (
+            <p className="mt-3 rounded-lg bg-[#fef9c3] px-4 py-3 text-sm text-[#a16207] dark:bg-[#3a3210] dark:text-[#fde047]">
+              Cần tự nhập nghĩa cho {result.needsMeaning!.length} từ — STT:{" "}
+              {result.needsMeaning!.map((n) => `${n.no ?? n.rowNumber} ${n.front}${n.suggested ? " (nghĩa gợi ý)" : ""}`).join(", ")}.
+            </p>
           )}
           <ErrorsPanel errors={result.errors} defaultOpen />
           <DuplicatesPanel duplicates={result.duplicates ?? []} total={result.skipped} />

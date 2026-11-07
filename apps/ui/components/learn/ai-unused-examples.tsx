@@ -103,7 +103,7 @@ export function AiUnusedExamples({ deckId, missing }: { deckId: string; missing:
                     {it.reason}
                   </p>
                   <div className="mt-1 text-xs text-[var(--muted-foreground)]">
-                    {it.kind === "write" ? "AI viết câu" : "AI dịch câu Tatoeba"}
+                    {it.kind === "write" ? "AI tạo câu" : "AI dịch câu Tatoeba"}
                     {it.matches === false ? " · AI báo sai nghĩa" : ""}
                     {it.service ? ` · ${it.service}` : ""}
                     {it.model ? ` · ${it.model}` : ""}

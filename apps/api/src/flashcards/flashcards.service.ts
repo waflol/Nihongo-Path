@@ -383,7 +383,7 @@ export class FlashcardsService implements OnModuleInit {
   /** Mongo filter for the card-manager list: text search, one tag, "no example". */
   private cardFilter(
     deckId: string,
-    f: { q?: string; tag?: string; missing?: boolean; card?: string },
+    f: { q?: string; tag?: string; missing?: boolean; card?: string; review?: boolean },
   ): Record<string, unknown> {
     const filter: Record<string, unknown> = { deck: new Types.ObjectId(deckId) };
     if (f.card && Types.ObjectId.isValid(f.card)) filter._id = new Types.ObjectId(f.card);
@@ -394,6 +394,7 @@ export class FlashcardsService implements OnModuleInit {
     }
     if (f.tag) filter.tags = f.tag;
     if (f.missing) filter.examples = { $size: 0 };
+    if (f.review) filter["reviewIssues.0"] = { $exists: true };
     return filter;
   }
 
@@ -405,17 +406,18 @@ export class FlashcardsService implements OnModuleInit {
   async pageCards(
     caller: AuthUser,
     deckId: string,
-    opts: { page: number; pageSize: number; q?: string; tag?: string; missing?: boolean; card?: string },
+    opts: { page: number; pageSize: number; q?: string; tag?: string; missing?: boolean; card?: string; review?: boolean },
   ): Promise<{
     items: FlashcardDocument[];
     total: number;
     missingExamples: number;
+    needsReview: number;
     tags: { tag: string; count: number }[];
   }> {
     await this.getDeck(caller, deckId);
     const filter = this.cardFilter(deckId, opts);
     const deckOid = new Types.ObjectId(deckId);
-    const [items, total, missingExamples, tagRows] = await Promise.all([
+    const [items, total, missingExamples, needsReview, tagRows] = await Promise.all([
       this.card
         .find(filter)
         .sort({ order: 1, _id: 1 })
@@ -424,6 +426,7 @@ export class FlashcardsService implements OnModuleInit {
         .exec(),
       this.card.countDocuments(filter).exec(),
       this.card.countDocuments({ deck: deckOid, examples: { $size: 0 } }).exec(),
+      this.card.countDocuments({ deck: deckOid, "reviewIssues.0": { $exists: true } }).exec(),
       this.card
         .aggregate<{ _id: string; count: number }>([
           { $match: { deck: deckOid } },
@@ -437,6 +440,7 @@ export class FlashcardsService implements OnModuleInit {
       items,
       total,
       missingExamples,
+      needsReview,
       tags: tagRows.map((t) => ({ tag: t._id, count: t.count })),
     };
   }
@@ -751,6 +755,8 @@ export class FlashcardsService implements OnModuleInit {
       partOfSpeech?: "verb" | "noun" | "adjective" | "";
       examples?: CardExample[];
       tags?: string[];
+      /** true = an admin looked at the import warnings: clear them. */
+      reviewed?: boolean;
     },
   ): Promise<FlashcardDocument> {
     let cardDoc: FlashcardDocument | null;
@@ -771,7 +777,8 @@ export class FlashcardsService implements OnModuleInit {
 
     const front = input.front?.trim() ?? cardDoc.front;
     const back = input.back?.trim() ?? cardDoc.back;
-    if (front === "" || back === "") {
+    // An imported card may still wait for its meaning; every other card needs both faces.
+    if (front === "" || (back === "" && cardDoc.origin !== "import")) {
       throw new BadRequestException("front and back are required");
     }
     const reading = input.reading !== undefined ? input.reading.trim() : (cardDoc.reading ?? "");
@@ -793,6 +800,8 @@ export class FlashcardsService implements OnModuleInit {
     if (input.partOfSpeech !== undefined) cardDoc.partOfSpeech = input.partOfSpeech;
     if (input.examples !== undefined) cardDoc.examples = cleanExamples(input.examples);
     if (input.tags !== undefined) cardDoc.tags = input.tags;
+    // Fixing the meaning / reading, or an explicit "reviewed", closes the import warnings.
+    if (input.reviewed || (input.back !== undefined && back !== "") || input.reading !== undefined) cardDoc.reviewIssues = [];
     cardDoc.dedupeKey = key;
     await cardDoc.save();
     return cardDoc;

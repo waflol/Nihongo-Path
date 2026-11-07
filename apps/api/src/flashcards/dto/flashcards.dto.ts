@@ -239,6 +239,11 @@ export class UpdateCardDto {
   @MaxLength(200)
   reading?: string;
 
+  @ApiPropertyOptional({ description: "true = clear the import review warnings of this card" })
+  @IsOptional()
+  @IsBoolean()
+  reviewed?: boolean;
+
   @ApiPropertyOptional({ enum: PARTS_OF_SPEECH })
   @IsOptional()
   @IsIn([...PARTS_OF_SPEECH, ""])

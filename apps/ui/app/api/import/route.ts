@@ -79,6 +79,22 @@ export async function POST(request: Request) {
   return NextResponse.json(payload, { status: upstream.status });
 }
 
+/** `DELETE /api/import?job=<id>` → cancel a PDF reading job (stops it, removes it). */
+export async function DELETE(request: Request) {
+  const session = await getSession();
+  if (!session.authenticated || !session.accessToken) {
+    return NextResponse.json({ error: "Không đăng nhập" }, { status: 401 });
+  }
+  const job = new URL(request.url).searchParams.get("job") ?? "";
+  if (!/^[\w-]+$/.test(job)) return NextResponse.json({ error: "job không hợp lệ" }, { status: 400 });
+  const r = await fetch(`${API_BASE_URL}/flashcards/import/jobs/${job}`, {
+    method: "DELETE",
+    headers: { ...(await clientIpHeaders()), Authorization: `Bearer ${session.accessToken}` },
+    cache: "no-store",
+  });
+  return new NextResponse(null, { status: r.status });
+}
+
 /** `GET /api/import` → my PDF jobs; `GET /api/import?job=<id>` → one job (progress polling). */
 export async function GET(request: Request) {
   const session = await getSession();

@@ -57,7 +57,8 @@ export class Flashcard {
   front: string;
 
   /** Answer face (e.g. reading + meaning, structure + usage). */
-  @Prop({ type: String, trim: true, required: true })
+  // Imports may leave the meaning blank (the learner fills it in later).
+  @Prop({ type: String, trim: true, required: [function (this: { origin?: string }) { return this.origin !== "import"; }, "back is required"] })
   back: string;
 
   /** Optional example sentences shown on the answer face (0..N). */
@@ -93,6 +94,14 @@ export class Flashcard {
   /** Âm Hán Việt supplied by the source (e.g. "DUY TRÌ"); empty = derive. */
   @Prop({ type: String, trim: true, default: "" })
   hanViet?: string;
+
+  /**
+   * Why an imported card should be double-checked by a person (meaning /
+   * reading / Hán Việt that look wrong, blank or AI-suggested meaning).
+   * Empty = nothing to review; cleared when an admin marks it reviewed.
+   */
+  @Prop({ type: [String], default: [] })
+  reviewIssues?: string[];
 
   /** Position in the source list (STT) — keeps an imported file's order. */
   @Prop({ type: Number })

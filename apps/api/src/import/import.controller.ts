@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   HttpCode,
   HttpStatus,
   PayloadTooLargeException,
@@ -138,6 +139,13 @@ export class ImportController {
   @ApiOperation({ summary: "One PDF reading job" })
   async getJob(@CurrentUser() caller: AuthUser, @Param("id") id: string) {
     return this.imports.getPdfJob(caller, id);
+  }
+
+  @Delete("jobs/:id")
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: "Cancel a PDF reading job (stops it and deletes it)" })
+  async cancelJob(@CurrentUser() caller: AuthUser, @Param("id") id: string) {
+    await this.imports.cancelPdfJob(caller, id);
   }
 
   @Get("jobs/:id/pages/:n/image")

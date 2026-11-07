@@ -46,12 +46,15 @@ interface PageCard {
   tags?: string[];
   origin?: string;
   order?: number;
+  /** Import warnings: why this card should be double-checked. */
+  reviewIssues?: string[];
 }
 
 interface PageData {
   items: PageCard[];
   total: number;
   missingExamples: number;
+  needsReview?: number;
   tags: { tag: string; count: number }[];
 }
 
@@ -97,6 +100,7 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
   const [q, setQ] = useState("");
   const [tag, setTag] = useState("");
   const [missing, setMissing] = useState(false);
+  const [review, setReview] = useState(false);
 
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [allMatching, setAllMatching] = useState(false);
@@ -184,6 +188,7 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
       if (q) params.set("q", q);
       if (tag) params.set("tag", tag);
       if (missing) params.set("missing", "1");
+      if (review) params.set("review", "1");
       if (focusCard) params.set("card", focusCard);
       const res = await fetch(`/api/flashcards/decks/${deckId}/cards/page?${params}`, {
         cache: "no-store",
@@ -199,7 +204,7 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
     return () => {
       off = true;
     };
-  }, [deckId, page, q, tag, missing, focusCard, version]);
+  }, [deckId, page, q, tag, missing, review, focusCard, version]);
 
   async function openInfo() {
     if (!deck) return;
@@ -253,9 +258,38 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
     setAllMatching(false);
   }
 
-  function setFilter(next: { tag?: string; missing?: boolean }) {
+  /** An admin looked at a card's import warnings: clear them. */
+  async function markReviewed(cardId: string) {
+    const res = await fetch(`/api/flashcards/cards/${cardId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reviewed: true }),
+    }).catch(() => null);
+    if (!res?.ok) {
+      setError("Không đánh dấu được đã xem xét");
+      return;
+    }
+    reload();
+  }
+
+  const reviewNote = (card: PageCard) =>
+    (card.reviewIssues?.length ?? 0) > 0 ? (
+      <div className="mt-1 rounded-md bg-[#fffbeb] px-2 py-1 text-xs text-[#92400e] dark:bg-[#2a2008] dark:text-[#fcd34d]">
+        {card.reviewIssues!.map((m) => (
+          <span key={m} className="block">⚠ {m}</span>
+        ))}
+        {canWrite && (
+          <button type="button" onClick={() => void markReviewed(card._id)} className="mt-0.5 font-medium underline">
+            Đã xem xét
+          </button>
+        )}
+      </div>
+    ) : null;
+
+  function setFilter(next: { tag?: string; missing?: boolean; review?: boolean }) {
     if (next.tag !== undefined) setTag(next.tag);
     if (next.missing !== undefined) setMissing(next.missing);
+    if (next.review !== undefined) setReview(next.review);
     setPage(1);
     clearSelection();
   }
@@ -572,6 +606,18 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
           >
             Chưa có ví dụ{data ? ` (${data.missingExamples})` : ""}
           </button>
+          {data && (data.needsReview ?? 0) > 0 && (
+            <button
+              type="button"
+              aria-pressed={review}
+              onClick={() => setFilter({ review: !review })}
+              className={
+                btn + (review ? " border-[#f59e0b] bg-[#fffbeb] text-[#92400e] dark:bg-[#2a2008] dark:text-[#fcd34d]" : "")
+              }
+            >
+              ⚠ Cần xem xét ({data.needsReview})
+            </button>
+          )}
           {canWrite && data && data.missingExamples > 0 && (
             <RetryExamplesButton deckId={deckId} className={btn} onChanged={reload} />
           )}
@@ -620,7 +666,7 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
             </button>
           )}
           <span className="text-[var(--muted-foreground)]">
-            {total} thẻ{q || tag || missing ? " khớp bộ lọc" : ""}
+            {total} thẻ{q || tag || missing || review ? " khớp bộ lọc" : ""}
           </span>
         </div>
       )}
@@ -662,7 +708,7 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
         {loading && !data && <p className="text-sm text-[var(--muted-foreground)]">Đang tải thẻ…</p>}
         {!loading && items.length === 0 && (
           <p className="rounded-2xl border border-dashed border-[var(--border)] p-8 text-center text-sm text-[var(--muted-foreground)]">
-            {q || tag || missing ? "Không có thẻ nào khớp bộ lọc." : "Bộ này chưa có thẻ."}
+            {q || tag || missing || review ? "Không có thẻ nào khớp bộ lọc." : "Bộ này chưa có thẻ."}
           </p>
         )}
         {view === "table" && items.length > 0 && (
@@ -732,7 +778,10 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
                         </td>
                       )}
                       <td className="px-3 py-2 text-xs text-[var(--muted-foreground)]">{(page - 1) * PAGE_SIZE + i + 1}</td>
-                      <td className="px-3 py-2 text-base font-semibold text-[var(--foreground)]">{card.front}</td>
+                      <td className="px-3 py-2 text-base font-semibold text-[var(--foreground)]">
+                        {card.front}
+                        {reviewNote(card)}
+                      </td>
                       <td className="px-3 py-2 text-[var(--foreground)]">{card.reading ?? ""}</td>
                       {showHanViet && <td className="px-3 py-2 text-[var(--foreground)]">{card.hanViet ?? ""}</td>}
                       <td className="px-3 py-2 text-[var(--foreground)]">{card.back}</td>
@@ -822,6 +871,7 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
                     : undefined
                 }
                 onTagClick={(t) => setFilter({ tag: t })}
+                note={reviewNote(card)}
                 actions={
                   canWrite ? (
                     <>
