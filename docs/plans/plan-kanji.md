@@ -1,11 +1,10 @@
 # Plan — Phần học Kanji
 
-> **Ngày lập:** 06/11/2026. **Người lập:** [CC]. **Trạng thái:** Đề xuất — chờ duyệt.
-> **Chưa có code nào được viết** ở bước này (spec §2.5).
+> **Ngày lập:** 06/11/2026. **Cập nhật:** 07/11/2026. **Người lập:** [CC].
+> **Trạng thái:** MVP đã triển khai (commit `bf68798`) — phạm vi thực tế chốt theo **2.136 chữ Jōyō** (`Unihan kJoyoKanji = 2010`), phân cấp theo dải `rank` (N5: 1–120 · N4: 121–320 · N3: 321–720 · N2: 721–1200 · N1: 1201–2136), Hán Việt phủ 2.129/2.136 chữ; nghĩa tiếng Việt của từ vựng liên quan lấy từ `vocabulary`/`flashcards` có sẵn trước rồi mới dịch lười bằng AI.
 >
 > Mỗi trường và nguồn dữ liệu dưới đây đều đã được **kiểm chứng bằng cách tải
-> thật** và đo phủ sóng trên toàn bộ 2.211 kanji JLPT N5–N1. Số liệu ghi kèm là
-> kết quả đo, không phải ước lượng.
+> thật** và đo phủ sóng. Số liệu ghi kèm ở §2 là kết quả đo ban đầu trên 2.211 kanji JLPT N5–N1.
 
 ## 1. Yêu cầu
 
@@ -409,20 +408,20 @@ tạp: onyomi/kunyomi là mảng, words là mảng object, strokes không sửa 
 > duyệt, **không** thêm file `.spec.ts` — trừ P3K-03 (`hanVietNorm` là hàm thuần,
 > rẻ và dễ sai, đáng có test ngay).
 
-| ID | Mô tả | Phụ thuộc | Chứng minh | `[ ]` |
+| ID | Mô tả | Phụ thuộc | Chứng minh | TT |
 |---|---|---|---|---|
-| P3K-01 | Tách bảng Hán Việt sang `packages/shared/han-viet.json`; `apps/ui/lib/han-viet.ts` import lại, giữ API `hanViet()` | — | `pnpm --filter ui build` vẫn xanh | `[ ]` |
-| P3K-02 | Schema `Kanji` + `RelatedWord` + 4 index | P3K-01 | `kanji.schema.ts` | `[ ]` |
-| P3K-03 | Hàm chuẩn hoá `hanVietNorm` (bỏ dấu) + unit test | P3K-02 | `han-viet.norm.spec.ts` | `[ ]` |
-| P3K-04 | Script `import-kanji.mjs`: tải 3 nguồn, ghép Hán Việt 3 tầng, trích path KanjiVG; **test chặn khoá `wk_*` + không sửa `d`** | P3K-03 | `--write` trên dev DB: 2.211 doc | `[ ]` |
-| P3K-05 | `KanjiService` + public routes (`GET /kanji`, `/kanji/:char`, `/kanji/levels`) | P3K-02 | `curl '?hanViet=hoc'` → 学 | `[ ]` |
-| P3K-06 | Admin routes (`POST/PATCH/DELETE` + `hanVietNorm` tự tính) | P3K-05 | PATCH `hanViet` → `hanVietNorm` đổi theo | `[ ]` |
-| P3K-07 | AI: `purpose: "kanji"` — sinh liên tưởng + dịch nghĩa/nghĩa từ vựng, cache | P3K-05 | gọi 2 lần cùng chữ: lần 2 hit cache | `[ ]` |
+| P3K-01 | Tách bảng Hán Việt sang `packages/shared/han-viet.json`; `apps/ui/lib/han-viet.ts` import lại, giữ API `hanViet()` | — | `pnpm --filter @nihongo/ui build` xanh (`bf68798`) | `[x]` |
+| P3K-02 | Schema `Kanji` + `RelatedWord` + index (`char` unique, `{status, level, rank}`, `{status, hanVietNorm}`) | P3K-01 | `kanji.schema.ts` | `[x]` |
+| P3K-03 | Hàm chuẩn hoá `hanVietNorm` (bỏ dấu) + unit test | P3K-02 | `han-viet-norm.spec.ts` | `[x]` |
+| P3K-04 | Script `import-kanji.mjs` + `kanji-lib.mjs`: tải 3 nguồn + Unihan, ghép Hán Việt 3 tầng (2129/2136 Jōyō), trích path KanjiVG; test chặn khoá `wk_*` + không sửa `d` (`kanji-lib.spec.ts`) | P3K-03 | `kanji-lib.spec.ts` + `import-kanji.mjs` | `[x]` |
+| P3K-05 | `KanjiService` + public routes (`GET /kanji`, `/kanji/:char`, `/kanji/levels`) | P3K-02 | `kanji.controller.ts`, `kanji.service.ts` | `[x]` |
+| P3K-06 | Admin routes (`GET/POST/PATCH/DELETE /admin/kanji*` + `hanVietNorm` tự tính) | P3K-05 | `kanji.controller.ts`, `kanji.service.ts` | `[x]` |
+| P3K-07 | AI: dịch lười nghĩa từ vựng liên quan (ưu tiên `vocabulary`/`flashcards` có sẵn trước, phần thiếu gọi `translateWords`) + sinh liên tưởng | P3K-05 | đã có `fillWordMeanings` (`kanji.service.ts`); chưa có route sinh `mnemonic` riêng | `[~]` |
 | P3K-08 | Card: `kind: KANJI` + ref `kanji`; 5 deck chung N5–N1; API sinh thẻ | P3K-06, P3-CARD-02 | 1 kanji = 1 card/deck (unique) | `[ ]` |
-| P3K-09 | UI `/learn/kanji` (tab cấp + search Hán Việt) | P3K-05 | gõ "hoc" ra 学 | `[ ]` |
-| P3K-10 | UI `/learn/kanji/[char]` (animate nét vẽ + **dòng credit KanjiVG có link**) | P3K-09 | bấm chạy: 8 nét vẽ đúng thứ tự; credit hiển thị | `[ ]` |
+| P3K-09 | UI `/learn/kanji` (tab cấp + search Hán Việt) | P3K-05 | `kanji-browser.tsx` | `[x]` |
+| P3K-10 | UI `/learn/kanji/[char]` (animate nét vẽ + **dòng credit KanjiVG có link**) | P3K-09 | `kanji-detail.tsx`, `stroke-order.tsx` | `[x]` |
 | P3K-11 | UI admin `/admin/kanji` (list, form, nút AI, nút deck) | P3K-07 | sinh liên tưởng → sửa → publish | `[ ]` |
-| P3K-12 | Link Kanji ở `/learn/page.tsx`; `database.md` (collection + index + **giấy phép từng trường**); trang `/credits` ghi công EDRDG + KanjiVG | P3K-09 | đối chiếu doc với code | `[ ]` |
+| P3K-12 | Link Kanji ở `/learn/page.tsx`; `database.md` (collection + index + **giấy phép từng trường**); trang `/credits` ghi công EDRDG + KanjiVG | P3K-09 | đã thêm link ở `/learn/page.tsx` và giấy phép trong `database.md`; chưa có trang `/credits` riêng | `[~]` |
 
 **Thứ tự:** 01 → 02 → 03 → 04 (nạp data) → 05 → 06 → 07 → 08 → 09 → 10 → 11 → 12.
 

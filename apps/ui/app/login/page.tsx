@@ -62,6 +62,16 @@ export default async function LoginPage({
           Đăng nhập khu quản trị
         </Link>
       </p>
+
+      <p className="mt-4 text-center text-xs text-[var(--muted-foreground)]">
+        <Link href="/terms" className="underline hover:text-[var(--foreground)]">
+          Điều khoản sử dụng
+        </Link>
+        {" · "}
+        <Link href="/privacy" className="underline hover:text-[var(--foreground)]">
+          Chính sách bảo vệ dữ liệu cá nhân
+        </Link>
+      </p>
     </div>
   );
 }

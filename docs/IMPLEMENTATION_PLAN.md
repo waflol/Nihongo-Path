@@ -100,18 +100,18 @@ sửa** trong bước lập kế hoạch.
 `site-header.tsx`, `site-footer.tsx`, `preline.tsx` (init idempotent theo
 `usePathname`), `themes/theme.css` (palette placeholder).
 
-### 3.3. Điểm lệch đã phát hiện (chi tiết + đề xuất ở OPEN_QUESTIONS)
+### 3.3. Điểm lệch đã phát hiện lúc khảo sát P0 (đã giải quyết — chi tiết ở OPEN_QUESTIONS §C)
 
-| # | Lệch | Ảnh hưởng |
+| # | Lệch phát hiện lúc P0 | Trạng thái & cách giải quyết |
 |---|---|---|
-| L1 | ~~`apps/ui/package.json` dùng `dotenv -e .env -- …` (hỏng)~~ → **đã sửa** (commit `6a2692c`, 30/10): scripts dùng `dotenv run -f .env -- next <cmd>` (thêm dep `dotenv-cli@11`), đã kiểm chứng boot đúng `:3001` | Từng làm `pnpm dev` của UI không chạy; giờ chạy được. Còn dở: chú thích `.env.example` (L6) + hậu quả thiếu `.env` (P1-ENV-14/16) |
-| L2 | `apps/ui/envConfig.ts` tồn tại nhưng **không được import** ở đâu | file chết, gây hiểu nhầm |
-| L3 | `health.controller.ts`: `/health` lại gọi `ready()`; `/health/ready` bị comment; `@ApiOperation` trùng | sai hợp đồng endpoint so với `architecture.md` §4.2 |
-| L4 | `architecture.md` §4.1/§4.2 ghi "Jest (unit) + e2e (Supertest)" nhưng repo dùng **Vitest 4** (`vitest.config.ts`, `@vitest/coverage-v8`) | tài liệu sai — sửa ở P1-DOC-02 |
-| L5 | ~~`architecture.md` §4.4 ghi `MONGODB_URI`, code dùng `MONGODB_URL`~~ → **đã sửa trong working tree** (chưa commit): `architecture.md` + 3 file `apps/api/src` đổi sang `MONGODB_URL` | khớp code sau khi commit |
-| L6 | `apps/ui/.env.example` mô tả `node --env-file-if-exists` — cách này **thất bại** khi Next spawn lại node (`is not allowed in NODE_OPTIONS`) | chú thích sai |
-| L7 | Spec §19 dùng lại số `18.1–18.8` cho tiểu mục của §19 | trùng số mục |
-| L8 | `app.controller.ts` (`getHello()`) + `app.service.ts` vẫn trả `"Hello World!"` ở `/` (còn kèm `app.controller.spec.ts`) | rác scaffold |
+| L1 | `apps/ui/package.json` dùng `dotenv -e .env -- …` (hỏng) | `✅ Đã giải quyết` (`Q-15`): dùng `dotenv run -q -- next <cmd>` (lenient khi thiếu `.env`, tôn trọng `PORT=3001` khi có `.env`); đồng bộ `docs/development.md` §3.1 và `apps/ui/README.md` |
+| L2 | `apps/ui/envConfig.ts` tồn tại nhưng **không được import** ở đâu | `✅ Đã giải quyết` (`Q-16`): đã xoá file chết `apps/ui/envConfig.ts` |
+| L3 | `health.controller.ts`: `/health` lại gọi `ready()`; `/health/ready` bị comment; `@ApiOperation` trùng | `✅ Đã giải quyết` (`Q-18`): tách đúng `GET /health` (liveness) và `GET /health/ready` (readiness ping MongoDB, trả 200/503) khớp `architecture.md` §4.2 |
+| L4 | `architecture.md` §2/§4.1 ghi "Jest (unit) + e2e (Supertest)" nhưng repo dùng **Vitest 4** (`vitest.config.ts`, `@vitest/coverage-v8`) | `✅ Đã giải quyết` (`Q-13`): đã cập nhật `docs/architecture.md` §2 và §4.1 thành `Vitest 4 (unit + e2e, Supertest)` |
+| L5 | `architecture.md` §4.4 ghi `MONGODB_URI`, code dùng `MONGODB_URL` | `✅ Đã giải quyết` (`Q-14`): toàn bộ code và tài liệu (`architecture.md`, `database.md`, `development.md`) thống nhất dùng `MONGODB_URL` |
+| L6 | `apps/ui/.env.example` mô tả `node --env-file-if-exists` — cách này **thất bại** khi Next spawn lại node (`is not allowed in NODE_OPTIONS`) | `✅ Đã giải quyết` (`Q-15`): chú thích trong `apps/ui/.env.example` và `docs/development.md` đã đồng bộ theo `dotenv-cli` |
+| L7 | Spec §19 dùng lại số `18.1–18.8` cho tiểu mục của §19 | `✅ Đã giải quyết` (`Q-17`): đã đánh số lại thành `### 19.1.`–`### 19.8.` trong `docs/claude_japanese_learning_platform_spec_preline.md` |
+| L8 | `app.controller.ts` (`getHello()`) + `app.service.ts` vẫn trả `"Hello World!"` ở `/` | `✅ Đã giải quyết` (`Q-18`): `GET /` trả metadata `{ name, version, docs }` |
 
 ---
 
@@ -352,7 +352,7 @@ nguồn cần kiểm tra, người chịu trách nhiệm.
 | §18.2 | Yêu cầu triển khai UI | P1+ (mọi phase UI) |
 | §18.3 | Hướng dẫn [CC] về Preline | P1 |
 | §18.4 | Tiêu chí nghiệm thu UI | Mọi checkpoint phase UI + P11-A11Y-01 |
-| §18.5, §18.6, §18.7, §18.8 (bản gốc đánh nhầm số, thực chất là §19.1–19.8 — xem Q-17) | Hướng dẫn lượt 2–3, quy tắc làm việc, kiểm tra sau mỗi phase | P0 (đã thực hiện) + mọi phase (checklist cuối phase) |
+| §19.1–§19.8 (trước đây từng đánh nhầm `18.1–18.8`, đã sửa ở Q-17) | Hướng dẫn lượt 1–3, quy tắc làm việc, kiểm tra sau mỗi phase, xử lý điểm mơ hồ | P0 (đã thực hiện) + mọi phase (checklist cuối phase) |
 | §19 | Hướng dẫn khởi tạo dự án | P0 (đã thực hiện) |
 
 ---

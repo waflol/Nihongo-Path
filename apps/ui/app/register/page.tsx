@@ -3,10 +3,11 @@ import Link from "next/link";
 import { redirectIfAuthenticated } from "@/lib/auth-redirect";
 import { AuthForm } from "@/components/auth/auth-form";
 import { GoogleSignIn } from "@/components/auth/google-sign-in";
+import { siteConfig } from "../site";
 
 export const metadata: Metadata = {
   title: "Tạo tài khoản",
-  description: "Tạo tài khoản Nihongo Path bằng email để bắt đầu lộ trình học.",
+  description: `Tạo tài khoản ${siteConfig.name} bằng email để bắt đầu lộ trình học.`,
   robots: { index: false, follow: true },
 };
 
@@ -37,6 +38,18 @@ export default async function RegisterPage({
       </div>
 
       <GoogleSignIn />
+
+      <p className="mt-3 text-center text-xs leading-5 text-[var(--muted-foreground)]">
+        Khi tiếp tục bằng Google, bạn đồng ý với{" "}
+        <Link href="/terms" className="underline hover:text-[var(--foreground)]">
+          Điều khoản sử dụng
+        </Link>{" "}
+        và{" "}
+        <Link href="/privacy" className="underline hover:text-[var(--foreground)]">
+          Chính sách bảo vệ dữ liệu cá nhân
+        </Link>
+        .
+      </p>
 
       <p className="mt-6 text-center text-sm text-[var(--muted-foreground)]">
         Đã có tài khoản?{" "}

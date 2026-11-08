@@ -676,11 +676,11 @@ Nguồn cần kiểm tra: tài liệu Preline chính thức tại https://prelin
 
 ## 19. Hướng dẫn khởi tạo dự án bằng Claude Code
 
-### 18.1. Nguyên tắc
+### 19.1. Nguyên tắc
 
 Dùng Claude Code như trợ lý phát triển trong repository. Bắt đầu bằng giai đoạn **đọc và lập kế hoạch**, chưa sửa code. Chỉ cho phép triển khai khi người dùng xác nhận phạm vi cụ thể. Claude Code phải tuân thủ mục “Quy ước trách nhiệm” và “Cách làm việc bắt buộc” ở đầu tài liệu.
 
-### 18.2. Chuẩn bị
+### 19.2. Chuẩn bị
 
 1. Cài đặt và xác minh Node.js theo yêu cầu của repository/phiên bản Next.js và NestJS được lựa chọn.
 2. Cài Claude Code theo hướng dẫn cài đặt chính thức hiện hành của Anthropic; không dùng lệnh cài đặt chưa được xác minh hoặc chạy script lạ với quyền quản trị.
@@ -689,7 +689,7 @@ Dùng Claude Code như trợ lý phát triển trong repository. Bắt đầu b�
 5. Kiểm tra Git status và tạo commit/branch làm việc phù hợp trước khi cho phép thay đổi file.
 6. Không đưa API key, mật khẩu, token, thông tin thanh toán hoặc dữ liệu người dùng thật vào prompt hay repository.
 
-### 18.3. Lượt đầu: chỉ khảo sát và lập kế hoạch
+### 19.3. Lượt đầu: chỉ khảo sát và lập kế hoạch
 
 Khởi chạy Claude Code từ thư mục gốc repository, sau đó gửi prompt:
 
@@ -727,7 +727,7 @@ Trước tiên hãy báo cáo kế hoạch khảo sát, sau đó thực hiện c
 chỉ an toàn và trả về báo cáo thiết kế.
 ```
 
-### 18.4. Lượt hai: chốt kế hoạch
+### 19.4. Lượt hai: chốt kế hoạch
 
 Sau khi đọc báo cáo, người dùng quyết định phạm vi MVP và trả lời các câu hỏi chặn. Yêu cầu Claude Code cập nhật kế hoạch/ADR nhưng chưa triển khai:
 
@@ -740,7 +740,7 @@ Dựa trên báo cáo discovery và các quyết định tôi vừa xác nhận:
 Hãy dừng lại để tôi duyệt kế hoạch cuối cùng.
 ```
 
-### 18.5. Lượt ba: triển khai từng sprint
+### 19.5. Lượt ba: triển khai từng sprint
 
 Chỉ sau khi kế hoạch được duyệt, yêu cầu một phạm vi nhỏ, ví dụ:
 
@@ -768,7 +768,7 @@ Sau khi triển khai:
 Dừng trước sprint tiếp theo để tôi review.
 ```
 
-### 18.6. Quy tắc khi làm việc với Claude Code
+### 19.6. Quy tắc khi làm việc với Claude Code
 
 - Không mặc định Claude Code được phép tự triển khai toàn bộ roadmap.
 - Duyệt diff trước khi chấp nhận thay đổi; giữ thay đổi theo từng sprint nhỏ.
@@ -778,7 +778,7 @@ Dừng trước sprint tiếp theo để tôi review.
 - Khi gặp lỗi, yêu cầu Claude Code tái hiện, xác định nguyên nhân, thêm regression test phù hợp và báo cáo bằng chứng; không sửa ngẫu nhiên nhiều module.
 - Chỉ merge hoặc phát hành khi review, test, bảo mật, quyền nội dung, cấu hình production và checklist nghiệm thu đã hoàn tất.
 
-### 18.7. Kiểm tra sau mỗi sprint
+### 19.7. Kiểm tra sau mỗi sprint
 
 - [ ] Phạm vi triển khai khớp kế hoạch đã duyệt.
 - [ ] Diff đã được review; không có secrets hoặc file ngoài ý muốn.
@@ -788,7 +788,7 @@ Dừng trước sprint tiếp theo để tôi review.
 - [ ] Không bật dịch vụ trả phí, thanh toán thật hoặc quảng cáo production khi chưa được phê duyệt.
 - [ ] Có xác nhận của người dùng trước khi chuyển sprint hoặc phát hành.
 
-### 18.8. Nguồn cần xác minh
+### 19.8. Nguồn cần xác minh
 
 Claude Code phải kiểm tra tài liệu chính thức hiện hành khi hướng dẫn cài đặt và sử dụng, thay vì dựa vào lệnh hoặc phiên bản cũ:
 - Claude Code: https://docs.anthropic.com/en/docs/claude-code/overview

@@ -4,7 +4,7 @@
 > duy nhất, phụ thuộc, file/module dự kiến, tiêu chí hoàn thành kiểm chứng được
 > và cách kiểm thử.
 >
-> **Ngày lập:** 30/10/2026. Cập nhật lần cuối: 30/10/2026.
+> **Ngày lập:** 30/10/2026. Cập nhật lần cuối: 07/11/2026.
 
 ---
 
@@ -91,12 +91,12 @@ Foundation, còn việc).
 | P1-API-02 | Nạp `.env`/`.env.local` trước khi module evaluate | P1-API-01 | `src/bootstrap/env.ts` | `MONGODB_URL` có sẵn lúc `buildDatabaseModule()` chạy | kiểm tra thứ tự import | `[x]` |
 | P1-API-03 | `buildDatabaseModule()`: có URL → Mongoose fail-fast; thiếu → không đăng ký | P1-API-02 | `src/database/database.module.ts` | Hai nhánh chạy đúng | chạy với/không có URL | `[x]` |
 | P1-API-04 | `HealthService`: `health()` + `ready()` (ping, không throw) | P1-API-03 | `src/health/health.service.ts` | Trả `connected`/`unreachable`/`not-configured` | gọi trực tiếp | `[x]` |
-| P1-API-05 | `HealthController`: `GET /health`, `GET /health/ready` | P1-API-04 | `src/health/health.controller.ts` | **Hiện SAI**: `/health` gọi `ready()`; `/health/ready` bị comment; `@ApiOperation` trùng → xem P1-API-09 | đọc code | `[~]` |
+| P1-API-05 | `HealthController`: `GET /health`, `GET /health/ready` | P1-API-04 | `src/health/health.controller.ts` | Đã tách đúng liveness (`/health`) và readiness (`/health/ready`, 200/503) — xem P1-API-09 | `vitest` (`health.controller.spec.ts`) | `[x]` |
 | P1-API-06 | `HealthModule` import `buildDatabaseModule()` | P1-API-04 | `src/health/health.module.ts` | Injector có token connection | app khởi động | `[x]` |
 | P1-API-07 | `AppModule` wiring: ConfigModule global + DB + Health | P1-API-01, P1-API-06 | `src/app.module.ts` | App khởi động không lỗi DI | `node dist/main.js` | `[x]` |
 | P1-API-08 | `main.ts`: ValidationPipe global, Swagger dev/test, CORS theo `WEB_ORIGIN`, port qua ConfigService | P1-API-07 | `src/main.ts` | Swagger có ở dev, không có ở production | `NODE_ENV=production` so sánh | `[x]` |
-| P1-API-09 | **Sửa** `HealthController`: `GET /health` = liveness, `GET /health/ready` = readiness, bỏ `@ApiOperation` trùng | P1-API-05 | `src/health/health.controller.ts` | 2 endpoint trả đúng shape và status | `curl :3000/health`, `/health/ready` | `[ ]` |
-| P1-API-10 | Bỏ `AppController`/`AppService` "Hello World!" ở `/` (hoặc chuyển thành `/` trả metadata API) | P1-API-07 | `src/app.controller.ts`, `src/app.service.ts`, `src/app.module.ts` | `/` không còn trả chuỗi scaffold | `curl :3000/` | `[ ]` |
+| P1-API-09 | **Sửa** `HealthController`: `GET /health` = liveness, `GET /health/ready` = readiness, bỏ `@ApiOperation` trùng | P1-API-05 | `src/health/health.controller.ts` | 2 endpoint trả đúng shape và status (200/503) | `health.controller.spec.ts` + `app.e2e-spec.ts` | `[x]` |
+| P1-API-10 | Bỏ `AppController`/`AppService` "Hello World!" ở `/` (chuyển thành `/` trả metadata API `{ name, version, docs }`) | P1-API-07 | `src/app.controller.ts`, `src/app.service.ts`, `src/app.module.ts` | `/` trả `{ name, version, docs }` thay vì chuỗi scaffold | `app.controller.spec.ts` + `app.e2e-spec.ts` | `[x]` |
 
 ### 1.3. Scripts & env mẫu
 
@@ -106,24 +106,24 @@ Foundation, còn việc).
 | P1-ENV-09 | `apps/api/.env.example`: `PORT`, `WEB_ORIGIN`, `MONGODB_URL`, `MONGODB_URL_REQUIRED` + placeholder Redis/Auth/Google | P1-API-01 | `apps/api/.env.example` | Chỉ tên biến + giá trị minh họa, không secret thật | `git check-ignore` | `[x]` |
 | P1-ENV-10 | `apps/ui/.env.example`: `PORT`, `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_SITE_URL` | P1-ENV-01 | `apps/ui/.env.example` | Có đủ 3 biến | `cat` | `[x]` |
 | P1-ENV-11 | `apps/ui/.gitignore`: `!.env.example` | P1-ENV-10 | `apps/ui/.gitignore` | `.env.example` không bị ignore | `git check-ignore apps/ui/.env.example` → exit 1 | `[x]` |
-| P1-ENV-12 | Fix UI chạy đúng `PORT` trong `.env` | P1-ENV-10 | `apps/ui/package.json` | **Đã sửa** (commit `6a2692c`): script `dotenv run -f .env -- next <cmd>` + dep `dotenv-cli@11`; boot đúng `:3001` (đã kiểm chứng 30/10) — còn hậu quả strict khi thiếu `.env`: xem P1-ENV-14 | `pnpm --filter @nihongo/ui run dev` → log `Local: http://localhost:3001` | `[x]` |
+| P1-ENV-12 | Fix UI chạy đúng `PORT` trong `.env` | P1-ENV-10 | `apps/ui/package.json` | **Đã sửa** (commit `6a2692c` → cập nhật sang `dotenv run -q -- next <cmd>`): boot đúng `:3001` và không lỗi khi thiếu `.env` | `pnpm --filter @nihongo/ui run dev` → log `Local: http://localhost:3001` | `[x]` |
 | P1-ENV-13 | Bật CORS theo `WEB_ORIGIN` | P1-API-08 | `src/main.ts` | UI khác origin gọi được API | `curl -H "Origin: ..."` | `[x]` |
-| P1-ENV-14 | Script env UI chạy được + tôn trọng `PORT` trong `.env` — **đã làm bởi user** (commit `6a2692c`: `dotenv run -f .env -- next <cmd>` + dep `dotenv-cli@11`); [CC] kiểm chứng lại: `env -u PORT dotenv run -f .env -- next dev` → `Local: http://localhost:3001` (30/10) | P1-ENV-12 | `apps/ui/package.json` | `dev`/`build`/`start` chạy; `PORT` trong `.env` được tôn trọng (bằng chứng: boot `:3001` mà không có biến shell) | log `Local: http://localhost:3001` | `[x]` |
-| P1-ENV-15 | Xử lý `apps/ui/envConfig.ts` (không được import ở đâu): hoặc xoá, hoặc import trong `next.config.ts` cho biến không phải `PORT` | P1-ENV-14 | `apps/ui/envConfig.ts`, `apps/ui/next.config.ts` | Không còn file chết; quyết định được ghi chú | `grep -rn envConfig apps/ui --exclude-dir=node_modules` | `[ ]` |
-| P1-ENV-16 | Sửa chú thích sai trong `apps/ui/.env.example` (cách `node --env-file-if-exists` không dùng được với Next) | P1-ENV-14 | `apps/ui/.env.example` | Chú thích khớp script thật | đọc file | `[ ]` |
+| P1-ENV-14 | Script env UI chạy được + tôn trọng `PORT` trong `.env` (`dotenv run -q -- next <cmd>` + dep `dotenv-cli@11`) | P1-ENV-12 | `apps/ui/package.json` | `dev`/`build`/`start` chạy; `PORT` trong `.env` được tôn trọng; thiếu `.env` vẫn chạy được | `dotenv run -q -- node -e …` exit 0; log `Local: http://localhost:3001` | `[x]` |
+| P1-ENV-15 | Xử lý `apps/ui/envConfig.ts` (không được import ở đâu): đã xoá file chết (Q-16) | P1-ENV-14 | `apps/ui/envConfig.ts` | Không còn file chết; quyết định được ghi chú | `grep -rn envConfig apps/ui --exclude-dir=node_modules` (rỗng) | `[x]` |
+| P1-ENV-16 | Sửa chú thích sai trong `apps/ui/.env.example` (bỏ gợi ý `node --env-file-if-exists`, khớp với `dotenv run -q`) | P1-ENV-14 | `apps/ui/.env.example` | Chú thích khớp script thật | đọc `apps/ui/.env.example` | `[x]` |
 
 ### 1.4. Kiểm chứng runtime & tài liệu
 
 | ID | Task | Phụ thuộc | File/module | Hoàn thành khi | Kiểm thử | TT |
 |---|---|---|---|---|---|---|
-| P1-ENV-17 | Checkpoint build toàn monorepo | P1-ENV-14, P1-API-09, P1-API-10 | root `package.json` | Cả 3 lệnh exit 0 | `pnpm -r run typecheck`; `pnpm -r run lint`; `pnpm -r run build` | `[ ]` |
-| P1-ENV-18 | Kiểm chứng runtime backend | P1-API-09 | `apps/api/dist/main.js` | `/health` 200 `{status:"ok"}`; `/health/ready` 200 `database:"not-configured"`; `/api/docs` 200 | `node dist/main.js` + `curl` | `[ ]` |
-| P1-ENV-19 | Chứng minh fail-fast có chủ đích | P1-ENV-18 | — | Khởi động **thất bại** với lỗi rõ khi DB không tới được | `MONGODB_URL=mongodb://127.0.0.1:59999/x node dist/main.js` | `[ ]` |
-| P1-ENV-20 | Kiểm chứng UI: port, SEO, Preline | P1-ENV-14 | `apps/ui` | Log đúng `:3001`; `/robots.txt`, `/sitemap.xml` trả 200; dropdown + off-canvas hoạt động sau chuyển route (kiểm bằng browser) | `curl` + thao tác trình duyệt | `[ ]` |
-| P1-DOC-01 | Viết `docs/development.md` (chạy local, bảng env, MongoDB thật, lưu ý ESM/Preline/port) | P1-ENV-17 | `docs/development.md` | Người mới làm theo chạy được cả 2 app | làm theo tài liệu từ clone sạch | `[ ]` |
-| P1-DOC-02 | Cập nhật `architecture.md`: "Jest" → **Vitest 4** (L5 `MONGODB_URI`→`MONGODB_URL` đã sửa trong working tree, chỉ còn phần Jest ở dòng 30, 93) | P1-DOC-01 | `docs/architecture.md` | Không còn mô tả sai so với code | `grep -n "Jest\|MONGODB_URI" docs/architecture.md` | `[ ]` |
-| P1-SEC-01 | Kiểm tra secrets: `.env` bị ignore, `.env.example` không có giá trị thật | P1-ENV-11 | `.gitignore`, `apps/*/.gitignore` | Không có `.env` nào trong git | `git status --porcelain --ignored` | `[ ]` |
-| P1-OPS-01 | Root scripts điều phối đúng (`dev`, `build`, `lint`, `typecheck`) | P1-ENV-17 | root `package.json` | `pnpm dev` chạy song song 2 app | `pnpm dev` (Ctrl+C sau khi thấy log) | `[ ]` |
+| P1-ENV-17 | Checkpoint build toàn monorepo | P1-ENV-14, P1-API-09, P1-API-10 | root `package.json` | Cả 3 lệnh exit 0 | `pnpm -r run typecheck`; `pnpm -r run lint`; `pnpm -r run build` | `[x]` |
+| P1-ENV-18 | Kiểm chứng runtime backend | P1-API-09 | `apps/api/dist/main.js` | `/health` 200 `{status:"ok"}`; `/health/ready` 200 `database:"not-configured"`; `/api/docs` 200 | `node dist/main.js` + `curl` | `[x]` |
+| P1-ENV-19 | Chứng minh fail-fast có chủ đích | P1-ENV-18 | — | Khởi động **thất bại** với lỗi rõ khi DB không tới được | `MONGODB_URL=mongodb://127.0.0.1:59999/x node dist/main.js` | `[x]` |
+| P1-ENV-20 | Kiểm chứng UI: port, SEO, Preline | P1-ENV-14 | `apps/ui` | Log đúng `:3001`; `/robots.txt`, `/sitemap.xml` trả 200; dropdown + off-canvas hoạt động sau chuyển route (kiểm bằng browser) | `curl` + thao tác trình duyệt | `[x]` |
+| P1-DOC-01 | Viết `docs/development.md` (chạy local, bảng env, MongoDB thật, lưu ý ESM/Preline/port) | P1-ENV-17 | `docs/development.md` | Người mới làm theo chạy được cả 2 app | đối chiếu lệnh + bảng biến môi trường | `[x]` |
+| P1-DOC-02 | Cập nhật `architecture.md`: "Jest" → **Vitest 4** và `MONGODB_URI` → `MONGODB_URL` (Q-13, Q-14) | P1-DOC-01 | `docs/architecture.md` | Không còn mô tả sai so với code | `grep -n "Jest\|MONGODB_URI" docs/architecture.md` (rỗng) | `[x]` |
+| P1-SEC-01 | Kiểm tra secrets: `.env` bị ignore, `.env.example` không có giá trị thật | P1-ENV-11 | `.gitignore`, `apps/*/.gitignore` | Không có `.env` nào trong git | `git status --porcelain --ignored` | `[x]` |
+| P1-OPS-01 | Root scripts điều phối đúng (`dev`, `build`, `lint`, `typecheck`) | P1-ENV-17 | root `package.json` | `pnpm dev` chạy song song 2 app | đối chiếu `package.json` gốc | `[x]` |
 
 **Checkpoint P1:** P1-ENV-17 + P1-ENV-18 + P1-ENV-20 pass → báo cáo → **DỪNG**.
 Test case sinh ra: `T-P1-01` … `T-P1-06` (xem backlog).
@@ -307,11 +307,13 @@ chặn route, CRUD nội dung. Test case: `T-P2-01` … `T-P2-10`.
 >
 > **Chưa làm (còn mở):** P3-IMPORT-05 còn `[~]` (chưa bấm Xác nhận trên PDF thật);
 > P3-IMPORT-05b (PDF scan qua OCR) chưa chạy trên file scan thật.
-> **Bổ sung sau Sprint 3 (ngoài checklist gốc, 05–06/11/2026):** nhật ký/chặn IP,
-> dịch vụ AI do admin quản lý + benchmark + nhật ký gọi, cache kết quả AI, Redis console,
-> chỉ mục Tatoeba cục bộ, quản lý thẻ trong deck, giới hạn thẻ mới/ngày, thống kê
-> tiến độ, ôn chéo deck. Xem `architecture.md` §8.
-> Thao tác tay trong trình duyệt cho P3-UI-01/02/03 (build xanh + API đã
+> **Bổ sung sau Sprint 3 (ngoài checklist gốc, 05–07/11/2026):** nhật ký/chặn IP,
+> dịch vụ AI do admin quản lý + benchmark & ưu tiên theo 4 tác vụ (`translate`/`write`/`grammar`/`pronounce`) + sân thử `/admin/ai-playground` + nhật ký gọi,
+> cache kết quả AI, Redis console, chỉ mục Tatoeba cục bộ, Kanji Jōyō 2136 (xem `docs/plans/plan-kanji.md`),
+> luyện thi 問題 (`/learn/exam`), báo lỗi thẻ (`/admin/reports`), cảnh báo xem xét thẻ nhập (`reviewIssues`),
+> cho phép nhập từ để trống nghĩa (+ AI gợi ý nghĩa), lưu nháp wizard nhập qua IndexedDB,
+> quản lý thẻ trong deck, giới hạn thẻ mới/ngày, thống kê tiến độ, ôn chéo deck. Xem `architecture.md` §8.
+> Thao tác tay trong trình duyệt cho P3-UI-02/04/05 (build xanh + API đã
 > verify live, nhưng chưa bấm chuột) — sẽ bổ sung khi có môi trường
 > duyệt; **không tick `[x]` cho tới khi đó**.
 >
@@ -402,7 +404,7 @@ Test case: `T-P6-01` … `T-P6-12`.
 ## P7 — Sprint 7: Sentence Analysis & Shadowing
 
 > **Gate ⏸:** analyzer + giấy phép từ điển (Q-06), speech-eval provider (Q-04),
-> consent/retention audio (Q-16).
+> consent/retention audio (Q-24).
 
 | ID | Task | Phụ thuộc | File/module | Hoàn thành khi | Kiểm thử | TT |
 |---|---|---|---|---|---|---|
@@ -659,7 +661,7 @@ quyết định phát hành.
 
 ---
 
-## Template kiểm tra sau mỗi phase (spec §18.7)
+## Template kiểm tra sau mỗi phase (spec §19.7)
 
 - [ ] Phạm vi triển khai khớp kế hoạch đã duyệt.
 - [ ] Diff đã review; không có secrets hoặc file ngoài ý muốn.

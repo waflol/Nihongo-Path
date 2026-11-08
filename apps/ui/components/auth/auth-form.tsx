@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { isSafeFrom } from "@/lib/safe-path";
 import { emitSessionChanged } from "@/lib/session-events";
@@ -33,17 +34,28 @@ export function AuthForm({ mode, admin }: AuthFormProps) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
+    if (mode === "register" && !acceptedTerms) {
+      setError(
+        "Bạn cần đọc và đồng ý với Điều khoản sử dụng cùng Chính sách bảo vệ dữ liệu cá nhân để tạo tài khoản.",
+      );
+      return;
+    }
+
     setLoading(true);
     setError(null);
 
-    const body: Record<string, string> = { email, password };
-    if (mode === "register") body.displayName = displayName;
+    const body: Record<string, string | boolean> = { email, password };
+    if (mode === "register") {
+      body.displayName = displayName;
+      body.acceptedTerms = acceptedTerms;
+    }
 
     const res = await fetch(
       mode === "login" ? "/api/auth/login" : "/api/auth/register",
@@ -175,6 +187,50 @@ export function AuthForm({ mode, admin }: AuthFormProps) {
         )}
       </div>
 
+      {mode === "register" && (
+        <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-3.5">
+          <div className="flex items-start gap-2.5">
+            <input
+              id="acceptedTerms"
+              name="acceptedTerms"
+              type="checkbox"
+              required
+              checked={acceptedTerms}
+              onChange={(e) => {
+                setAcceptedTerms(e.target.checked);
+                if (e.target.checked && error) setError(null);
+              }}
+              className="mt-1 h-4 w-4 shrink-0 cursor-pointer rounded border-[var(--border)] accent-[var(--primary)] focus:ring-2 focus:ring-[var(--primary-focus)]"
+            />
+            <label
+              htmlFor="acceptedTerms"
+              className="cursor-pointer text-xs leading-5 text-[var(--muted-foreground)]"
+            >
+              Tôi xác nhận từ đủ 16 tuổi trở lên (hoặc có sự đồng ý của cha/mẹ/người giám hộ hợp pháp) và đã đọc, hiểu
+              rõ, đồng ý với{" "}
+              <Link
+                href="/terms"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-medium text-[var(--primary)] underline hover:text-[var(--primary-hover)]"
+              >
+                Điều khoản sử dụng
+              </Link>{" "}
+              cùng{" "}
+              <Link
+                href="/privacy"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-medium text-[var(--primary)] underline hover:text-[var(--primary-hover)]"
+              >
+                Chính sách bảo vệ dữ liệu cá nhân
+              </Link>
+              .
+            </label>
+          </div>
+        </div>
+      )}
+
       {error && (
         <p role="alert" className="rounded-lg bg-[#fef2f2] px-3 py-2 text-sm text-[#b91c1c]">
           {error}
@@ -183,7 +239,7 @@ export function AuthForm({ mode, admin }: AuthFormProps) {
 
       <button
         type="submit"
-        disabled={loading}
+        disabled={loading || (mode === "register" && !acceptedTerms)}
         className="w-full rounded-lg bg-[var(--primary)] px-4 py-2.5 text-sm font-semibold text-[var(--primary-foreground)] hover:bg-[var(--primary-hover)] disabled:cursor-not-allowed disabled:opacity-60"
       >
         {loading

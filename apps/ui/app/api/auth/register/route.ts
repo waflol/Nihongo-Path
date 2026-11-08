@@ -22,7 +22,12 @@ interface RegisterResult {
  * the public user shape. `displayName` is optional.
  */
 export async function POST(request: Request) {
-  let body: { email?: string; password?: string; displayName?: string };
+  let body: {
+    email?: string;
+    password?: string;
+    displayName?: string;
+    acceptedTerms?: boolean;
+  };
   try {
     body = await request.json();
   } catch {
@@ -32,6 +37,16 @@ export async function POST(request: Request) {
   if (!body.email || !body.password || body.password.length < 8) {
     return NextResponse.json(
       { error: "Email và mật khẩu (≥ 8 ký tự) là bắt buộc" },
+      { status: 400 },
+    );
+  }
+
+  if (body.acceptedTerms !== true) {
+    return NextResponse.json(
+      {
+        error:
+          "Bạn cần đọc và đồng ý với Điều khoản sử dụng cùng Chính sách bảo vệ dữ liệu cá nhân",
+      },
       { status: 400 },
     );
   }

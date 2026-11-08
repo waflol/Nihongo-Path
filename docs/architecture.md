@@ -1,6 +1,6 @@
 # Kiến trúc — Nihongo Path
 
-> Tài liệu kỹ thuật nội bộ. Phản ánh trạng thái đến Sprint 3 (flashcard/SRS/nhập file/AI, 06/11/2026);
+> Tài liệu kỹ thuật nội bộ. Phản ánh trạng thái đến Sprint 3+ (flashcard/SRS/nhập file/AI/Kanji, 07/11/2026);
 > §3–§4 là thiết kế bootstrap gốc, phần hiện trạng thực tế nằm ở **§8**. Mọi mục "chưa chốt"
 > đều gắn nhãn rõ. Không coi đây là cam kết phát hành.
 
@@ -17,25 +17,26 @@
 ```
 Nihongo-Path/
 ├── package.json            # root: scripts điều phối (dev/build/lint/typecheck/test)
-├── pnpm-workspace.yaml     # packages: apps/*
+├── pnpm-workspace.yaml     # packages: apps/*, packages/*
 ├── pnpm-lock.yaml          # lockfile duy nhất (root)
 ├── .nvmrc                  # Node v22.23.3 (khớp engines)
 ├── apps/
 │   ├── ui/                 # Frontend — Next.js 16 (App Router, TS, Turbopack)
-│   │   ├── app/            # routes: /, /login, /learn, /admin + metadata
-│   │   ├── components/     # components Preline, chỉ "use client" khi cần
+│   │   ├── app/            # routes: /, /login, /register, /learn/*, /admin/* + metadata
+│   │   ├── components/     # components React/Tailwind/ReactBits, chỉ "use client" khi cần
 │   │   ├── public/         # favicon, logo, og-image (placeholder, thay được)
 │   │   └── ...
 │   └── api/                # Backend — NestJS 12 (REST + Swagger)
-│       ├── src/            # modules: config, health, (mongosh)
-│       └── test/           # jest unit + e2e
-├── packages/               # shared code (types/utils) — thêm khi thực sự cần
-├── docs/                   # spec, architecture, database, checklists, development
+│       ├── src/            # modules: config, database, health, auth, users, content, flashcards, import, srs, ai, redis, logs
+│       └── test/           # Vitest 4 (unit + e2e, Supertest)
+├── packages/
+│   └── shared/             # han-viet.json (bảng 897 chữ Hán Việt dùng chung UI & API)
+├── docs/                   # spec, architecture, database, checklists, development, adr, plans
 └── .claude/                # config công cụ (settings.local.json bị gitignore)
 ```
 
-Quyết định: dùng pnpm workspace (không turborepo) — đủ cho 2 app, giảm phụ thuộc; cân nhắc
-chuyển sang turbo/nx khi có ≥3 package + build pipeline phức tạp.
+Quyết định: dùng pnpm workspace (không turborepo) — đủ cho 2 app + `packages/shared`, giảm phụ thuộc; cân nhắc
+chuyển sang turbo/nx khi có build pipeline phức tạp.
 
 ## 3. Frontend — `apps/ui`
 
@@ -45,17 +46,15 @@ chuyển sang turbo/nx khi có ≥3 package + build pipeline phức tạp.
 |---|---|---|
 | Framework | Next.js **16.4.3** | App Router, Turbopack là mặc định (stable trong v16) |
 | Ngôn ngữ | TypeScript ~5.9 | strict |
-| UI | **Preline 5.0.0** + **Tailwind 4.3.3** | Preline bắt buộc theo spec §18; dùng component/pattern Preline |
+| UI | **Tailwind 4.3.3** + **React state thuần** + **ReactBits** | Thiết kế bootstrap ban đầu dùng Preline 5.0.0; từ P2/P3 đã bỏ Preline JS, dùng React state thuần cho dropdown/modal/off-canvas và component copy-paste từ ReactBits (`components/reactbits/`, xem `development.md` §8.2) |
 | React | 19.3.0 | do scaffold Next 16 gắn |
 
 ### 3.2 Server vs Client Component
 
 - Mặc định **Server Component**. Chỉ thêm `"use client"` khi cần: state, event handler,
-  hook, hoặc component Preline JS (dropdown, offcanvas, modal, tabs…).
-- Preline v5 khởi tạo JS qua entry bundle; để tránh **double-init khi chuyển route App Router**
-  (rủi ro spec §18.2), initializer phải run guarded trong `useEffect` của client component,
-  không import module có side-effect auto-init ở scope module.
-- Không để script Preline ảnh hưởng render phía server.
+  hook, hoặc tương tác phía trình duyệt (dropdown, off-canvas, modal, tabs…).
+- Tương tác đóng/mở menu, hộp thoại dùng React state thuần (click ngoài / phím `Escape` / chuyển route để đóng), tránh phụ thuộc DOM imperative của thư viện ngoài.
+- Không để script client ảnh hưởng render phía server.
 
 ### 3.3 Cấu trúc routes bootstrap
 
@@ -91,7 +90,7 @@ chuyển sang turbo/nx khi có ≥3 package + build pipeline phức tạp.
 | DB | MongoDB via `@nestjs/mongoose` | config theo môi trường |
 | Docs | Swagger/OpenAPI | ở `/api/docs`, dev/test |
 | Validation | class-validator + class-transformer | global ValidationPipe |
-| Test | Jest (unit) + e2e (Supertest) | |
+| Test | Vitest 4 (unit + e2e, Supertest) | |
 
 ### 4.2 Cấu trúc module
 
@@ -150,18 +149,18 @@ apps/api (NestJS) ── REST + Swagger
 - Webhook: chữ ký, idempotency, retry, quota (khi bật payment).
 - Monitoring/logging/alert cho API + worker + STT/AI + storage (khi có hạ tầng thật).
 
-## 8. Hiện trạng triển khai (06/11/2026)
+## 8. Hiện trạng triển khai (07/11/2026)
 
 ### 8.1. Backend — module `apps/api/src`
 
 | Module | Vai trò |
 |---|---|
-| `auth`, `users` | Đăng nhập email/Google, JWT access + refresh xoay vòng, vai trò USER/ADMIN/SUPER_ADMIN |
-| `content` | Giáo trình, bài, từ vựng, ngữ pháp, **kanji Jōyō 2136** (CRUD admin, đọc công khai `/kanji*`) |
-| `flashcards` | Deck (cá nhân/chia sẻ), card, trùng lặp (`dedupeKey`), đọc hiragana, gợi ý ví dụ/ảnh, báo lỗi thẻ (`card-reports`), câu luyện thi 問題 (`exercise-questions`), quiz đồng nghĩa/kanji dễ nhầm, chấm câu |
-| `import` | Nhập CSV/XLSX (≤ 10 MB) và PDF bảng STT (≤ 50 MB): preview → confirm idempotent; PDF scan đọc bằng OCR (AI có hỗ trợ ảnh) chạy nền như job, cache theo hash file |
+| `auth`, `users` | Đăng nhập email/Google, JWT access + refresh xoay vòng, vai trò USER/ADMIN/SUPER_ADMIN, quản trị tài khoản (`/admin/users`) |
+| `content` | Giáo trình, bài, từ vựng, ngữ pháp, **kanji Jōyō 2136** (CRUD admin, đọc công khai `/kanji*`, dịch lười từ vựng liên quan) |
+| `flashcards` | Deck (cá nhân/chia sẻ), card, trùng lặp (`dedupeKey`), đọc hiragana, tự điền/sửa âm Hán Việt từ `packages/shared`, cảnh báo xem xét (`reviewIssues`), gợi ý ví dụ/ảnh, báo lỗi thẻ (`card-reports`), câu luyện thi 問題 (`exercise-questions`), quiz đồng nghĩa/kanji dễ nhầm, chấm câu |
+| `import` | Nhập CSV/XLSX (≤ 10 MB) và PDF bảng STT (≤ 50 MB): preview → confirm idempotent (cho phép nghĩa trống + AI gợi ý nghĩa, gắn `reviewIssues`); PDF scan đọc bằng OCR (AI có hỗ trợ ảnh) chạy nền như job, cache theo hash file, hỗ trợ huỷ job |
 | `srs` | SM-2, hàng đợi ôn theo ngày tz user, giới hạn thẻ mới/ngày (`newCardsPerDay`), thống kê tiến độ (Mongo aggregation), ôn chéo deck |
-| `ai` | Dịch vụ AI do admin quản lý (key mã hoá), benchmark, gọi song song, cache kết quả, nhật ký gọi |
+| `ai` | Dịch vụ AI do admin quản lý (key mã hoá), benchmark & thứ tự ưu tiên riêng theo 4 tác vụ (`translate`/`write`/`grammar`/`pronounce`), sân thử (`/admin/ai-playground`), gọi song song, cache kết quả, nhật ký gọi |
 | `redis` | Kết nối tuỳ chọn + console quản trị; khoá tiền tố `np:` |
 | `logs` | Log request/ứng dụng/audit, thống kê truy cập, chặn IP & rate-block |
 | `health`, `config`, `database` | Liveness/readiness, validate env, Mongo graceful-degrade |
@@ -169,15 +168,15 @@ apps/api (NestJS) ── REST + Swagger
 ### 8.2. Frontend — route `apps/ui/app`
 
 - Công khai: `/`, `/login`, `/register`.
-- Học viên: `/learn` (tiến độ), `/learn/decks`, `/learn/decks/[id]` (quản lý thẻ), `/learn/study`, `/learn/import`, `/learn/exercises` (luyện từ), `/learn/exam` (luyện thi), `/learn/kanji`, `/learn/kanji/[char]`.
-- Admin (`/admin/(panel)`): `content`, `decks`, `decks/[id]`, `import`, `users`, `ai`, `ai-activity`, `ai-playground`, `reports` (báo lỗi thẻ), `redis`, `logs`.
+- Học viên: `/learn` (tiến độ), `/learn/decks`, `/learn/decks/[id]` (quản lý thẻ, lọc thẻ thiếu ví dụ / cần xem xét), `/learn/study`, `/learn/import` (wizard giữ bản nháp qua IndexedDB `lib/import-draft.ts`), `/learn/exercises` (luyện từ), `/learn/exam` (luyện thi), `/learn/kanji`, `/learn/kanji/[char]`.
+- Admin (`/admin/login`, `/admin/(panel)`): tổng quan, `content`, `decks`, `decks/[id]`, `import`, `users`, `ai`, `ai-activity`, `ai-playground` (dịch / ngữ pháp / phát âm), `reports` (báo lỗi thẻ), `redis`, `logs`.
 - UI gọi API qua route handler proxy `app/api/*` (trình duyệt không gọi thẳng API).
 
 ### 8.3. Luồng nhập & tạo ví dụ
 
 ```
-File (CSV/XLSX/PDF) → preview (không ghi DB) → confirm (idempotent)
-   → deck + card (KHÔNG tự sinh ví dụ)
+File (CSV/XLSX/PDF) → preview (không ghi DB, AI gợi ý nghĩa nếu trống) → confirm (idempotent)
+   → deck + card (gắn reviewIssues nếu có nghi vấn; KHÔNG tự sinh ví dụ)
         → admin bấm "✨ Tạo ví dụ" → nền (server):
              1) Tatoeba cục bộ (cặp Nhật–Việt thật)
              2) câu Nhật Tatoeba + AI dịch
@@ -186,7 +185,7 @@ File (CSV/XLSX/PDF) → preview (không ghi DB) → confirm (idempotent)
 ```
 
 PDF scan (không có text layer): render từng trang PNG → dịch vụ AI có hỗ trợ ảnh
-đọc ra JSON dòng từ vựng → job nền (tiến trình, xem trang, đọc lại trang lỗi) →
+đọc ra JSON dòng từ vựng → job nền (tiến trình, xem trang, đọc lại trang lỗi, huỷ job) →
 bảng preview. Có text layer nhưng rác (OCR hỏng) → bỏ trang đó, báo lỗi rõ.
 
 Chi tiết schema: `database.md`; env & lệnh: `development.md`.

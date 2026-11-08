@@ -7,6 +7,7 @@ pnpm dev          # watch mode, http://localhost:3000
 pnpm test         # vitest
 pnpm typecheck && pnpm lint
 pnpm tatoeba:import -- --write   # nạp chỉ mục câu ví dụ Tatoeba (cần MONGODB_URL)
+pnpm kanji:import -- --write     # nạp 2136 Kanji Jōyō kèm thứ tự nét (cần MONGODB_URL)
 ```
 
 - Swagger: `/api/docs` (chỉ khi `NODE_ENV !== "production"`).

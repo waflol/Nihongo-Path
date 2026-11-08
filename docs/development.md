@@ -3,8 +3,8 @@
 > Tài liệu cho dev local. Chạy 2 app trong monorepo pnpm, cấu hình env, bật
 > MongoDB thật, và các lưu ý kỹ thuật (ESM, Preline, port, Swagger).
 >
-> **Ngày cập nhật:** 06/11/2026 (thêm env AI/Redis, nhập PDF, Tatoeba, admin AI/Redis);
-> cập nhật nhập PDF scan bằng OCR và luồng tạo ví dụ thủ công.
+> **Ngày cập nhật:** 07/11/2026 (thêm env AI/Redis, nhập PDF/OCR, Tatoeba, Kanji Jōyō,
+> benchmark & sân thử phát âm AI, cảnh báo xem xét thẻ nhập `reviewIssues`, lưu nháp wizard).
 
 ## 1. Yêu cầu tối thiểu
 
@@ -54,9 +54,9 @@ pnpm dev:api          # API → http://localhost:3000
 
 > **Lưu ý quan trọng (Next 16):** `PORT` **không thể** đặt trong `.env` để
 > Next đọc trực tiếp — Next khởi động HTTP server *trước* khi nạp env. Script
-> của UI vì vậy chạy `dotenv run -- next <cmd>` để nạp `.env` vào process trước
+> của UI vì vậy chạy `dotenv run -q -- next <cmd>` để nạp `.env` vào process trước
 > (đã kiểm chứng: `.env` có `PORT=3001` → `next dev` log `Local: http://localhost:3001`).
-> Nếu không có `.env`, `dotenv` bỏ qua và Next dùng port mặc định 3000.
+> Nếu không có `.env`, `dotenv` bỏ qua êm (`-q`) và Next dùng port mặc định 3000.
 
 ### 3.2. CORS
 
@@ -131,35 +131,39 @@ DDoS thật cần chặn ở hạ tầng (Cloudflare / nginx / firewall).
 
 #### 4.1.2. AI, Tatoeba, Redis & nhập file
 
-- **Dịch vụ AI** (Gemini/Groq/OpenRouter/NVIDIA) được admin thêm ở `/admin/ai`:
+- **Dịch vụ AI** (Gemini/Groq/OpenRouter/NVIDIA hoặc endpoint custom) được admin thêm ở `/admin/ai`:
   khoá API được mã hoá AES-256-GCM bằng `AI_KEY_SECRET` (mặc định dùng
   `JWT_ACCESS_SECRET` — **đổi secret này sẽ làm các khoá đã lưu không giải mã được**).
-  Benchmark, xếp hạng và thứ tự ưu tiên chạy **riêng cho từng tác vụ** (dịch / viết ví dụ / ngữ pháp; tab theo tác vụ ở `/admin/ai`, lịch sử 30 lần chạy mỗi tác vụ); thử theo thứ tự của tác vụ đó (thiếu thì dùng `priority` chung), tự nghỉ khi 429; các
-  request chạy song song giữa các dịch vụ. Nhật ký gọi AI xem ở `/admin/ai`
+  Benchmark, xếp hạng và thứ tự ưu tiên chạy **riêng cho 4 tác vụ** (`translate` dịch / `write` viết ví dụ / `grammar` ngữ pháp / `pronounce` phát âm; tab theo tác vụ ở `/admin/ai`, lịch sử 30 lần chạy mỗi tác vụ); thử theo thứ tự của tác vụ đó (thiếu thì dùng `priority` chung), tự nghỉ khi 429; các
+  request chạy song song giữa các dịch vụ. Sân thử ở `/admin/ai-playground` hỗ trợ thử dịch, phân tích ngữ pháp và gợi ý phát âm (hiragana, romaji, phiên âm kiểu Việt, tách từ kèm trọng âm, mẹo phát âm). Nhật ký gọi AI xem ở `/admin/ai`
   (lưu 30 ngày). `GEMINI_*` chỉ là dịch vụ dự phòng qua env.
 - **Chỉ mục Tatoeba cục bộ** (ví dụ nhanh, không gọi API ngoài):
   ```bash
   pnpm --filter @nihongo/api tatoeba:import -- --write
   ```
   Cần `MONGODB_URL`; ~35 MB dữ liệu / ~80 MB cả chỉ mục. Chưa nạp → fallback gọi API Tatoeba.
-- **Kanji Jōyō** (2136 chữ, kèm thứ tự nét): `pnpm --filter @nihongo/api kanji:import` (cần `MONGODB_URL`; xem `docs/plans/plan-kanji.md`).
+- **Kanji Jōyō** (2136 chữ, kèm thứ tự nét): `pnpm --filter @nihongo/api kanji:import -- --write` (cần `MONGODB_URL`; xem `docs/plans/plan-kanji.md`).
 - **Redis** (`REDIS_URL`, tuỳ chọn): không bắt buộc; thiếu thì bỏ qua. Console ở `/admin/redis`.
 - **Giới hạn file nhập:** CSV/XLSX ≤ **10 MB**, PDF ≤ **50 MB** (vượt → 413). PDF có text
   cần bảng có cột STT; text hỏng (OCR rác) bị phát hiện và bỏ, báo lỗi rõ.
+  - Cho phép nhập dòng **để trống nghĩa** (`back` rỗng): AI tự gợi ý nghĩa tiếng Việt khi preview/confirm (nếu có dịch vụ AI), hoặc để trống cho người học điền sau.
+  - Âm Hán Việt trống hoặc bị lệch được tự điền/sửa từ bảng chuẩn `packages/shared/han-viet.json`.
+  - Thẻ nhập có nghi vấn (nghĩa trống/do AI gợi ý, cách đọc khác kuromoji, âm Hán Việt lệch) được gắn `reviewIssues` và lọc riêng bằng nút **“⚠ Cần xem xét”** trong trang quản lý thẻ (`/admin/decks/[id]`, `/learn/decks/[id]`), bấm **“Đã xem xét”** để xoá cảnh báo.
+  - Wizard nhập lưu bản nháp vào IndexedDB (`nihongo-import-draft`) khi tải lại trang (F5) và tự xoá khi huỷ hoặc xác nhận xong.
 - **PDF scan (ảnh):** đọc bằng OCR qua dịch vụ AI có hỗ trợ ảnh (Gemini / Claude /
   GPT-4o). Chạy nền như **tác vụ** (job) nên có thể để trang rồi quay lại:
   - Trang render PNG (scale 2 ≈ 150 dpi) → gửi cho model đọc → JSON `{rows:[…]}`.
   - Tối đa **300 trang**, 3 trang đọc song song, thử lại tối đa 4 lần/trang.
   - Kết quả nhập được cache theo hash nội dung file (không OCR lại lần hai).
-  - Admin xem từng trang (ảnh gốc bên trái, dữ liệu đọc được bên phải) và đọc lại
-    trang lỗi.
+  - Admin xem từng trang (ảnh gốc bên trái, dữ liệu đọc được bên phải), đọc lại
+    trang lỗi, hoặc huỷ/xoá job (`DELETE /flashcards/import/jobs/:id`).
   - Cần có ít nhất một dịch vụ AI hỗ trợ ảnh; không có → báo lỗi rõ.
 - **Tạo ví dụ:** import **không** tự sinh ví dụ nữa. Admin bấm **“✨ Tạo ví dụ”**
-  (trang quản lý thẻ hoặc sau khi import) → chạy nền trên server, Tatoeba trước,
+  (trang quản lý thẻ hoặc sau khi import) → chạy nền trên server (có thể tạm dừng/tiếp tục/huỷ ở góc phải dưới), Tatoeba trước,
   không có thì nhờ AI. Thẻ tự sinh từ "Tạo ví dụ bằng AI" cũng có ví dụ nếu
   Tatoeba không có.
 - **Ví dụ AI không dùng:** thẻ còn trống nhưng AI **đã** trả lời cho từ đó (bị bộ
-  kiểm tra "câu có thật dùng từ này" chặn) → admin xem và thêm tay ở
+  kiểm tra "câu có thật dùng từ này" chặn, kèm lý giải) → admin xem và thêm tay ở
   `/admin/decks/[id]` (mục “AI chưa dùng”).
 
 ### 4.2. UI — `apps/ui/.env`
