@@ -85,9 +85,11 @@ export async function DELETE(request: Request) {
   if (!session.authenticated || !session.accessToken) {
     return NextResponse.json({ error: "Không đăng nhập" }, { status: 401 });
   }
-  const job = new URL(request.url).searchParams.get("job") ?? "";
+  const params = new URL(request.url).searchParams;
+  const progress = params.get("progress");
+  const job = progress ?? params.get("job") ?? "";
   if (!/^[\w-]+$/.test(job)) return NextResponse.json({ error: "job không hợp lệ" }, { status: 400 });
-  const r = await fetch(`${API_BASE_URL}/flashcards/import/jobs/${job}`, {
+  const r = await fetch(`${API_BASE_URL}/flashcards/import/${progress ? "progress" : "jobs"}/${job}`, {
     method: "DELETE",
     headers: { ...(await clientIpHeaders()), Authorization: `Bearer ${session.accessToken}` },
     cache: "no-store",
@@ -102,10 +104,11 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Không đăng nhập" }, { status: 401 });
   }
   const params = new URL(request.url).searchParams;
-  const job = params.get("job");
+  const progress = params.get("progress");
+  const job = progress ? null : params.get("job");
   const page = params.get("page");
   const deck = params.get("deck");
-  let path = job ? `jobs/${encodeURIComponent(job)}` : deck ? `decks/${encodeURIComponent(deck)}/review` : "jobs";
+  let path = params.get("tasks") ? "progress" : progress ? `progress/${encodeURIComponent(progress)}` : job ? `jobs/${encodeURIComponent(job)}` : deck ? `decks/${encodeURIComponent(deck)}/review` : "jobs";
   if (job && page && /^\d{1,4}$/.test(page)) {
     path += params.get("kind") === "image" ? `/pages/${page}/image` : `/pages/${page}`;
     if (params.get("kind") === "image") {

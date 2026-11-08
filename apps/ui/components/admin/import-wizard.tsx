@@ -151,9 +151,89 @@ export function ImportWizard({ learner = false }: { learner?: boolean }) {
   >(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
+  // Preview / confirm look readings and meanings up (database, then AI): a progress bar that can be cancelled.
+  const [aiProgress, setAiProgress] = useState<{ phase: string; done: number; total: number } | null>(null);
+  const runCtl = useRef<{ id: string; abort: AbortController; timer: ReturnType<typeof setInterval> } | null>(null);
+
+  function startRunCtl() {
+    const id = crypto.randomUUID();
+    const abort = new AbortController();
+    const timer = setInterval(() => {
+      void fetch(`/api/import?progress=${id}`, { cache: "no-store" })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((p: { phase?: string; done?: number; total?: number } | null) => {
+          if (p && p.total) setAiProgress({ phase: p.phase ?? "", done: p.done ?? 0, total: p.total });
+        })
+        .catch(() => null);
+    }, 700);
+    runCtl.current = { id, abort, timer };
+    window.dispatchEvent(new Event(JOB_STARTED_EVENT)); // the floating tracker follows this run too
+    return { id, signal: abort.signal };
+  }
+
+  function stopRunCtl() {
+    if (runCtl.current) clearInterval(runCtl.current.timer);
+    runCtl.current = null;
+    setAiProgress(null);
+  }
+
+  /** Hủy while the server is working: stop the run on the server and give up waiting. */
+  function cancelRun() {
+    const c = runCtl.current;
+    if (!c) return;
+    void fetch(`/api/import?progress=${c.id}`, { method: "DELETE" }).catch(() => null);
+    c.abort.abort();
+    stopRunCtl();
+    setRunning(null);
+  }
+
+  // Leaving the page only stops the polling here — the run itself goes on and the tracker follows it.
+  useEffect(() => () => {
+    if (runCtl.current) clearInterval(runCtl.current.timer);
+  }, []);
+
+  const runBar =
+    running !== null ? (
+      <div className="mt-3 w-full" aria-live="polite">
+        {(() => {
+          const known = !!aiProgress && aiProgress.total > 0;
+          const pct = known ? Math.round((aiProgress!.done / aiProgress!.total) * 100) : 0;
+          return (
+            <>
+              <div
+                role="progressbar"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={known ? pct : undefined}
+                className="h-2.5 overflow-hidden rounded-full bg-[var(--layer)]"
+              >
+                <div
+                  className={`h-full bg-[var(--primary)] transition-all ${known ? "" : "animate-pulse"}`}
+                  style={{ width: known ? `${Math.max(pct, 3)}%` : "100%" }}
+                />
+              </div>
+              <div className="mt-1 flex flex-wrap items-center gap-3 text-xs text-[var(--muted-foreground)]">
+                <span>
+                  {known
+                    ? `${aiProgress!.phase} ${aiProgress!.done}/${aiProgress!.total} (${pct}%)`
+                    : running === "confirm"
+                      ? "Đang nhập…"
+                      : "Đang đọc file…"}
+                </span>
+                <button type="button" onClick={cancelRun} className="font-medium text-[var(--foreground)] underline">
+                  Hủy
+                </button>
+              </div>
+            </>
+          );
+        })()}
+      </div>
+    ) : null;
+
   const search = useSearchParams();
   const wantedDeck = search.get("deck");
   const wantedJob = search.get("job");
+  const wantedTask = search.get("task"); // back from the tracker: carry on with the file that was being checked
 
   // A PDF is read in the background (OCR can take minutes): the job survives
   // leaving this page, and the global tracker notifies when it is done.
@@ -175,15 +255,16 @@ export function ImportWizard({ learner = false }: { learner?: boolean }) {
         setDeckId(d.deckId);
         setMapping(d.mapping);
         setDupPolicy(d.dupPolicy ?? "skip");
-        if (d.previewed) restoreNow.current = { mapping: d.mapping };
+        if (d.previewed || wantedTask) restoreNow.current = { mapping: d.mapping };
       }
       draftReady.current = true;
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wantedJob]);
   useEffect(() => {
     if (!file || !deckId || !restoreNow.current) return;
     restoreNow.current = null;
-    void runPreview(true);
+    void runPreview(!!(mapping.front && mapping.back));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [file, deckId]);
 
@@ -331,14 +412,16 @@ export function ImportWizard({ learner = false }: { learner?: boolean }) {
 
   // Step 2: fetch the columns for the chosen mapping (no mapping sent yet →
   // the API returns just the header row's names).
-  async function runPreview(revealed: boolean) {
+  async function runPreview(revealed: boolean, override?: Record<string, string>) {
+    const map = override ?? mapping;
     if ((!file && !jobId) || !deckId) {
       setError("Chọn file và bộ thẻ đích trước");
       return;
     }
     setRunning("preview");
     setError(null);
-    setPreview(null);
+    // From the mapping step the columns stay on screen (with the progress bar) while the rows are read.
+    if (!revealed) setPreview(null);
     setReviewed(false);
 
     // PDF → start the background read first; the preview follows when it is done.
@@ -363,20 +446,25 @@ export function ImportWizard({ learner = false }: { learner?: boolean }) {
     }
 
     const form = new FormData();
+    const ctl = startRunCtl();
+    form.append("progressId", ctl.id);
     if (jobId) form.append("jobId", jobId);
     else if (file) form.append("file", file);
     form.append("deckId", deckId);
-    if (revealed && mapping.front && mapping.back) {
+    if (revealed && map.front && map.back) {
       form.append(
         "mapping",
-        JSON.stringify(mappingPayload(mapping)),
+        JSON.stringify(mappingPayload(map)),
       );
     }
 
     const res = await fetch("/api/import?action=preview", {
       method: "POST",
       body: form,
+      signal: ctl.signal,
     }).catch(() => null);
+    if (ctl.signal.aborted) return; // cancelled by the user
+    stopRunCtl();
     setRunning(null);
     if (!res) {
       setError("Không kết nối được API");
@@ -386,12 +474,15 @@ export function ImportWizard({ learner = false }: { learner?: boolean }) {
       | (Preview & { message?: string })
       | null;
     if (!res.ok) {
+      if (res.status === 409 && data?.message === "Đã hủy") return; // cancelled from the floating tracker
       setError(data?.message ?? `Xem trước thất bại (${res.status})`);
       return;
     }
     // Auto-suggest the mapping from column names when first revealed.
+    let guessed: Record<string, string> | null = null;
     if (data && data.columns.length > 0) {
-      setMapping((m) => {
+      const m = map;
+      {
         const cols = data!.columns;
         const guess = (name: string, candidates: string[], exclude?: RegExp) => {
           const hit = cols.find(
@@ -401,7 +492,7 @@ export function ImportWizard({ learner = false }: { learner?: boolean }) {
           );
           return hit ?? "";
         };
-        return {
+        guessed = {
           front: m.front || guess("front", ["front", "term", "word", "câu hỏi", "chữ hán", "từ vựng", "kanji", "漢字"], /âm hán|hán việt/),
           back: m.back || guess("back", ["back", "meaning", "nghĩa", "đáp án"]),
           order: m.order || guess("order", ["stt", "số thứ tự"]),
@@ -414,9 +505,15 @@ export function ImportWizard({ learner = false }: { learner?: boolean }) {
             m.exampleTranslation ||
             guess("exampleTranslation", ["exampletranslation", "example_translation", "example_meaning", "nghĩa ví dụ", "dịch ví dụ"]),
         };
-      });
+      }
+      setMapping(guessed!);
     }
     setPreview(data);
+    // The draft read already checks the rows (Hán Việt, meaning, reading) when the columns are recognised.
+    if (!revealed && guessed && (guessed as Record<string, string>).front && (guessed as Record<string, string>).back) {
+      await runPreview(true, guessed);
+      return;
+    }
     // Rows came back → straight to the row-by-row review; otherwise stay on column mapping.
     const hasRows = !!data && data.rows.length > 0;
     setReviewed(hasRows);
@@ -432,6 +529,8 @@ export function ImportWizard({ learner = false }: { learner?: boolean }) {
     setError(null);
 
     const form = new FormData();
+    const ctl = startRunCtl();
+    form.append("progressId", ctl.id);
     if (jobId) form.append("jobId", jobId);
     else if (file) form.append("file", file);
     form.append("deckId", deckId);
@@ -445,7 +544,10 @@ export function ImportWizard({ learner = false }: { learner?: boolean }) {
     const res = await fetch("/api/import?action=confirm", {
       method: "POST",
       body: form,
+      signal: ctl.signal,
     }).catch(() => null);
+    if (ctl.signal.aborted) return; // cancelled by the user
+    stopRunCtl();
     setRunning(null);
     if (!res) {
       setError("Không kết nối được API");
@@ -455,6 +557,7 @@ export function ImportWizard({ learner = false }: { learner?: boolean }) {
       | (ConfirmResult & { message?: string })
       | null;
     if (!res.ok) {
+      if (res.status === 409 && data?.message === "Đã hủy") return; // cancelled from the floating tracker
       setError(data?.message ?? `Xác nhận thất bại (${res.status})`);
       return;
     }
@@ -479,6 +582,7 @@ export function ImportWizard({ learner = false }: { learner?: boolean }) {
   }
 
   function cancelImport() {
+    cancelRun();
     abandonJob();
     resetForm();
   }
@@ -701,6 +805,7 @@ export function ImportWizard({ learner = false }: { learner?: boolean }) {
             {!file && !jobId ? "Chọn file và bộ thẻ đích, rồi bấm Đọc file." : !deckId ? "Chọn bộ thẻ đích." : ""}
           </span>
         </div>
+        {runBar}
 
         {job && job.status === "running" && (
           <div className="mt-4" aria-live="polite">
@@ -799,6 +904,7 @@ export function ImportWizard({ learner = false }: { learner?: boolean }) {
             </button>
             {cancelBtn}
           </div>
+          {runBar}
         </section>
       )}
 
@@ -971,6 +1077,7 @@ export function ImportWizard({ learner = false }: { learner?: boolean }) {
                 : `Xác nhận nhập ${preview.okRows} thẻ`}
             </button>
             {cancelBtn}
+            {runBar}
             <p className="w-full text-xs text-[var(--muted-foreground)]">
               Nhập idempotent: gửi lại đúng file này không tạo thẻ trùng.
             </p>

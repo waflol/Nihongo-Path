@@ -18,6 +18,7 @@ import { TatoebaSentenceSchema } from "./schemas/tatoeba.schema.js";
 import { ReadingModule } from "./reading.module.js";
 import { ImageSuggestService } from "./image-suggest.service.js";
 import { buildAiModule } from "../ai/ai.module.js";
+import { ReadingOverridesController } from "./reading-overrides.controller.js";
 import { ExampleSuggestService } from "./example-suggest.service.js";
 import { ExerciseQuestion, ExerciseQuestionSchema } from "./schemas/exercise-question.schema.js";
 import { ExerciseQuestionsService } from "./exercise-questions.service.js";
@@ -56,7 +57,7 @@ export function buildFlashcardsModule(): DynamicModule {
         { name: CardReport.name, schema: CardReportSchema },
       ]),
     ],
-    controllers: [FlashcardsController],
+    controllers: [FlashcardsController, ReadingOverridesController],
     providers: [
       FlashcardsService,
       ImageSuggestService,

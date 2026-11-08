@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { checkHanViet, checkMeaning, suggestHanViet } from "./han-viet-suggest.js";
+import { checkHanViet, checkMeaning, norm as hvNorm, suggestHanViet } from "./han-viet-suggest.js";
 import { AiExampleService, lostKanji } from "../ai/ai-example.service.js";
 import {
   Optional,
@@ -37,6 +37,24 @@ import type { PdfJobPageDocument, PdfJobRecordDocument } from "./schemas/pdf-job
 import type { OcrRow } from "./parsers/types.js";
 
 /** What the multipart upload hands the service (multer, in-memory). */
+/** A preview / confirm run that reports progress and can be cancelled. */
+interface ImportTask {
+  id: string;
+  owner: string;
+  fileName: string;
+  deckId: string;
+  status: "running" | "done" | "error";
+  error?: string;
+  phase: string;
+  done: number;
+  total: number;
+  cancelled: boolean;
+  finishedAt?: number;
+}
+
+/** What the floating tracker shows of a run that is checking an import file. */
+export type ImportTaskView = Pick<ImportTask, "id" | "fileName" | "deckId" | "status" | "error" | "phase" | "done" | "total">;
+
 export interface UploadedImportFile {
   buffer: Buffer;
   originalname: string;
@@ -187,6 +205,8 @@ export interface ImportConfirmResult {
  * 03/11 — "Bỏ PDF ở P3").
  */
 const JOB_TTL_MS = 6 * 3600_000;
+/** How long a finished check stays listed in the tracker. */
+const TASK_KEEP_MS = 10 * 60_000;
 
 interface PdfJob {
   id: string;
@@ -1009,6 +1029,8 @@ export class ImportService implements OnApplicationBootstrap {
   ): Promise<{ reading: string; partOfSpeech: Pos; examples: CardExample[]; hanViet: string; order?: number }> {
     let reading = mapping.reading ? (row[mapping.reading] ?? "").trim() : "";
     let pos: Pos = (mapping.partOfSpeech ? normalizePos(row[mapping.partOfSpeech]) : null) ?? "";
+    // A blank reading: reuse the one already in the database, else ask the AI, else the analyser.
+    if (!reading && KANJI_RE.test(front)) reading = (await this.knownOrAiReading(front)) ?? "";
     if (!reading || !pos) {
       try {
         const guess = await this.morph.analyze(front);
@@ -1027,10 +1049,251 @@ export class ImportService implements OnApplicationBootstrap {
     // A Hán Việt cell that disagrees with the curated table (a missing / wrong syllable,
     // e.g. 一家 = "GIA") is replaced by the table's value; the review warning says so.
     const givenHv = mapping.hanViet ? (row[mapping.hanViet] ?? "").trim() : "";
-    const hanViet = !givenHv || checkHanViet(front, givenHv) ? suggestHanViet(front) || givenHv : givenHv;
+    const hanViet = this.hanVietOf(front, givenHv).value;
     const rawNo = mapping.order ? (row[mapping.order] ?? "").trim().replace(/\.$/, "") : "";
     const order = /^\d{1,6}$/.test(rawNo) ? Number(rawNo) : undefined;
     return { reading, partOfSpeech: pos, examples, hanViet, order };
+  }
+
+  private readonly readingCache = new Map<string, string | null>();
+
+  /** Run `fn` over `list` in batches, a few at a time, counting progress and stopping on cancel. */
+  private async inBatches<T>(list: T[], size: number, parallel: number, task: ImportTask | undefined, fn: (batch: T[]) => Promise<void>): Promise<void> {
+    const batches: T[][] = [];
+    for (let i = 0; i < list.length; i += size) batches.push(list.slice(i, i + size));
+    let next = 0;
+    const worker = async () => {
+      while (next < batches.length) {
+        if (task?.cancelled) throw new HttpException("Đã hủy", HttpStatus.CONFLICT);
+        const batch = batches[next++]!;
+        await fn(batch);
+        if (task) task.done = Math.min(task.done + batch.length, task.total);
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(parallel, batches.length) }, worker));
+  }
+
+  /** The AI's last check of a finished card (reading, Hán Việt, meaning) → warnings, by card content. */
+  private readonly cardCheckCache = new Map<string, string[]>();
+  private static cardKey = (front: string, reading: string, hanViet: string, back: string) => [front, reading, hanViet, back].join("\u0001");
+
+  /** Warnings the AI's last check left on this card (empty when it was fine or not checked). */
+  private aiIssues(front: string, reading: string, hanViet: string, back: string): string[] {
+    return this.cardCheckCache.get(ImportService.cardKey(front, reading, hanViet, back)) ?? [];
+  }
+
+  /**
+   * Before the rows are shown: the AI proofreads each finished card (reading,
+   * Hán Việt, meaning as they will be saved). What it finds wrong becomes a
+   * warning carrying its suggestion; the cards keep the warning once imported.
+   * Cached by card content, so preview and confirm agree. At most 300 cards a run.
+   */
+  private async verifyCards(
+    table: Table,
+    mapping: ColumnMapping,
+    extrasByRow: (Awaited<ReturnType<ImportService["extras"]>> | null)[],
+    suggested: Map<number, string>,
+    task?: ImportTask,
+  ): Promise<void> {
+    if (!this.ai) return;
+    const todo = new Map<string, { front: string; reading: string; hanViet: string; meaning: string }>();
+    // A card identical to one already in the database was checked when it came in: skip it.
+    const known = new Set<string>();
+    try {
+      const fronts = [...new Set(table.rows.map((r) => (r[mapping.front] ?? "").trim()).filter(Boolean))];
+      for (let i = 0; i < fronts.length; i += 1000) {
+        const hits = await this.card
+          .find({ front: { $in: fronts.slice(i, i + 1000) } })
+          .select("front reading hanViet back")
+          .lean()
+          .exec();
+        for (const h of hits) known.add(ImportService.cardKey(h.front, h.reading ?? "", h.hanViet ?? "", h.back));
+      }
+    } catch {
+      /* lookup failed — everything is checked */
+    }
+    table.rows.forEach((row, i) => {
+      const front = (row[mapping.front] ?? "").trim();
+      const extra = extrasByRow[i];
+      if (!front || !extra) return;
+      // A meaning the AI itself just wrote is already flagged — only a meaning from the file is checked.
+      const meaning = (row[mapping.back] ?? "").trim();
+      const shown = meaning || suggested.get(i) || "";
+      const key = ImportService.cardKey(front, extra.reading, extra.hanViet, shown);
+      if (this.cardCheckCache.has(key) || known.has(key) || todo.has(key)) return;
+      if (!extra.reading && !extra.hanViet && !meaning) return;
+      todo.set(key, { front, reading: extra.reading, hanViet: extra.hanViet, meaning });
+    });
+    const list = [...todo.entries()].slice(0, 600);
+    if (list.length === 0) return;
+    if (task) Object.assign(task, { phase: "AI đang kiểm tra lại thẻ", done: 0, total: list.length });
+    await this.inBatches(list, 15, 3, task, async (batch) => {
+      const got = await this.ai!
+        .verifyCards(batch.map(([, c], n) => ({ id: n + 1, word: c.front.replace(/[（(][^）)]*[）)]/g, "").trim(), reading: c.reading, hanViet: c.hanViet, meaning: c.meaning })))
+        .catch(() => null);
+      batch.forEach(([key, c], n) => {
+        const r = got?.get(n + 1);
+        const out: string[] = [];
+        if (r?.reading && c.reading && /^[\p{Script=Hiragana}ー]+$/u.test(r.reading) && !readingVariants(c.reading).includes(r.reading)) {
+          out.push(`cách đọc “${c.reading}” có thể chưa đúng (AI gợi ý: ${r.reading})`);
+        }
+        if (r?.hanViet && c.hanViet && hvNorm(r.hanViet) !== hvNorm(c.hanViet)) {
+          out.push(`Hán Việt “${c.hanViet}” có thể chưa đúng (AI gợi ý: ${r.hanViet})`);
+        }
+        if (r?.meaning && c.meaning && hvNorm(r.meaning) !== hvNorm(c.meaning)) {
+          out.push(`nghĩa “${c.meaning}” có thể chưa sát (AI gợi ý: ${r.meaning})`);
+        }
+        if (got) this.cardCheckCache.set(key, out);
+      });
+    });
+  }
+
+  /** AI verdicts on Hán Việt cells, keyed by "word|given" (so preview and confirm agree). */
+  private readonly hvCache = new Map<string, { ok: boolean; hanViet: string }>();
+  private static hvKey = (front: string, given: string) => `${front.replace(/[（(][^）)]*[）)]/g, "").trim()}|${given.trim()}`;
+
+  /**
+   * Hán Việt for a row: what to store and whether the file's own cell is wrong.
+   * The curated table can miss a valid alternative reading, so a disagreement
+   * (or a word the table does not know) is settled by the AI verdict if there is one.
+   */
+  private hanVietOf(front: string, given: string): { value: string; issue: string | null } {
+    const tableValue = suggestHanViet(front);
+    const v = this.hvCache.get(ImportService.hvKey(front, given));
+    if (!given.trim()) return { value: v?.hanViet || tableValue, issue: null };
+    const issue = checkHanViet(front, given);
+    if (!issue || v?.ok) return { value: given, issue: null };
+    const fixed = v?.hanViet || tableValue;
+    return { value: fixed || given, issue: fixed ? `${issue} → đã tự sửa thành ${fixed}` : issue };
+  }
+
+  /**
+   * Settle every Hán Việt cell the table cannot (cached, with progress):
+   * first a card already in the database with the same word, and only what is
+   * still open — a cell the table disagrees with, or a word it does not know —
+   * goes to the AI.
+   */
+  private async verifyHanViet(table: Table, mapping: ColumnMapping, task?: ImportTask): Promise<void> {
+    const clean = (f: string) => f.replace(/[（(][^）)]*[）)]/g, "").trim();
+    const pairs = new Map<string, { word: string; given: string }>();
+    for (const row of table.rows) {
+      const front = (row[mapping.front] ?? "").trim();
+      if (!front || !/[\u4e00-\u9fff]/.test(front)) continue;
+      const given = mapping.hanViet ? (row[mapping.hanViet] ?? "").trim() : "";
+      const key = ImportService.hvKey(front, given);
+      if (!this.hvCache.has(key)) pairs.set(key, { word: clean(front), given });
+    }
+    if (pairs.size === 0) return;
+
+    // 1. The database: a card with the same word and a Hán Việt reading.
+    const known = new Map<string, string>();
+    try {
+      const hits = await this.card
+        .find({ front: { $in: [...new Set([...pairs.values()].map((p) => p.word))] }, hanViet: { $exists: true, $ne: "" } })
+        .select("front hanViet")
+        .sort({ createdAt: -1 })
+        .lean()
+        .exec();
+      for (const h of hits) if (!known.has(clean(h.front)) && h.hanViet?.trim()) known.set(clean(h.front), h.hanViet.trim());
+    } catch {
+      /* lookup failed — the table and the AI decide */
+    }
+    const open: [string, { word: string; given: string }][] = [];
+    for (const [key, p] of pairs) {
+      const db = known.get(p.word);
+      if (db) {
+        // The database is trusted: the file's cell is fine when it is the same reading.
+        this.hvCache.set(key, { ok: !p.given || hvNorm(db) === hvNorm(p.given), hanViet: db.toLocaleUpperCase("vi") });
+      } else if (p.given ? checkHanViet(p.word, p.given) !== null : suggestHanViet(p.word) === "") {
+        open.push([key, p]);
+      }
+    }
+
+    // 2. The table could not settle these: ask the AI.
+    if (!this.ai || open.length === 0) return;
+    const list = open.slice(0, 200);
+    if (task) Object.assign(task, { phase: "Đang kiểm tra Hán Việt", done: 0, total: list.length });
+    await this.inBatches(list, 20, 3, task, async (batch) => {
+      const got = await this.ai!.checkHanViet(batch.map(([, w], n) => ({ id: n + 1, word: w.word, given: w.given }))).catch(() => null);
+      batch.forEach(([key], n) => {
+        const r = got?.get(n + 1);
+        if (r) this.hvCache.set(key, r);
+      });
+    });
+  }
+
+  /** Progress of the preview / confirm runs that call the AI (by client-chosen id). */
+  private readonly tasks = new Map<string, ImportTask>();
+
+  private beginTask(owner: string, id: string | undefined, fileName: string, deckId: string): ImportTask | undefined {
+    if (!id || !/^[\w-]{8,64}$/.test(id)) return undefined;
+    const now = Date.now();
+    for (const [k, t] of this.tasks) if (t.finishedAt && now - t.finishedAt > TASK_KEEP_MS) this.tasks.delete(k);
+    const t: ImportTask = { id, owner, fileName, deckId, status: "running", phase: "", done: 0, total: 0, cancelled: false };
+    this.tasks.set(id, t);
+    return t;
+  }
+
+  /** The run is over: the card stays a few minutes so the user can come back to it. */
+  private endTask(task: ImportTask | undefined, err?: unknown): void {
+    if (!task) return;
+    task.finishedAt = Date.now();
+    task.status = err ? "error" : "done";
+    if (err) task.error = task.cancelled ? "Đã hủy" : (err as Error).message;
+  }
+
+  /** Where a running preview / confirm is (null once forgotten or unknown). */
+  taskProgress(caller: AuthUser, id: string): { phase: string; done: number; total: number } | null {
+    const t = this.tasks.get(id);
+    return t && t.owner === caller.sub ? { phase: t.phase, done: t.done, total: t.total } : null;
+  }
+
+  /** The caller's runs that did real work (a lookup phase started) and are not cancelled. */
+  listTasks(caller: AuthUser): ImportTaskView[] {
+    return [...this.tasks.values()]
+      .filter((t) => t.owner === caller.sub && !t.cancelled && (t.total > 0 || t.status === "error"))
+      .map(({ id, fileName, deckId, status, error, phase, done, total }) => ({ id, fileName, deckId, status, error, phase, done, total }));
+  }
+
+  /** The user pressed Hủy: the run stops at its next step. */
+  cancelTask(caller: AuthUser, id: string): void {
+    const t = this.tasks.get(id);
+    if (t && t.owner === caller.sub) t.cancelled = true;
+  }
+
+  /**
+   * Reading for a word whose file gave none: a card already in the database
+   * with the same word, then the analyser, and only then the AI. Cached per word so the
+   * preview and the confirm of one file agree. `null` → caller falls back.
+   */
+  private async knownOrAiReading(front: string): Promise<string | null> {
+    const word = front.replace(/[（(][^）)]*[）)]/g, "").trim();
+    if (!word) return null;
+    if (this.readingCache.has(word)) return this.readingCache.get(word) ?? null;
+    let found: string | null = null;
+    try {
+      const hit = await this.card
+        .findOne({ front: { $in: [word, front] }, reading: { $exists: true, $ne: "" } })
+        .select("reading")
+        .lean()
+        .exec();
+      found = hit?.reading?.trim() || null;
+    } catch {
+      /* lookup failed — go on to the AI */
+    }
+    // The analyser's answer counts only when it is all kana (an unknown word leaves kanji behind).
+    if (!found) {
+      try {
+        const g = (await this.morph.analyze(word)).reading;
+        if (g && /^[\p{Script=Hiragana}ー]+$/u.test(g)) found = g;
+      } catch {
+        /* analyser unavailable — ask the AI */
+      }
+    }
+    if (!found && this.ai) found = await this.ai.suggestReading(word).catch(() => null);
+    if (this.readingCache.size > 5000) this.readingCache.clear();
+    this.readingCache.set(word, found);
+    return found;
   }
 
   /** Why a row's own (not derived) meaning / reading / Hán Việt looks wrong. */
@@ -1039,13 +1302,12 @@ export class ImportService implements OnApplicationBootstrap {
     const meaning = checkMeaning((row[mapping.back] ?? "").trim());
     if (meaning) issues.push(meaning);
     const hv = mapping.hanViet ? (row[mapping.hanViet] ?? "").trim() : "";
-    const hvIssue = checkHanViet(front, hv);
-    if (hvIssue) {
-      const fixed = suggestHanViet(front);
-      issues.push(fixed ? `${hvIssue} → đã tự sửa thành ${fixed}` : hvIssue);
-    }
+    const hvIssue = this.hanVietOf(front, hv).issue;
+    if (hvIssue) issues.push(hvIssue);
     const givenReading = mapping.reading ? (row[mapping.reading] ?? "").trim() : "";
-    if (givenReading && KANJI_RE.test(front)) {
+    // With the AI available it judges the reading (verifyCards): the analyser alone is often wrong
+    // (放っておく = ほうっておく, not はなっておく), so its disagreement is no longer a warning by itself.
+    if (givenReading && KANJI_RE.test(front) && !this.ai) {
       try {
         const guess = readingVariants((await this.morph.analyze(front.replace(/[（(][^）)]*[）)]/g, ""))).reading)[0] ?? "";
         const given = readingVariants(givenReading);
@@ -1059,6 +1321,17 @@ export class ImportService implements OnApplicationBootstrap {
     return issues;
   }
 
+  /** Existing warnings plus the AI's, skipping a field that already has a warning. */
+  private withAiIssues(issues: string[], front: string, extra: { reading: string; hanViet: string }, back: string): string[] {
+    const out = [...issues];
+    const has = (re: RegExp) => out.some((t) => re.test(t));
+    for (const t of this.aiIssues(front, extra.reading, extra.hanViet, back)) {
+      const field = /^Hán Việt/.test(t) ? /^Hán Việt/ : /^cách đọc/.test(t) ? /^cách đọc/ : /^nghĩa/;
+      if (!has(field)) out.push(t);
+    }
+    return out;
+  }
+
   private readonly meaningCache = new Map<string, string>();
 
   /**
@@ -1066,7 +1339,7 @@ export class ImportService implements OnApplicationBootstrap {
    * meaning (row index → suggestion). Cached per word so the preview and the
    * confirm of the same file agree. Best effort: no AI service → no entry.
    */
-  private async suggestMeanings(table: Table, mapping: ColumnMapping): Promise<Map<number, string>> {
+  private async suggestMeanings(table: Table, mapping: ColumnMapping, task?: ImportTask): Promise<Map<number, string>> {
     const out = new Map<number, string>();
     const wanted: { idx: number; term: string; reading: string }[] = [];
     table.rows.forEach((row, idx) => {
@@ -1076,13 +1349,34 @@ export class ImportService implements OnApplicationBootstrap {
       const reading = mapping.reading ? (row[mapping.reading] ?? "").trim() : "";
       wanted.push({ idx, term, reading });
     });
-    const todo = [...new Map(wanted.filter((w) => !this.meaningCache.has(w.term)).map((w) => [w.term, w])).values()].slice(0, 100);
+    // A word already in the database (any deck) with a meaning: reuse it, only the rest goes to the AI.
+    const fresh = [...new Map(wanted.filter((w) => !this.meaningCache.has(w.term)).map((w) => [w.term, w])).values()];
+    if (fresh.length > 0) {
+      try {
+        const hits = await this.card
+          .find({ front: { $in: fresh.map((w) => w.term) }, back: { $exists: true, $ne: "" } })
+          .select("front back")
+          .sort({ createdAt: -1 })
+          .lean()
+          .exec();
+        for (const h of hits) {
+          const t = h.front.split(/[（(]/)[0].trim();
+          if (h.back.trim() && !this.meaningCache.has(t)) this.meaningCache.set(t, h.back.trim());
+        }
+      } catch {
+        /* lookup failed — go on to the AI */
+      }
+    }
+    const todo = fresh.filter((w) => !this.meaningCache.has(w.term)).slice(0, 100);
     if (this.ai && todo.length > 0) {
+      if (task) Object.assign(task, { phase: "Đang gợi ý nghĩa", done: 0, total: todo.length });
       for (let i = 0; i < todo.length; i += 20) {
+        if (task?.cancelled) throw new HttpException("Đã hủy", HttpStatus.CONFLICT);
         const got = await this.ai
           .translateWords(todo.slice(i, i + 20).map((w) => ({ term: w.term, reading: w.reading, glossEn: "" })))
           .catch(() => null);
         got?.forEach((vi, term) => this.meaningCache.set(term, vi));
+        if (task) task.done = Math.min(i + 20, todo.length);
       }
     }
     for (const w of wanted) {
@@ -1100,7 +1394,23 @@ export class ImportService implements OnApplicationBootstrap {
   private async rowExtras(
     table: Table,
     mapping: ColumnMapping,
+    task?: ImportTask,
   ): Promise<(Awaited<ReturnType<ImportService["extras"]>> | null)[]> {
+    // Readings the file does not give: look them up (database, then AI) word by word, with progress.
+    const words = new Set<string>();
+    for (const row of table.rows) {
+      const front = (row[mapping.front] ?? "").trim();
+      if (front && KANJI_RE.test(front) && !(mapping.reading && (row[mapping.reading] ?? "").trim())) words.add(front);
+    }
+    await this.verifyHanViet(table, mapping, task);
+    if (words.size > 0) {
+      if (task) Object.assign(task, { phase: "Đang gợi ý cách đọc", done: 0, total: words.size });
+      for (const w of words) {
+        if (task?.cancelled) throw new HttpException("Đã hủy", HttpStatus.CONFLICT);
+        await this.knownOrAiReading(w);
+        if (task) task.done += 1;
+      }
+    }
     const out: (Awaited<ReturnType<ImportService["extras"]>> | null)[] = [];
     for (const row of table.rows) {
       const front = (row[mapping.front] ?? "").trim();
@@ -1185,6 +1495,25 @@ export class ImportService implements OnApplicationBootstrap {
     file: UploadedImportFile,
     deckId: string,
     mapping?: ColumnMapping,
+    progressId?: string,
+  ): Promise<ImportPreview> {
+    const task = this.beginTask(caller.sub, progressId, file.originalname, deckId);
+    try {
+      const out = await this.previewRun(caller, file, deckId, mapping, task);
+      this.endTask(task);
+      return out;
+    } catch (err) {
+      this.endTask(task, err);
+      throw err;
+    }
+  }
+
+  private async previewRun(
+    caller: AuthUser,
+    file: UploadedImportFile,
+    deckId: string,
+    mapping: ColumnMapping | undefined,
+    task?: ImportTask,
   ): Promise<ImportPreview> {
     await this.resolveWritableDeck(caller, deckId);
     const table = await this.parseTable(file);
@@ -1210,7 +1539,7 @@ export class ImportService implements OnApplicationBootstrap {
     }
 
     // Which dedupe keys already exist in the deck (one batched lookup)?
-    const extrasByRow = await this.rowExtras(table, mapping);
+    const extrasByRow = await this.rowExtras(table, mapping, task);
     const candidateKeys = table.rows.map((row, idx) =>
       cardDedupeKey(
         (row[mapping.front] ?? "").trim(),
@@ -1230,7 +1559,8 @@ export class ImportService implements OnApplicationBootstrap {
     const seenInFile = new Map<string, { no?: number; rowNumber: number; front: string; reading: string; back: string }>();
     const dupList: DuplicateInfo[] = [];
 
-    const suggested = await this.suggestMeanings(table, mapping);
+    const suggested = await this.suggestMeanings(table, mapping, task);
+    await this.verifyCards(table, mapping, extrasByRow, suggested, task);
     const rows: PreviewRow[] = [];
     let ok = 0;
     let errors = 0;
@@ -1287,7 +1617,7 @@ export class ImportService implements OnApplicationBootstrap {
         continue;
       }
 
-      const issues = await this.reviewIssues(row, mapping, rawFront);
+      const issues = this.withAiIssues(await this.reviewIssues(row, mapping, rawFront), rawFront, extra, rawBack || suggested.get(i) || "");
       rows.push({
         rowNumber: i + 2,
         front: rawFront,
@@ -1329,6 +1659,27 @@ export class ImportService implements OnApplicationBootstrap {
     mapping: ColumnMapping,
     policy: DuplicatePolicy,
     newDeck = false,
+    progressId?: string,
+  ): Promise<ImportConfirmResult> {
+    const task = this.beginTask(caller.sub, progressId, file.originalname, deckId);
+    try {
+      const out = await this.confirmRun(caller, file, deckId, mapping, policy, newDeck, task);
+      this.endTask(task);
+      return out;
+    } catch (err) {
+      this.endTask(task, err);
+      throw err;
+    }
+  }
+
+  private async confirmRun(
+    caller: AuthUser,
+    file: UploadedImportFile,
+    deckId: string,
+    mapping: ColumnMapping,
+    policy: DuplicatePolicy,
+    newDeck: boolean,
+    task?: ImportTask,
   ): Promise<ImportConfirmResult> {
     const targetDeck = await this.resolveWritableDeck(caller, deckId);
     const table = await this.parseTable(file);
@@ -1337,8 +1688,9 @@ export class ImportService implements OnApplicationBootstrap {
     }
 
     // Rebuild the exact rows the preview showed, in the same order.
-    const extrasByRow = await this.rowExtras(table, mapping);
-    const suggested = await this.suggestMeanings(table, mapping);
+    const extrasByRow = await this.rowExtras(table, mapping, task);
+    const suggested = await this.suggestMeanings(table, mapping, task);
+    await this.verifyCards(table, mapping, extrasByRow, suggested, task);
     const needsReview: NonNullable<ImportConfirmResult["needsReview"]> = [];
     const needsMeaning: NonNullable<ImportConfirmResult["needsMeaning"]> = [];
     const existing = await this.card
@@ -1402,7 +1754,7 @@ export class ImportService implements OnApplicationBootstrap {
 
       const extra = extrasByRow[rowIdx]!;
       const key = cardDedupeKey(front, back, extra.reading);
-      const reviewIssues = await this.reviewIssues(row, mapping, front);
+      const reviewIssues = this.withAiIssues(await this.reviewIssues(row, mapping, front), front, extra, back || suggested.get(rowIdx) || "");
       const doc: ImportCardDoc = {
         deck: targetDeck._id,
         front,

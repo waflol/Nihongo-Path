@@ -41,7 +41,7 @@ export function suggestHanViet(text: string): string {
   return out.join(" ");
 }
 
-const norm = (x: string) =>
+export const norm = (x: string) =>
   x
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")

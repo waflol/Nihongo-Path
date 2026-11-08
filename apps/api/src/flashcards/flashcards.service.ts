@@ -141,7 +141,12 @@ export class FlashcardsService implements OnModuleInit {
     for (const text of c.reviewIssues ?? []) {
       const field: ReviewField = /^Hán Việt/.test(text) ? "hanViet" : /^cách đọc/.test(text) ? "reading" : "back";
       let fix: string | undefined;
-      if (field === "hanViet") {
+      // A warning written by the AI's check carries its own suggestion.
+      const ai = /\(AI gợi ý: (.+)\)$/.exec(text)?.[1];
+      if (ai) {
+        const cur = field === "hanViet" ? c.hanViet : field === "reading" ? c.reading : c.back;
+        if (ai !== (cur ?? "")) fix = ai;
+      } else if (field === "hanViet") {
         const v = suggestHanViet(c.front);
         if (v && v !== (c.hanViet ?? "")) fix = v;
       } else if (field === "reading" && this.morph) {
@@ -845,6 +850,10 @@ export class FlashcardsService implements OnModuleInit {
     // Fixing the meaning / reading, or an explicit "reviewed", closes the import warnings.
     if (input.hanViet !== undefined) cardDoc.hanViet = input.hanViet.trim();
     if (input.reviewed || (input.back !== undefined && back !== "")) cardDoc.reviewIssues = [];
+    // "Bỏ qua" on a reading warning keeps the card's reading: the analyser learns it.
+    if (input.resolve === "reading" && input.reading === undefined && cardDoc.reading) {
+      void this.morph?.learn(cardDoc.front, cardDoc.reading);
+    }
     if (input.resolve) {
       const of = (t: string): ReviewField => (/^Hán Việt/.test(t) ? "hanViet" : /^cách đọc/.test(t) ? "reading" : "back");
       cardDoc.reviewIssues = (cardDoc.reviewIssues ?? []).filter((t) => of(t) !== input.resolve);

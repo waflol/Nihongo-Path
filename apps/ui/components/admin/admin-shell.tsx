@@ -95,6 +95,16 @@ const NAV: NavItem[] = [
     ),
   },
   {
+    href: "/admin/reading-overrides",
+    label: "Cách đọc đã học",
+    desc: "Từ máy phân tích đã học lại từ Bỏ qua",
+    icon: (
+      <svg {...iconProps}>
+        <path d="M4 6h10M4 12h7M4 18h10M17 8l3 3-6 6h-3v-3z" />
+      </svg>
+    ),
+  },
+  {
     href: "/admin/content",
     label: "Nội dung học",
     desc: "Giáo trình, từ vựng, ngữ pháp",

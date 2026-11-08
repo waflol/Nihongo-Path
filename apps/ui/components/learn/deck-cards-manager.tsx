@@ -294,7 +294,7 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
                     <span className="rounded-md bg-[#f59e0b]/20 px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-[#b45309] dark:text-[#fbbf24]">
                       {FIELD_LABEL[it.field]}
                     </span>
-                    <span className="text-xs text-[var(--muted-foreground)]">{it.text.replace(/ → đã tự sửa thành .*$/, "")}</span>
+                    <span className="text-xs text-[var(--muted-foreground)]">{it.text.replace(/ → đã tự sửa thành .*$/, "").replace(/ \(AI gợi ý: .*\)$/, "")}</span>
                   </div>
                   {it.fix && (
                     <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">

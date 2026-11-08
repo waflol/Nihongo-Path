@@ -1,4 +1,6 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { Injectable, Logger, Optional } from "@nestjs/common";
+import { InjectConnection } from "@nestjs/mongoose";
+import type { Connection } from "mongoose";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import kuromoji from "kuromoji";
@@ -62,6 +64,54 @@ export class ReadingService {
   private readonly logger = new Logger(ReadingService.name);
   private tokenizer: Promise<kuromoji.Tokenizer<kuromoji.IpadicFeatures>> | null = null;
 
+  constructor(@Optional() @InjectConnection() private readonly conn?: Connection) {}
+
+  /** Readings a person confirmed against the analyser (word → hiragana), loaded on first use. */
+  private overrides: Promise<Map<string, string>> | null = null;
+
+  private loadOverrides(): Promise<Map<string, string>> {
+    this.overrides ??= (async () => {
+      const m = new Map<string, string>();
+      try {
+        const rows = await this.conn?.collection("reading_overrides").find({}).toArray();
+        for (const r of rows ?? []) if (r.word && r.reading) m.set(String(r.word), String(r.reading));
+      } catch (e) {
+        this.logger.warn(`reading overrides not loaded: ${(e as Error).message}`);
+      }
+      return m;
+    })();
+    return this.overrides;
+  }
+
+  /** Every word a person fixed the reading of, newest first (admin list). */
+  async listOverrides(): Promise<{ word: string; reading: string; updatedAt?: Date }[]> {
+    const rows = await this.conn?.collection("reading_overrides").find({}).sort({ updatedAt: -1 }).toArray();
+    return (rows ?? []).map((r) => ({ word: String(r.word), reading: String(r.reading), updatedAt: r.updatedAt as Date | undefined }));
+  }
+
+  /** Take a learned reading back: the analyser reads the word its own way again. */
+  async forget(word: string): Promise<boolean> {
+    (await this.loadOverrides()).delete(word);
+    const res = await this.conn?.collection("reading_overrides").deleteOne({ word });
+    return (res?.deletedCount ?? 0) > 0;
+  }
+
+  /**
+   * The analyser got this word wrong and a person kept the card's reading
+   * ("Bỏ qua" on the warning): remember it, so the word is read that way from now on.
+   */
+  async learn(rawWord: string, reading: string): Promise<void> {
+    const word = rawWord.replace(/[（(][^）)]*[）)]/g, "").trim();
+    const r = toHiragana(reading.trim());
+    if (!word || !r || !KANJI_RE.test(word)) return;
+    (await this.loadOverrides()).set(word, r);
+    try {
+      await this.conn?.collection("reading_overrides").updateOne({ word }, { $set: { word, reading: r, updatedAt: new Date() } }, { upsert: true });
+    } catch (e) {
+      this.logger.warn(`reading override not saved: ${(e as Error).message}`);
+    }
+  }
+
   private getTokenizer() {
     if (!this.tokenizer) {
       const require = createRequire(import.meta.url);
@@ -111,6 +161,7 @@ export class ReadingService {
         return toHiragana(r);
       })
       .join("");
-    return { reading, partOfSpeech };
+    const known = (await this.loadOverrides()).get(text);
+    return { reading: known ?? reading, partOfSpeech };
   }
 }

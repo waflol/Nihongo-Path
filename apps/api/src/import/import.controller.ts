@@ -49,6 +49,8 @@ interface MultipartImportBody {
   jobId?: string;
   /** `"true"` when the wizard created the target deck for this import. */
   newDeck?: string;
+  /** Client-chosen id to poll (`GET progress/:id`) and cancel (`DELETE progress/:id`) this run. */
+  progressId?: string;
 }
 
 /**
@@ -200,7 +202,27 @@ export class ImportController {
       file ? this.asUploaded(file) : await this.imports.pdfJobFile(caller, body.jobId!),
       body.deckId,
       mapping,
+      body.progressId,
     );
+  }
+
+  @Get("progress")
+  @ApiOperation({ summary: "The caller's preview / confirm runs that look things up (for the floating tracker)" })
+  listProgress(@CurrentUser() caller: AuthUser) {
+    return this.imports.listTasks(caller);
+  }
+
+  @Get("progress/:id")
+  @ApiOperation({ summary: "Progress of a running preview / confirm (null when finished)" })
+  progress(@CurrentUser() caller: AuthUser, @Param("id") id: string) {
+    return this.imports.taskProgress(caller, id) ?? {};
+  }
+
+  @Delete("progress/:id")
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: "Cancel a running preview / confirm" })
+  cancelProgress(@CurrentUser() caller: AuthUser, @Param("id") id: string) {
+    this.imports.cancelTask(caller, id);
   }
   @Post("confirm")
   @HttpCode(HttpStatus.OK)
@@ -234,6 +256,7 @@ export class ImportController {
       mapping,
       policy,
       body.newDeck === "true",
+      body.progressId,
     );
     await this.imports.saveImportErrors(body.deckId, result.errors);
     return result;

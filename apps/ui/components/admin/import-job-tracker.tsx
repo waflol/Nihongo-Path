@@ -27,6 +27,18 @@ export interface PdfJob {
   retry?: { total: number; done: number; queue: number[] };
 }
 
+/** A preview / confirm run that is checking an import file (Hán Việt, readings, meanings). */
+export interface CheckTask {
+  id: string;
+  deckId: string;
+  fileName: string;
+  status: "running" | "done" | "error";
+  error?: string;
+  phase: string;
+  done: number;
+  total: number;
+}
+
 /** Fired by the wizard right after it starts a job, so the tracker starts polling at once. */
 export const JOB_STARTED_EVENT = "import-job-started";
 
@@ -62,6 +74,7 @@ function writeSeen(ids: string[]) {
  */
 export function ImportJobTracker() {
   const [jobs, setJobs] = useState<PdfJob[]>([]);
+  const [tasks, setTasks] = useState<CheckTask[]>([]);
   const [signedIn, setSignedIn] = useState(true);
   const notified = useRef<Set<string>>(new Set());
   const [seenIds, setSeenIds] = useState<string[]>(() => readSeen());
@@ -81,6 +94,9 @@ export function ImportJobTracker() {
     }
     const list = res.ok ? ((await res.json().catch(() => [])) as PdfJob[]) : [];
     setJobs(list);
+    const tres = await fetch("/api/import?tasks=1", { cache: "no-store" }).catch(() => null);
+    const tlist = tres?.ok ? ((await tres.json().catch(() => [])) as CheckTask[]) : [];
+    setTasks(Array.isArray(tlist) ? tlist : []);
     const initial = firstPoll.current;
     firstPoll.current = false;
     for (const j of list) {
@@ -94,7 +110,7 @@ export function ImportJobTracker() {
         }
       }
     }
-    if (list.some((j) => j.status === "running" || j.retry)) {
+    if (list.some((j) => j.status === "running" || j.retry) || (Array.isArray(tlist) && tlist.some((t) => t.status === "running"))) {
       timer.current = setTimeout(() => void pollRef.current(), POLL_MS);
     }
   }, []);
@@ -122,10 +138,70 @@ export function ImportJobTracker() {
 
   if (!signedIn) return null;
   const visible = jobs.filter((j) => j.status === "running" || j.retry || !seenIds.includes(j.id));
-  if (visible.length === 0) return null;
+  const visibleTasks = tasks.filter((t) => t.status === "running" || !seenIds.includes(t.id));
+  if (visible.length === 0 && visibleTasks.length === 0) return null;
+
+  function cancelTask(id: string) {
+    void fetch(`/api/import?progress=${encodeURIComponent(id)}`, { method: "DELETE" })
+      .catch(() => null)
+      .finally(() => window.dispatchEvent(new Event(JOB_STARTED_EVENT)));
+  }
 
   return (
     <div className="flex flex-col gap-2" aria-live="polite">
+      {visibleTasks.map((t) => {
+        const pct = t.total > 0 ? Math.round((t.done / t.total) * 100) : 0;
+        const href = `${window.location.pathname.startsWith("/learn") ? "/learn/import" : "/admin/import"}?task=${t.id}`;
+        return (
+          <div key={t.id} className="rounded-xl border border-[var(--border)] bg-[var(--background-1)] p-3 text-sm shadow-lg">
+            <div className="flex items-start justify-between gap-2">
+              <p className="min-w-0 truncate font-medium text-[var(--foreground)]" title={t.fileName}>
+                {t.fileName}
+              </p>
+              {t.status !== "running" && (
+                <button
+                  type="button"
+                  onClick={() => dismiss(t.id)}
+                  aria-label="Đóng"
+                  className="text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+            {t.status === "running" && (
+              <>
+                <div
+                  role="progressbar"
+                  aria-valuenow={pct}
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  className="mt-2 h-2 overflow-hidden rounded-full bg-[var(--layer)]"
+                >
+                  <div className="h-full bg-[var(--primary)] transition-all" style={{ width: `${Math.max(pct, 3)}%` }} />
+                </div>
+                <p className="mt-1 flex flex-wrap items-center gap-x-3 text-xs text-[var(--muted-foreground)]">
+                  <span>
+                    {t.phase} {t.done}/{t.total} ({pct}%) — bạn có thể sang trang khác
+                  </span>
+                  <button type="button" onClick={() => cancelTask(t.id)} className="font-medium text-[var(--foreground)] underline">
+                    Hủy
+                  </button>
+                </p>
+              </>
+            )}
+            {t.status === "done" && (
+              <p className="mt-1 text-xs text-[var(--muted-foreground)]">
+                Đã kiểm tra xong.{" "}
+                <Link href={href} onClick={() => dismiss(t.id)} className="font-medium text-[var(--primary)] hover:underline">
+                  Xem kết quả →
+                </Link>
+              </p>
+            )}
+            {t.status === "error" && <p className="mt-1 text-xs text-[#b91c1c]">{t.error ?? "Kiểm tra thất bại"}</p>}
+          </div>
+        );
+      })}
       {visible.map((j) => {
         const pct = j.total > 0 ? Math.round((j.done / j.total) * 100) : 0;
         const href = `${window.location.pathname.startsWith("/learn") ? "/learn/import" : "/admin/import"}?job=${j.id}`;
