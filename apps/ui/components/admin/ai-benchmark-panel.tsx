@@ -1,7 +1,7 @@
 "use client";
 
 import { AiTaskTabs } from "@/components/admin/ai-task-tabs";
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { Icon } from "@/components/learn/icons";
 import { bestOf, DEFAULT_SPEED_WEIGHT, MIN_ACCURACY, rankServices, speedScore, TASK_LABELS, type BenchTask, type Ranked } from "@/lib/ai-benchmark-score";
 
@@ -140,22 +140,30 @@ const ITEMS: Record<BenchTask, string> = { translate: "10 câu dịch", write: "
 export function AiBenchmarkPanel({
   services,
   onChanged,
+  task,
+  onTaskChange,
 }: {
   services: BenchService[];
   onChanged: () => Promise<void> | void;
+  /** Selected task, shared with the priority list above. */
+  task: BenchTask;
+  onTaskChange: (t: BenchTask) => void;
 }) {
   const [weight, setWeight] = useState(Math.round(DEFAULT_SPEED_WEIGHT * 100)); // speed share, %
   const [minAcc, setMinAcc] = useState(MIN_ACCURACY);
   const [runs, setRuns] = useState(3);
   const [sortBy, setSortBy] = useState<SortKey>("final");
-  // Each task is scored, ranked and ordered on its own.
-  const [task, setTask] = useState<BenchTask>("translate");
   const [autoSort, setAutoSort] = useState(true);
   const [running, setRunning] = useState<Set<string>>(new Set());
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [tip, setTip] = useState<Tip | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
   const [picked, setPicked] = useState<Set<string>>(new Set());
+  // The task can change from outside (priority tabs): drop selections of the old one.
+  useEffect(() => {
+    setPicked(new Set());
+    setOpenId(null);
+  }, [task]);
 
   const { rows, byId, best } = useMemo(() => {
     // Every number below is the selected task's own accuracy / latency.
@@ -259,11 +267,7 @@ export function AiBenchmarkPanel({
         className="mt-3"
         label="Loại việc"
         value={task}
-        onChange={(k) => {
-          setTask(k);
-          setPicked(new Set());
-          setOpenId(null);
-        }}
+        onChange={onTaskChange}
       />
       <p className="mt-3 text-xs text-[var(--muted-foreground)]">
         <b>Cách chấm “{TASK_LABELS[task]}”:</b> {HOW[task]} <b>Tốc độ</b> = độ trễ trung vị của lượt gọi, quy ra điểm trên thang log cố định (≤ 2s = 100, ≥ 30s = 0)

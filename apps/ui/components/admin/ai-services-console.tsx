@@ -647,6 +647,8 @@ export function AiServicesConsole() {
       <AiBenchmarkPanel
         services={services.map((s) => ({ id: s.id, label: s.label, providerName: s.providerName, model: s.model, enabled: s.enabled, benchTasks: s.benchTasks, benchHistory: s.benchHistory }))}
         onChanged={load}
+        task={task}
+        onTaskChange={setTask}
       />
 
       {/* Add from the preset list */}
