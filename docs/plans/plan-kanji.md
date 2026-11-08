@@ -1,6 +1,6 @@
 # Plan — Phần học Kanji
 
-> **Ngày lập:** 06/11/2026. **Cập nhật:** 07/11/2026. **Người lập:** [CC].
+> **Ngày lập:** 06/11/2026. **Cập nhật:** 08/11/2026. **Người lập:** [CC].
 > **Trạng thái:** MVP đã triển khai (commit `bf68798`) — phạm vi thực tế chốt theo **2.136 chữ Jōyō** (`Unihan kJoyoKanji = 2010`), phân cấp theo dải `rank` (N5: 1–120 · N4: 121–320 · N3: 321–720 · N2: 721–1200 · N1: 1201–2136), Hán Việt phủ 2.129/2.136 chữ; nghĩa tiếng Việt của từ vựng liên quan lấy từ `vocabulary`/`flashcards` có sẵn trước rồi mới dịch lười bằng AI.
 >
 > Mỗi trường và nguồn dữ liệu dưới đây đều đã được **kiểm chứng bằng cách tải

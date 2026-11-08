@@ -307,12 +307,12 @@ chặn route, CRUD nội dung. Test case: `T-P2-01` … `T-P2-10`.
 >
 > **Chưa làm (còn mở):** P3-IMPORT-05 còn `[~]` (chưa bấm Xác nhận trên PDF thật);
 > P3-IMPORT-05b (PDF scan qua OCR) chưa chạy trên file scan thật.
-> **Bổ sung sau Sprint 3 (ngoài checklist gốc, 05–07/11/2026):** nhật ký/chặn IP,
+> **Bổ sung sau Sprint 3 (ngoài checklist gốc, 05–08/11/2026):** nhật ký/chặn IP,
 > dịch vụ AI do admin quản lý + benchmark & ưu tiên theo 4 tác vụ (`translate`/`write`/`grammar`/`pronounce`) + sân thử `/admin/ai-playground` + nhật ký gọi,
 > cache kết quả AI, Redis console, chỉ mục Tatoeba cục bộ, Kanji Jōyō 2136 (xem `docs/plans/plan-kanji.md`),
-> luyện thi 問題 (`/learn/exam`), báo lỗi thẻ (`/admin/reports`), cảnh báo xem xét thẻ nhập (`reviewIssues`),
-> cho phép nhập từ để trống nghĩa (+ AI gợi ý nghĩa), lưu nháp wizard nhập qua IndexedDB,
-> quản lý thẻ trong deck, giới hạn thẻ mới/ngày, thống kê tiến độ, ôn chéo deck. Xem `architecture.md` §8.
+> luyện thi 問題 (`exercise_questions`, `/learn/exam`), báo lỗi thẻ (`cardreports`, `/admin/reports`), cảnh báo xem xét thẻ nhập (`reviewIssues`, tự điền/sửa Hán Việt từ `packages/shared/han-viet.json`),
+> cho phép nhập từ để trống nghĩa (+ AI gợi ý nghĩa), lưu nháp wizard nhập qua IndexedDB, huỷ job PDF,
+> quản lý thẻ trong deck, giới hạn thẻ mới/ngày, thống kê tiến độ, ôn chéo deck, điều khoản & bảo mật (`/terms`, `/privacy`). Xem `architecture.md` §8.
 > Thao tác tay trong trình duyệt cho P3-UI-02/04/05 (build xanh + API đã
 > verify live, nhưng chưa bấm chuột) — sẽ bổ sung khi có môi trường
 > duyệt; **không tick `[x]` cho tới khi đó**.

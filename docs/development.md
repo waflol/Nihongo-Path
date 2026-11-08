@@ -3,8 +3,8 @@
 > Tài liệu cho dev local. Chạy 2 app trong monorepo pnpm, cấu hình env, bật
 > MongoDB thật, và các lưu ý kỹ thuật (ESM, Preline, port, Swagger).
 >
-> **Ngày cập nhật:** 07/11/2026 (thêm env AI/Redis, nhập PDF/OCR, Tatoeba, Kanji Jōyō,
-> benchmark & sân thử phát âm AI, cảnh báo xem xét thẻ nhập `reviewIssues`, lưu nháp wizard).
+> **Ngày cập nhật:** 08/11/2026 (thêm env AI/Redis, nhập PDF/OCR, Tatoeba, Kanji Jōyō,
+> benchmark & sân thử phát âm AI, cảnh báo xem xét thẻ nhập `reviewIssues`, lưu nháp wizard, admin AI/Redis/reports).
 
 ## 1. Yêu cầu tối thiểu
 
@@ -148,7 +148,7 @@ DDoS thật cần chặn ở hạ tầng (Cloudflare / nginx / firewall).
   cần bảng có cột STT; text hỏng (OCR rác) bị phát hiện và bỏ, báo lỗi rõ.
   - Cho phép nhập dòng **để trống nghĩa** (`back` rỗng): AI tự gợi ý nghĩa tiếng Việt khi preview/confirm (nếu có dịch vụ AI), hoặc để trống cho người học điền sau.
   - Âm Hán Việt trống hoặc bị lệch được tự điền/sửa từ bảng chuẩn `packages/shared/han-viet.json`.
-  - Thẻ nhập có nghi vấn (nghĩa trống/do AI gợi ý, cách đọc khác kuromoji, âm Hán Việt lệch) được gắn `reviewIssues` và lọc riêng bằng nút **“⚠ Cần xem xét”** trong trang quản lý thẻ (`/admin/decks/[id]`, `/learn/decks/[id]`), bấm **“Đã xem xét”** để xoá cảnh báo.
+  - Thẻ nhập có nghi vấn (nghĩa trống/do AI gợi ý/nghi sai chính tả, cách đọc khác kuromoji, âm Hán Việt lệch) được gắn `reviewIssues` và lọc riêng bằng nút **“⚠ Cần xem xét”** (`?review=1`) trong trang quản lý thẻ (`/admin/decks/[id]`, `/learn/decks/[id]`), bấm sửa nhanh từng trường (`resolve`) hoặc **“Đã xem xét”** (`reviewed: true`) để xoá cảnh báo.
   - Wizard nhập lưu bản nháp vào IndexedDB (`nihongo-import-draft`) khi tải lại trang (F5) và tự xoá khi huỷ hoặc xác nhận xong.
 - **PDF scan (ảnh):** đọc bằng OCR qua dịch vụ AI có hỗ trợ ảnh (Gemini / Claude /
   GPT-4o). Chạy nền như **tác vụ** (job) nên có thể để trang rồi quay lại:

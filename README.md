@@ -25,7 +25,7 @@ Cấu hình env, MongoDB, tài khoản admin, AI/Redis: xem [docs/development.md
 
 ## Tài liệu
 
-- [Kiến trúc](docs/architecture.md) · [Database](docs/database.md) · [Hướng dẫn dev](docs/development.md)
+- [Kiến trúc](docs/architecture.md) · [Database](docs/database.md) · [Hướng dẫn dev](docs/development.md) · [Luồng nhập thẻ](docs/import-flow.md)
 - [ADR SRS](docs/adr/ADR-srs.md) · [ADR Auth](docs/adr/ADR-auth-provider.md) · [Kế hoạch Kanji](docs/plans/plan-kanji.md) · [Kế hoạch Mobile iOS/Android](docs/plans/plan-mobile.md)
 - [Pháp lý Việt Nam & Điều khoản Sử dụng](docs/legal-vietnam-and-terms.md)
 - [Kế hoạch](docs/IMPLEMENTATION_PLAN.md) · [Checklist](docs/IMPLEMENTATION_CHECKLIST.md) · [Câu hỏi mở](docs/OPEN_QUESTIONS.md)

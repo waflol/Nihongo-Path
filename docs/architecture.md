@@ -1,6 +1,6 @@
 # Kiến trúc — Nihongo Path
 
-> Tài liệu kỹ thuật nội bộ. Phản ánh trạng thái đến Sprint 3+ (flashcard/SRS/nhập file/AI/Kanji, 07/11/2026);
+> Tài liệu kỹ thuật nội bộ. Phản ánh trạng thái đến Sprint 3+ (flashcard/SRS/nhập file/AI/Kanji/luyện thi, 08/11/2026);
 > §3–§4 là thiết kế bootstrap gốc, phần hiện trạng thực tế nằm ở **§8**. Mọi mục "chưa chốt"
 > đều gắn nhãn rõ. Không coi đây là cam kết phát hành.
 
@@ -149,7 +149,7 @@ apps/api (NestJS) ── REST + Swagger
 - Webhook: chữ ký, idempotency, retry, quota (khi bật payment).
 - Monitoring/logging/alert cho API + worker + STT/AI + storage (khi có hạ tầng thật).
 
-## 8. Hiện trạng triển khai (07/11/2026)
+## 8. Hiện trạng triển khai (08/11/2026)
 
 ### 8.1. Backend — module `apps/api/src`
 
@@ -157,22 +157,24 @@ apps/api (NestJS) ── REST + Swagger
 |---|---|
 | `auth`, `users` | Đăng nhập email/Google, JWT access + refresh xoay vòng, vai trò USER/ADMIN/SUPER_ADMIN, quản trị tài khoản (`/admin/users`) |
 | `content` | Giáo trình, bài, từ vựng, ngữ pháp, **kanji Jōyō 2136** (CRUD admin, đọc công khai `/kanji*`, dịch lười từ vựng liên quan) |
-| `flashcards` | Deck (cá nhân/chia sẻ), card, trùng lặp (`dedupeKey`), đọc hiragana, tự điền/sửa âm Hán Việt từ `packages/shared`, cảnh báo xem xét (`reviewIssues`), gợi ý ví dụ/ảnh, báo lỗi thẻ (`card-reports`), câu luyện thi 問題 (`exercise-questions`), quiz đồng nghĩa/kanji dễ nhầm, chấm câu |
-| `import` | Nhập CSV/XLSX (≤ 10 MB) và PDF bảng STT (≤ 50 MB): preview → confirm idempotent (cho phép nghĩa trống + AI gợi ý nghĩa, gắn `reviewIssues`); PDF scan đọc bằng OCR (AI có hỗ trợ ảnh) chạy nền như job, cache theo hash file, hỗ trợ huỷ job |
+| `flashcards` | Deck (cá nhân/chia sẻ), card, trùng lặp (`dedupeKey`), đọc hiragana, tự điền/sửa âm Hán Việt từ `packages/shared`, cảnh báo xem xét (`reviewIssues`, lọc/sửa nhanh theo từng trường), gợi ý ví dụ/ảnh, báo lỗi thẻ (`card-reports`), câu luyện thi 問題 (`exercise-questions`), quiz đồng nghĩa/kanji dễ nhầm, chấm câu |
+| `import` | Nhập CSV/XLSX (≤ 10 MB) và PDF bảng STT (≤ 50 MB): preview → confirm idempotent (cho phép nghĩa trống + AI gợi ý nghĩa, tự điền & kiểm tra Hán Việt, gắn `reviewIssues`); PDF scan đọc bằng OCR (AI có hỗ trợ ảnh) chạy nền như job, cache theo hash file, hỗ trợ huỷ job (`DELETE /import/jobs/:id`) |
 | `srs` | SM-2, hàng đợi ôn theo ngày tz user, giới hạn thẻ mới/ngày (`newCardsPerDay`), thống kê tiến độ (Mongo aggregation), ôn chéo deck |
-| `ai` | Dịch vụ AI do admin quản lý (key mã hoá), benchmark & thứ tự ưu tiên riêng theo 4 tác vụ (`translate`/`write`/`grammar`/`pronounce`), sân thử (`/admin/ai-playground`), gọi song song, cache kết quả, nhật ký gọi |
+| `ai` | Dịch vụ AI do admin quản lý (key mã hoá), benchmark & thứ tự ưu tiên riêng theo 4 tác vụ (`translate`/`write`/`grammar`/`pronounce`), sân thử dịch/ngữ pháp/phát âm (`/admin/ai-playground`), gọi song song, cache kết quả, nhật ký gọi |
 | `redis` | Kết nối tuỳ chọn + console quản trị; khoá tiền tố `np:` |
 | `logs` | Log request/ứng dụng/audit, thống kê truy cập, chặn IP & rate-block |
 | `health`, `config`, `database` | Liveness/readiness, validate env, Mongo graceful-degrade |
 
 ### 8.2. Frontend — route `apps/ui/app`
 
-- Công khai: `/`, `/login`, `/register`.
+- Công khai: `/`, `/login`, `/register`, `/terms` (điều khoản), `/privacy` (bảo mật).
 - Học viên: `/learn` (tiến độ), `/learn/decks`, `/learn/decks/[id]` (quản lý thẻ, lọc thẻ thiếu ví dụ / cần xem xét), `/learn/study`, `/learn/import` (wizard giữ bản nháp qua IndexedDB `lib/import-draft.ts`), `/learn/exercises` (luyện từ), `/learn/exam` (luyện thi), `/learn/kanji`, `/learn/kanji/[char]`.
-- Admin (`/admin/login`, `/admin/(panel)`): tổng quan, `content`, `decks`, `decks/[id]`, `import`, `users`, `ai`, `ai-activity`, `ai-playground` (dịch / ngữ pháp / phát âm), `reports` (báo lỗi thẻ), `redis`, `logs`.
+- Admin (`/admin/login`, `/admin/(panel)`): tổng quan, `content`, `decks`, `decks/[id]`, `import`, `reading-overrides` (từ điển cách đọc đã học), `users`, `ai`, `ai-activity`, `ai-playground` (dịch / ngữ pháp / phát âm), `reports` (báo lỗi thẻ), `redis`, `logs`.
 - UI gọi API qua route handler proxy `app/api/*` (trình duyệt không gọi thẳng API).
 
 ### 8.3. Luồng nhập & tạo ví dụ
+
+> Chi tiết đầy đủ: [import-flow.md](./import-flow.md).
 
 ```
 File (CSV/XLSX/PDF) → preview (không ghi DB, AI gợi ý nghĩa nếu trống) → confirm (idempotent)
