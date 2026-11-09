@@ -170,6 +170,7 @@ apps/api (NestJS) ── REST + Swagger
 - Công khai: `/`, `/login`, `/register`, `/terms` (điều khoản), `/privacy` (bảo mật).
 - Học viên: `/learn` (tiến độ), `/learn/decks`, `/learn/decks/[id]` (quản lý thẻ, lọc thẻ thiếu ví dụ / cần xem xét), `/learn/study`, `/learn/import` (wizard giữ bản nháp qua IndexedDB `lib/import-draft.ts`), `/learn/exercises` (luyện từ), `/learn/exam` (luyện thi), `/learn/kanji`, `/learn/kanji/[char]`.
 - Admin (`/admin/login`, `/admin/(panel)`): tổng quan, `content`, `decks`, `decks/[id]`, `import`, `reading-overrides` (từ điển cách đọc đã học), `users`, `ai`, `ai-activity`, `ai-playground` (dịch / ngữ pháp / phát âm), `reports` (báo lỗi thẻ), `redis`, `logs`.
+- Furigana hiển thị theo từng kanji (`lib/furigana.ts`, `components/learn/furigana.tsx`): khớp phần kana của từ với cách đọc, rồi tách cách đọc của mỗi cụm kanji bằng on/kun từ `GET /kanji/readings` (xử lý rendaku, âm ngắt っ, 々); không tách được thì để một ruby cho cả từ.
 - UI gọi API qua route handler proxy `app/api/*` (trình duyệt không gọi thẳng API).
 
 ### 8.3. Luồng nhập & tạo ví dụ

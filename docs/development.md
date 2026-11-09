@@ -149,6 +149,7 @@ DDoS thật cần chặn ở hạ tầng (Cloudflare / nginx / firewall).
   - Cho phép nhập dòng **để trống nghĩa** (`back` rỗng): AI tự gợi ý nghĩa tiếng Việt khi preview/confirm (nếu có dịch vụ AI), hoặc để trống cho người học điền sau.
   - Âm Hán Việt trống hoặc bị lệch được tự điền/sửa từ bảng chuẩn `packages/shared/han-viet.json`.
   - Thẻ nhập có nghi vấn (nghĩa trống/do AI gợi ý/nghi sai chính tả, cách đọc khác kuromoji, âm Hán Việt lệch) được gắn `reviewIssues` và lọc riêng bằng nút **“⚠ Cần xem xét”** (`?review=1`) trong trang quản lý thẻ (`/admin/decks/[id]`, `/learn/decks/[id]`), bấm sửa nhanh từng trường (`resolve`) hoặc **“Đã xem xét”** (`reviewed: true`) để xoá cảnh báo.
+  - Các bước AI của import (gợi ý nghĩa/Hán Việt/cách đọc, kiểm tra lại thẻ) chỉ chạy ở bước xem trước sau ánh xạ cột; bước xác nhận không gọi AI lại. Từ loại nhận thêm `phrase` (cụm từ/thành ngữ). Chi tiết: `docs/import-flow.md`.
   - Wizard nhập lưu bản nháp vào IndexedDB (`nihongo-import-draft`) khi tải lại trang (F5) và tự xoá khi huỷ hoặc xác nhận xong.
 - **PDF scan (ảnh):** đọc bằng OCR qua dịch vụ AI có hỗ trợ ảnh (Gemini / Claude /
   GPT-4o). Chạy nền như **tác vụ** (job) nên có thể để trang rồi quay lại:

@@ -39,7 +39,7 @@ Nếu không, dừng ở bước 2 để người dùng tự chọn cột.
 ### Bước 3 — Xem trước & xác nhận
 - Bảng từng dòng với trạng thái `ok` / `error` / `duplicate`; dòng bị loại hiện trong panel lỗi.
 - Dòng có cảnh báo (`issues`) cần xem lại: nghĩa lạ, Hán Việt lệch, cách đọc lệch, nghĩa trống, nghĩa do AI gợi ý.
-- **Xác nhận nhập N thẻ** gọi `POST /flashcards/import/confirm` (cùng bộ bước tra cứu, rồi ghi thẻ).
+- **Xác nhận nhập N thẻ** gọi `POST /flashcards/import/confirm`: dựng lại đúng các dòng của preview rồi ghi thẻ. Các bước **AI** (gợi ý nghĩa / Hán Việt / cách đọc, kiểm tra lại thẻ) **chỉ chạy ở preview sau khi ánh xạ cột**; confirm chỉ dùng lại kết quả đã có trong cache + database, không gọi AI lại.
 - Trùng: luôn **bỏ qua**, không ghi đè thẻ có sẵn.
 
 ### Bước 4 — Kết quả
@@ -49,7 +49,7 @@ Nếu không, dừng ở bước 2 để người dùng tự chọn cột.
 
 ## 3. Preview / Confirm làm gì cho mỗi dòng
 
-Cả hai dùng chung một đường tính (`rowExtras` → `extras` → `suggestMeanings` → `verifyCards`) nên **cho cùng kết quả**
+Preview chạy đủ đường tính (`rowExtras` → `extras` → `suggestMeanings` → `verifyCards`, có AI); confirm chạy lại `rowExtras` + `suggestMeanings` với `useAi = false` (chỉ database / máy phân tích / cache của preview, **không gọi AI**, không chạy `verifyCards`) nên **cho cùng kết quả**
 (các cache trong server giữ kết quả theo từ / theo nội dung thẻ, không gọi AI lại).
 Nguyên tắc chung: **database trước, AI sau cùng**. Mỗi giai đoạn báo tiến độ và dừng được khi hủy.
 
@@ -66,7 +66,9 @@ Nguyên tắc chung: **database trước, AI sau cùng**. Mỗi giai đoạn bá
 5. **Kiểm tra còn lại** (`reviewIssues`): nghĩa chứa chữ Nhật / ký tự lạ / từ nghi sai chính tả; cách đọc trong file khác cách đọc máy nhận ra (chỉ khi không có AI — có AI thì AI phán đoán ở bước 4, vì máy phân tích hay đọc sai, vd 放っておく).
 6. **Trùng**: khóa `(front, back, reading)`; trùng với thẻ trong bộ hoặc dòng trước đó trong file → bỏ qua và liệt kê.
 
-Từ loại, ví dụ, STT lấy từ cột đã ánh xạ; từ loại trống thì suy từ máy phân tích.
+Từ loại, ví dụ, STT lấy từ cột đã ánh xạ; từ loại trống thì suy từ máy phân tích. Từ loại nhận: `verb` / `noun` / `adjective` / `phrase` (cụm từ, thành ngữ: `cụm từ`, `thành ngữ`, `慣用句`, `連語`, `expr`…).
+
+**Sửa ô bị tách đôi** (`repairSplitCells`, chạy trước mọi bước ở cả preview và confirm): ghi chú trong ngoặc bị cắt ngang giữa cột cách đọc và cột nghĩa (vd cách đọc `…)ふ`, nghĩa `…(sách`) được ghép lại về đúng ô; khoảng trắng chen giữa các ký tự Nhật (do PDF) được bỏ.
 
 ### Cảnh báo được báo và lưu thế nào
 - **Hiển thị**: ở bước 3 mỗi dòng có cảnh báo hiện trong danh sách "cần xem xét"; ở bước 4 liệt kê lại.
@@ -81,6 +83,7 @@ Từ loại, ví dụ, STT lấy từ cột đã ánh xạ; từ loại trống 
   - Xong: thẻ "Đã kiểm tra xong · Xem kết quả →" mở lại wizard (`?task=id`), khôi phục file / ánh xạ từ bản nháp rồi chạy lại xem trước (nhanh nhờ cache).
   - Server giữ lượt đã xong 10 phút.
 - Hủy (wizard hoặc popup): `DELETE /flashcards/import/progress/:id`, server dừng ở bước kế tiếp (trả `409 Đã hủy`, wizard bỏ qua lỗi này).
+- Thẻ job PDF đã xong: nút ✕ **xoá job khỏi database** (kèm các trang đã lưu) chứ không chỉ ẩn thẻ (`DELETE /api/import?job=`).
 - Popup chỉ hiện khi có giai đoạn tra cứu (có từ cần tra / kiểm tra). Đọc cột thuần không có số liệu: wizard hiện thanh chờ.
 - Chỉ chủ của lượt chạy mới đọc / hủy được. Tiến độ nằm trong bộ nhớ server (mất khi restart).
 - Khác với job PDF: job PDF có `GET/DELETE /import/jobs/:id`, lưu database, sống qua F5.
