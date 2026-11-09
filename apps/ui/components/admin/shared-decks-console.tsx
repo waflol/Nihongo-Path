@@ -2,11 +2,12 @@
 
 import { useConfirm } from "@/components/learn/use-confirm";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
 import { Icon } from "@/components/learn/icons";
 import { LevelBadge, LevelSelect } from "@/components/learn/level-select";
 import { CategoryChip, CategoryFilter, deckCategories } from "@/components/learn/category-filter";
-import { DeckProcessing, RetryExamplesButton, reloadDecks, useDeckProgressPolling, type DeckExamples } from "@/components/learn/deck-processing";
+import { DeckProcessing, reloadDecks, useDeckProgressPolling, type DeckExamples } from "@/components/learn/deck-processing";
 
 /**
  * Admin shared-deck management (P3-UI-04). Talks to the
@@ -40,6 +41,7 @@ const inputClass =
   "block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:border-[var(--primary-focus)] focus:outline-none focus:ring-1 focus:ring-[var(--primary-focus)]";
 
 export function SharedDecksConsole() {
+  const router = useRouter();
   const { confirm, dialog } = useConfirm();
   const [decks, setDecks] = useState<SharedDeck[]>([]);
   const [loadedFor, setLoadedFor] = useState(-1);
@@ -279,12 +281,23 @@ export function SharedDecksConsole() {
           return (
             <div
               key={deck._id}
-              className="rounded-2xl border border-[var(--border)] bg-[var(--background-1)] p-5"
+              role="link"
+              tabIndex={0}
+              onClick={(e) => {
+                if ((e.target as HTMLElement).closest("a,button,input,select,textarea,label,[role=dialog]")) return;
+                router.push(`/admin/decks/${deck._id}`);
+              }}
+              onKeyDown={(e) => {
+                if (e.target === e.currentTarget && e.key === "Enter") router.push(`/admin/decks/${deck._id}`);
+              }}
+              className="cursor-pointer rounded-2xl border border-[var(--border)] bg-[var(--background-1)] p-5 transition-colors hover:border-[var(--primary)]"
             >
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <h3 className="flex items-center gap-2 text-base font-semibold text-[var(--foreground)]">
-                    {deck.title}
+                    <Link href={`/admin/decks/${deck._id}`} className="hover:text-[var(--primary)] hover:underline">
+                      {deck.title}
+                    </Link>
                     <span
                       className={
                         "rounded-full px-2 py-0.5 text-xs font-medium " +
@@ -309,17 +322,6 @@ export function SharedDecksConsole() {
 
                 <div className="flex flex-wrap items-center justify-end gap-2">
                   <Link
-                    href={`/admin/decks/${deck._id}`}
-                    title={`Quản lý thẻ (${deck.cardCount})`}
-                    aria-label="Quản lý thẻ"
-                    className="relative inline-flex size-9 items-center justify-center rounded-lg border border-[var(--border)] text-[var(--foreground)] hover:bg-[var(--layer-hover)]"
-                  >
-                    <Icon name="list" />
-                    <span className="absolute -right-1.5 -top-1.5 min-w-4 rounded-full bg-[var(--primary)] px-1 text-center text-[10px] font-semibold leading-4 text-white">
-                      {deck.cardCount}
-                    </span>
-                  </Link>
-                  <Link
                     href={`/admin/import?deck=${deck._id}`}
                     title="Nhập file"
                     aria-label="Nhập file"
@@ -336,12 +338,6 @@ export function SharedDecksConsole() {
                   >
                     <Icon name="download" />
                   </a>
-                  <RetryExamplesButton
-                    deckId={deck._id}
-                    iconOnly
-                    className="inline-flex size-9 items-center justify-center rounded-lg border border-[var(--border)] text-[var(--foreground)] hover:bg-[var(--layer-hover)] disabled:opacity-60"
-                    onChanged={() => void reloadDecks("/api/flashcards/admin/decks", setDecks)}
-                  />
                   <button
                     type="button"
                     disabled={busy}
@@ -368,6 +364,19 @@ export function SharedDecksConsole() {
                   </button>
                 </div>
               </div>
+
+              <dl className="mt-3 flex flex-wrap gap-4 text-xs text-[var(--muted-foreground)]">
+                <div>
+                  <dt className="inline">Tổng thẻ: </dt>
+                  <dd className="inline font-semibold text-[var(--foreground)]">{deck.cardCount}</dd>
+                </div>
+                {deck.createdAt && (
+                  <div>
+                    <dt className="inline">Tạo: </dt>
+                    <dd className="inline">{new Date(deck.createdAt).toLocaleDateString("vi-VN")}</dd>
+                  </div>
+                )}
+              </dl>
 
               {deck.examples && (
                 <DeckProcessing

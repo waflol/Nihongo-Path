@@ -12,6 +12,7 @@ import {
   GrammarPoint,
   GrammarPointSchema,
 } from "../content/schemas/grammar-point.schema.js";
+import { Kanji, KanjiSchema } from "../content/schemas/kanji.schema.js";
 import { FlashcardsController } from "./flashcards.controller.js";
 import { FlashcardsService } from "./flashcards.service.js";
 import { TatoebaSentenceSchema } from "./schemas/tatoeba.schema.js";
@@ -52,6 +53,7 @@ export function buildFlashcardsModule(): DynamicModule {
         { name: UserCardProgress.name, schema: UserCardProgressSchema },
         { name: Vocabulary.name, schema: VocabularySchema },
         { name: GrammarPoint.name, schema: GrammarPointSchema },
+        { name: Kanji.name, schema: KanjiSchema },
         { name: "TatoebaSentence", schema: TatoebaSentenceSchema },
         { name: ExerciseQuestion.name, schema: ExerciseQuestionSchema },
         { name: CardReport.name, schema: CardReportSchema },

@@ -1,5 +1,5 @@
-import { hanVietFits, suggestHanViet } from "../import/han-viet-suggest.js";
-import { ReadingService } from "./reading.service.js";
+import { checkHanViet, hanVietFits, norm as hvNorm, setKanjiHanViet, suggestHanViet } from "../import/han-viet-suggest.js";
+import { ReadingService, readingVariants } from "./reading.service.js";
 import {
   BadRequestException,
   ConflictException,
@@ -26,6 +26,7 @@ import type { AuthUser } from "../auth/auth.types.js";
 import { cardDedupeKey, cardDedupeKeyForCopy } from "./dedupe.js";
 import { ExampleSuggestService } from "./example-suggest.service.js";
 import { AiResultCacheService } from "../ai/ai-result-cache.service.js";
+import type { KanjiDocument } from "../content/schemas/kanji.schema.js";
 import type { VocabularyDocument } from "../content/schemas/vocabulary.schema.js";
 import type { GrammarPointDocument } from "../content/schemas/grammar-point.schema.js";
 import type { UserCardProgressDocument } from "../srs/schemas/progress.schema.js";
@@ -129,6 +130,7 @@ export class FlashcardsService implements OnModuleInit {
     private readonly exampleSuggest: ExampleSuggestService,
     @Optional() private readonly aiCache?: AiResultCacheService,
     @Optional() private readonly morph?: ReadingService,
+    @Optional() @InjectModel("Kanji") private readonly kanji?: Model<KanjiDocument>,
   ) {}
 
   /**
@@ -942,6 +944,118 @@ export class FlashcardsService implements OnModuleInit {
       dedupeKey: key,
     });
     return { card: cardDoc, created: true };
+  }
+
+  /** Background "re-check the whole deck" runs, by deck id (in memory; progress for the floating tracker). */
+  private readonly rechecks = new Map<
+    string,
+    { deckId: string; owner: string; title: string; status: "running" | "done" | "error"; done: number; total: number; flagged: number; error?: string; cancelled?: boolean }
+  >();
+
+  /** The caller's re-check runs (running or recently finished). */
+  listRechecks(caller: AuthUser) {
+    return [...this.rechecks.values()].filter((r) => r.owner === caller.sub).map(({ owner: _o, ...r }) => r);
+  }
+
+  /** Stop the caller's running re-check of a deck (cards already checked keep their result). */
+  cancelRecheck(caller: AuthUser, deckId: string): void {
+    const j = this.rechecks.get(deckId);
+    if (!j || j.owner !== caller.sub) return;
+    if (j.status === "running") {
+      j.cancelled = true;
+      j.status = "error";
+      j.error = "Đã hủy";
+    }
+  }
+
+  /** Start re-checking a whole deck in the background; returns at once. */
+  async startRecheck(
+    caller: AuthUser,
+    deckId: string,
+    verify: (
+      items: { id: number; word: string; reading: string; hanViet: string; meaning: string }[],
+    ) => Promise<Map<number, { reading?: string; hanViet?: string; meaning?: string }> | null>,
+  ) {
+    const deck = await this.getDeck(caller, deckId);
+    if (deck.shared && !this.isAdmin(caller)) throw new ForbiddenException("Shared decks are admin-managed");
+    const key = String(deck._id);
+    const running = this.rechecks.get(key);
+    if (running?.status === "running") return { deckId: key, status: running.status, done: running.done, total: running.total, flagged: running.flagged, title: running.title };
+    const job = { deckId: key, owner: caller.sub, title: deck.title, status: "running" as "running" | "done" | "error", done: 0, total: 0, flagged: 0, error: undefined as string | undefined };
+    this.rechecks.set(key, job);
+    void this.runRecheck(job, deck._id, verify).catch((e: unknown) => {
+      job.status = "error";
+      job.error = e instanceof Error ? e.message : "Kiểm tra thất bại";
+    });
+    const { owner: _o, ...view } = job;
+    return view;
+  }
+
+  /**
+   * AI proofreading over a whole deck (reading, Hán Việt, meaning). Old AI
+   * warnings are replaced by the fresh verdicts; warnings from the import
+   * itself are kept.
+   */
+  private async runRecheck(
+    job: { status: "running" | "done" | "error"; done: number; total: number; flagged: number; error?: string; cancelled?: boolean },
+    deckOid: Types.ObjectId,
+    verify: (
+      items: { id: number; word: string; reading: string; hanViet: string; meaning: string }[],
+    ) => Promise<Map<number, { reading?: string; hanViet?: string; meaning?: string }> | null>,
+  ): Promise<void> {
+    // Hán Việt is judged by the kanji data from /admin/kanji — not by the AI.
+    try {
+      const rows = (await this.kanji?.find({ hanViet: { $exists: true, $ne: "" } }, { char: 1, hanViet: 1 }).lean().exec()) ?? [];
+      if (rows.length > 0) setKanjiHanViet(Object.fromEntries(rows.map((r) => [r.char, r.hanViet as string])));
+    } catch {
+      /* the curated table still answers */
+    }
+    const cards = await this.card.find({ deck: deckOid }).sort({ order: 1, _id: 1 }).limit(3000).exec();
+    job.total = cards.length;
+    const isAi = (t: string) => /\(AI gợi ý: /.test(t) || /^Hán Việt/.test(t); // both are re-judged here
+    for (let i = 0; i < cards.length; i += 15) {
+      if (job.cancelled) return;
+      const batch = cards.slice(i, i + 15);
+      const got = await verify(
+        batch.map((c, n) => ({
+          id: n + 1,
+          word: c.front.replace(/[（(][^）)]*[）)]/g, "").trim(),
+          reading: c.reading ?? "",
+          hanViet: c.hanViet ?? "",
+          meaning: c.back ?? "",
+        })),
+      ).catch(() => null);
+      if (job.cancelled) return;
+      if (!got) {
+        job.status = "error";
+        job.error = "AI không phản hồi — thử lại sau";
+        return;
+      }
+      for (const [n, c] of batch.entries()) {
+        const r = got.get(n + 1);
+        const out: string[] = [];
+        const reading = c.reading ?? "";
+        const hanViet = c.hanViet ?? "";
+        const meaning = c.back ?? "";
+        if (r?.reading && reading && /^[\p{Script=Hiragana}ー]+$/u.test(r.reading) && !readingVariants(reading).includes(r.reading)) {
+          out.push(`cách đọc “${reading}” có thể chưa đúng (AI gợi ý: ${r.reading})`);
+        }
+        const hvIssue = hanViet ? checkHanViet(c.front, hanViet) : null;
+        if (hvIssue) out.push(hvIssue);
+        if (r?.meaning && meaning && hvNorm(r.meaning) !== hvNorm(meaning)) {
+          out.push(`nghĩa “${meaning}” có thể chưa sát (AI gợi ý: ${r.meaning})`);
+        }
+        const kept = (c.reviewIssues ?? []).filter((t) => !isAi(t));
+        const field = (t: string) => (/^Hán Việt/.test(t) ? "hv" : /^cách đọc/.test(t) ? "rd" : "bk");
+        const next = [...kept, ...out.filter((t) => !kept.some((k) => field(k) === field(t)))];
+        if (out.length > 0) job.flagged++;
+        if (next.join("\n") !== (c.reviewIssues ?? []).join("\n")) {
+          await this.card.updateOne({ _id: c._id }, { $set: { reviewIssues: next } }).exec();
+        }
+      }
+      job.done = Math.min(i + 15, cards.length);
+    }
+    job.status = "done";
   }
 
   // ── internals ───────────────────────────────────────────────────────

@@ -13,6 +13,9 @@ import {
   Query,
   Res,
 } from "@nestjs/common";
+import { InjectModel } from "@nestjs/mongoose";
+import type { Model } from "mongoose";
+import type { KanjiDocument } from "../content/schemas/kanji.schema.js";
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from "@nestjs/swagger";
 import { Type } from "class-transformer";
 import type { Response } from "express";
@@ -131,7 +134,22 @@ export class FlashcardsController {
     private readonly ai: AiExampleService,
     private readonly questionBank: ExerciseQuestionsService,
     private readonly reports: CardReportsService,
+    @InjectModel("Kanji") private readonly kanjiModel: Model<KanjiDocument>,
   ) {}
+
+  /** The kanji already created for N5–N1, cached for 10 minutes. */
+  private kanjiCache: { at: number; chars: string } | null = null;
+  private async levelKanji(): Promise<string> {
+    if (this.kanjiCache && Date.now() - this.kanjiCache.at < 10 * 60_000) return this.kanjiCache.chars;
+    const rows = await this.kanjiModel
+      .find({ level: { $in: ["N5", "N4", "N3", "N2", "N1"] } }, { char: 1, rank: 1 })
+      .sort({ rank: 1 })
+      .lean()
+      .exec();
+    const chars = rows.map((r) => r.char).join("");
+    this.kanjiCache = { at: Date.now(), chars };
+    return chars;
+  }
 
   // ── Card error reports (shared decks) ──────────────────────────────
 
@@ -287,6 +305,32 @@ export class FlashcardsController {
     return { items };
   }
 
+  @Post("decks/:id/kanji-distractors")
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      "Trắc nghiệm hiragana → kanji: 3 wrong spellings per card, composed by the AI only from the kanji already created for N5–N1 (need not be real words)",
+  })
+  async kanjiDistractors(
+    @CurrentUser() caller: AuthUser,
+    @Param("id") id: string,
+    @Body() body: SynonymQuizDto,
+  ) {
+    const wanted = new Set(body.cardIds);
+    const cards = (await this.flashcards.listCards(caller, id, 500)).filter((c) =>
+      wanted.has(String(c._id)),
+    );
+    const map = await this.ai.kanjiDistractors(
+      cards.map((c) => ({ term: c.front, reading: c.reading ?? "", meaning: c.back })),
+      await this.levelKanji(),
+    );
+    const items = cards.flatMap((c) => {
+      const wrong = map?.get(c.front);
+      return wrong?.length ? [{ cardId: String(c._id), wrong }] : [];
+    });
+    return { items };
+  }
+
   @Post("decks/:id/exercise-questions")
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
@@ -350,6 +394,26 @@ export class FlashcardsController {
   })
   aiUnused(@CurrentUser() caller: AuthUser, @Param("id") id: string) {
     return this.flashcards.aiUnusedExamples(caller, id);
+  }
+
+  @Post("decks/:id/recheck")
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: "Re-run the AI check (reading, Hán Việt, meaning) over the whole deck → “Cần xem xét” warnings" })
+  recheck(@CurrentUser() caller: AuthUser, @Param("id") id: string) {
+    return this.flashcards.startRecheck(caller, id, (items) => this.ai.verifyCards(items));
+  }
+
+  @Delete("recheck-jobs/:id")
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: "Cancel a running whole-deck re-check" })
+  cancelRecheck(@CurrentUser() caller: AuthUser, @Param("id") id: string) {
+    this.flashcards.cancelRecheck(caller, id);
+  }
+
+  @Get("recheck-jobs")
+  @ApiOperation({ summary: "The caller's whole-deck re-check runs (progress)" })
+  rechecks(@CurrentUser() caller: AuthUser) {
+    return this.flashcards.listRechecks(caller);
   }
 
   @Post("decks/:id/cards/tags")

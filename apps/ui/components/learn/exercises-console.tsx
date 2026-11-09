@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ComposeDrill } from "./compose-drill";
 import {
   answerMatches,
+  asksReading,
   buildChoiceQuestions,
   hashSeed,
   seededShuffle,
@@ -13,6 +14,7 @@ import {
   type ExerciseCard,
   buildKanjiQuestions,
   isKanjiReadingCard,
+  readingMatches,
 } from "./quiz-utils";
 
 /**
@@ -44,8 +46,8 @@ type DeckCard = ExerciseCard;
 type Mode = ChoiceMode | "type" | "synonym" | "compose";
 
 const MODES: { key: Mode; label: string; hint: string }[] = [
-  { key: "test", label: "Trắc nghiệm", hint: "Chọn 1 trong 4 đáp án" },
-  { key: "type", label: "Gõ đáp án", hint: "Tự gõ đáp án vào ô trống" },
+  { key: "test", label: "Trắc nghiệm", hint: "Xen kẽ 3 dạng: từ vựng → nghĩa, hiragana → kanji, kanji → hiragana" },
+  { key: "type", label: "Gõ đáp án", hint: "Chữ kanji hiện ra, gõ cách đọc hiragana (chỉ gồm thẻ có kanji)" },
   { key: "reading", label: "問題1 Cách đọc kanji", hint: "Chọn cách đọc hiragana đúng của từ" },
   { key: "kanji", label: "問題2 Cách đọc Hiragana", hint: "Hiragana là cách đọc của chữ kanji nào (đáp án sai là kanji gần giống, AI tạo)" },
   { key: "formation", label: "問題3 Cấu tạo từ", hint: "Chọn chữ kanji còn thiếu để tạo thành từ" },
@@ -148,7 +150,8 @@ export function ExercisesConsole({ variant = "exercises" }: { variant?: "exercis
       );
       setCards(usable);
       // Shuffle the drill order — exercises are random by nature.
-      setOrder(seededShuffle(usable, hashSeed(deck._id)));
+      // "Gõ đáp án" only drills kanji cards (with a hiragana reading to type).
+      setOrder(seededShuffle(usable.filter(asksReading), hashSeed(deck._id)));
       setStep(0);
       setPicked(null);
       setTyped("");
@@ -189,6 +192,49 @@ export function ExercisesConsole({ variant = "exercises" }: { variant?: "exercis
     return buildChoiceQuestions(mode, cards, hashSeed(deck?._id ?? "") + round);
   }, [mode, aiMode, cards, deck, round]);
 
+  // Trắc nghiệm, hiragana → kanji questions: the AI composes 3 look-alike wrong
+  // spellings from the N5–N1 kanji already created (nonsense words are fine). They
+  // arrive in the background; the local look-alikes are used until they do.
+  const distractorKey = `${deck?._id ?? ""}:${round}`;
+  const [distractors, setDistractors] = useState<{ key: string; map: Record<string, string[]> }>({
+    key: "",
+    map: {},
+  });
+  const [decided, setDecided] = useState<{ key: string; opts: Record<string, string[]> }>({
+    key: "",
+    opts: {},
+  });
+  useEffect(() => {
+    if (mode !== "test" || !deck) return;
+    const ids = localQs.filter((q) => q.kind === "kanji-pick").map((q) => q.id);
+    if (ids.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      for (let i = 0; i < ids.length && !cancelled; i += AI_BATCH) {
+        const res = await fetch(`/api/flashcards/decks/${deck._id}/kanji-distractors`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ cardIds: ids.slice(i, i + AI_BATCH) }),
+        }).catch(() => null);
+        if (cancelled || !res?.ok) return; // no AI: keep the local look-alikes
+        const data = (await res.json().catch(() => null)) as {
+          items?: { cardId: string; wrong: string[] }[];
+        } | null;
+        if (cancelled || !data?.items) return;
+        setDistractors((prev) => ({
+          key: distractorKey,
+          map: {
+            ...(prev.key === distractorKey ? prev.map : {}),
+            ...Object.fromEntries(data.items!.map((x) => [x.cardId, x.wrong])),
+          },
+        }));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [mode, deck, localQs, distractorKey]);
+
   /** Cards an AI mode can ask about, in a stable shuffled order. */
   const aiOrder = useMemo(() => {
     const usable = mode === "kanji" ? cards.filter(isKanjiReadingCard) : cards.filter((c) => c.front && c.back);
@@ -197,7 +243,38 @@ export function ExercisesConsole({ variant = "exercises" }: { variant?: "exercis
 
   const questions = aiMode ? ai.qs : localQs;
   const total = mode === "type" ? order.length : questions.length;
-  const question: ChoiceQuestion | undefined = questions[step];
+  const baseQuestion: ChoiceQuestion | undefined = questions[step];
+  const aiWrong = distractors.key === distractorKey ? distractors.map : {};
+  const frozen = decided.key === distractorKey ? decided.opts : {};
+  const question: ChoiceQuestion | undefined = (() => {
+    if (!baseQuestion || mode !== "test" || baseQuestion.kind !== "kanji-pick") return baseQuestion;
+    // Once a question has been shown its options never change under the learner.
+    if (frozen[baseQuestion.id]) return { ...baseQuestion, options: frozen[baseQuestion.id] };
+    const ai = aiWrong[baseQuestion.id];
+    if (!ai?.length) return baseQuestion;
+    const local = baseQuestion.options.filter((o) => o !== baseQuestion.answer);
+    const wrong = [...new Set([...ai, ...local])].filter((o) => o !== baseQuestion.answer).slice(0, 3);
+    if (wrong.length < 3) return baseQuestion;
+    return {
+      ...baseQuestion,
+      source: "ai",
+      options: seededShuffle([baseQuestion.answer, ...wrong], hashSeed(baseQuestion.id) + round + 1),
+    };
+  })();
+  const shownId = question?.kind === "kanji-pick" && mode === "test" ? question.id : null;
+  const shownOptions = question?.options;
+  useEffect(() => {
+    if (!shownId || !shownOptions) return;
+    const t = setTimeout(
+      () =>
+        setDecided((d) => {
+          const base = d.key === distractorKey ? d.opts : {};
+          return base[shownId] ? d : { key: distractorKey, opts: { ...base, [shownId]: shownOptions } };
+        }),
+      0,
+    );
+    return () => clearTimeout(t);
+  }, [shownId, shownOptions, distractorKey]);
   const answerCard = question ? cards.find((c) => c._id === question.id) : undefined;
   // Kanji-style answers (問題2/3/4) are shown large so look-alike strokes are readable.
   const bigOptions =
@@ -305,7 +382,14 @@ export function ExercisesConsole({ variant = "exercises" }: { variant?: "exercis
     }).catch(() => null);
   }, [question, deck]);
 
-  const typeCorrect = checked && mode === "type" && answerMatches(typed, current?.back ?? "");
+  // Kanji front + known reading → the answer is the hiragana reading; otherwise the back (meaning).
+  const typeReading = mode === "type" && !!current && asksReading(current);
+  const typeCorrect =
+    checked &&
+    mode === "type" &&
+    (typeReading
+      ? readingMatches(typed, current?.reading ?? "")
+      : answerMatches(typed, current?.back ?? ""));
 
   /** Move to the next card, recording the answer. */
   function advance(correct: boolean) {
@@ -418,7 +502,9 @@ export function ExercisesConsole({ variant = "exercises" }: { variant?: "exercis
 
       {!loading && empty && (
         <p className="mt-8 rounded-2xl border border-dashed border-[var(--border)] p-8 text-center text-sm text-[var(--muted-foreground)]">
-          {mode === "type" || mode === "test"
+          {mode === "type"
+            ? "Bộ thẻ này chưa có thẻ kanji nào có cách đọc hiragana để gõ."
+            : mode === "test"
             ? "Bộ thẻ này chưa có thẻ nào để làm bài."
             : mode === "sentence" || mode === "context"
               ? "Bộ thẻ này chưa đủ câu ví dụ chứa từ vựng (cần ít nhất 4 thẻ có ví dụ)."
@@ -450,7 +536,7 @@ export function ExercisesConsole({ variant = "exercises" }: { variant?: "exercis
           <button
             type="button"
             onClick={() => {
-              setOrder(seededShuffle(cards, hashSeed(deck?._id ?? "") + step + 1));
+              setOrder(seededShuffle(cards.filter(asksReading), hashSeed(deck?._id ?? "") + step + 1));
               setRound((n) => n + 1);
               setStep(0);
               setPicked(null);
@@ -488,7 +574,7 @@ export function ExercisesConsole({ variant = "exercises" }: { variant?: "exercis
 
           <div className="mt-5 rounded-2xl border border-[var(--border)] bg-[var(--background-1)] p-6">
             <p className="text-xs font-medium uppercase tracking-wide text-[var(--muted-foreground)]">
-              {mode === "type" ? "Gõ đáp án" : question?.label}
+              {mode === "type" ? (typeReading ? "Gõ cách đọc bằng hiragana" : "Gõ đáp án") : question?.label}
             </p>
             <p className="mt-3 break-words text-2xl font-semibold text-[var(--foreground)]">
               {mode === "type" ? current?.front : <Stem q={question} />}
@@ -590,7 +676,8 @@ export function ExercisesConsole({ variant = "exercises" }: { variant?: "exercis
                     if (!checked) setChecked(true);
                     else advance(typeCorrect);
                   }}
-                  placeholder="Nhập đáp án của bạn…"
+                  placeholder={typeReading ? "Nhập cách đọc bằng hiragana…" : "Nhập đáp án của bạn…"}
+                  lang={typeReading ? "ja" : undefined}
                   className={`mt-5 ${inputClass}`}
                 />
                 {checked && (
@@ -605,7 +692,9 @@ export function ExercisesConsole({ variant = "exercises" }: { variant?: "exercis
                     >
                       {typeCorrect
                         ? "✓ Chính xác!"
-                        : `✕ Chưa đúng — đáp án là: ${current?.back}`}
+                        : typeReading
+                          ? `✕ Chưa đúng — cách đọc là: ${current?.reading}${current?.back ? ` (${current.back})` : ""}`
+                          : `✕ Chưa đúng — đáp án là: ${current?.back}`}
                     </p>
                     <button
                       type="button"
@@ -631,7 +720,7 @@ export function ExercisesConsole({ variant = "exercises" }: { variant?: "exercis
           </div>
 
           <p className={"mt-3 text-center text-xs text-[var(--muted-foreground)] " + (mode === "type" ? "" : "hidden")}>
-            So khớp bỏ qua dấu và dấu câu — ví dụ “mèo” khớp với “Mèo!”.
+            So khớp bỏ qua dấu và dấu câu — ví dụ “mèo” khớp với “Mèo!”. Với từ kanji, hãy gõ cách đọc hiragana (gõ katakana cũng được).
           </p>
         </div>
       )}

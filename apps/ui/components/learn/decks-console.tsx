@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
 import { emitSessionChanged } from "@/lib/session-events";
 import { ConfirmDialog } from "@/components/learn/confirm-dialog";
@@ -44,6 +45,7 @@ const inputClass =
   "block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:border-[var(--primary-focus)] focus:outline-none focus:ring-1 focus:ring-[var(--primary-focus)]";
 
 export function DecksConsole() {
+  const router = useRouter();
   const [decks, setDecks] = useState<Deck[]>([]);
   const [progress, setProgress] = useState<DeckProgress>({});
   // A load has completed for the current `version` — "loading" is DERIVED
@@ -301,12 +303,23 @@ export function DecksConsole() {
           return (
             <div
               key={deck._id}
-              className="rounded-2xl border border-[var(--border)] bg-[var(--background-1)] p-5"
+              role="link"
+              tabIndex={0}
+              onClick={(e) => {
+                if ((e.target as HTMLElement).closest("a,button,input,select,textarea,label,[role=dialog]")) return;
+                router.push(`/learn/decks/${deck._id}`);
+              }}
+              onKeyDown={(e) => {
+                if (e.target === e.currentTarget && e.key === "Enter") router.push(`/learn/decks/${deck._id}`);
+              }}
+              className="cursor-pointer rounded-2xl border border-[var(--border)] bg-[var(--background-1)] p-5 transition-colors hover:border-[var(--primary)]"
             >
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <h3 className="flex items-center gap-2 text-base font-semibold text-[var(--foreground)]">
-                    {deck.title}
+                    <Link href={`/learn/decks/${deck._id}`} className="hover:text-[var(--primary)] hover:underline">
+                      {deck.title}
+                    </Link>
                     {deck.shared && (
                       <span className="rounded-full bg-[var(--layer)] px-2 py-0.5 text-xs font-medium text-[var(--muted-foreground)]">
                         Chung
@@ -330,17 +343,6 @@ export function DecksConsole() {
                 </div>
 
                 <div className="flex flex-wrap items-center justify-end gap-2">
-                  <Link
-                    href={`/learn/decks/${deck._id}`}
-                    title={`Xem thẻ (${deck.cardCount})`}
-                    aria-label="Xem thẻ"
-                    className="relative inline-flex size-9 items-center justify-center rounded-lg border border-[var(--border)] text-[var(--foreground)] hover:bg-[var(--layer-hover)]"
-                  >
-                    <Icon name="list" />
-                    <span className="absolute -right-1.5 -top-1.5 min-w-4 rounded-full bg-[var(--primary)] px-1 text-center text-[10px] font-semibold leading-4 text-white">
-                      {deck.cardCount}
-                    </span>
-                  </Link>
                   <a
                     href={`/api/flashcards/decks/${deck._id}/export`}
                     download

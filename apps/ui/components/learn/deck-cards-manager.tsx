@@ -10,6 +10,7 @@ import { ExampleFields, cleanExampleInputs, type ExampleInput } from "@/componen
 import { ReadingFields, type PartOfSpeech } from "@/components/learn/reading-fields";
 import { ImageField } from "@/components/learn/image-field";
 import { Icon } from "@/components/learn/icons";
+import { RECHECK_PROGRESS_EVENT, RECHECK_STARTED_EVENT } from "@/components/learn/recheck-tracker";
 import { LevelSelect } from "@/components/learn/level-select";
 import { CategoryChip } from "@/components/learn/category-filter";
 import { useHanVietPref } from "@/lib/use-han-viet-pref";
@@ -138,7 +139,28 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
   const [categories, setCategories] = useState<string[]>([]);
 
   const canWrite = mode === "admin" || (deck !== null && !deck.shared);
+  const [rechecking, setRechecking] = useState(false);
+  const [recheckMsg, setRecheckMsg] = useState<string | null>(null);
   const reload = useCallback(() => setVersion((v) => v + 1), []);
+  /** Ask the AI to proofread every card again → refreshes the "Cần xem xét" warnings. */
+  async function recheckAll() {
+    setRechecking(true);
+    setRecheckMsg(null);
+    try {
+      const res = await fetch(`/api/flashcards/decks/${deckId}/recheck`, { method: "POST" });
+      if (!res.ok) setRecheckMsg("Không bắt đầu kiểm tra lại được. Thử lại sau.");
+      else window.dispatchEvent(new Event(RECHECK_STARTED_EVENT)); // progress shows bottom-right, on any page
+    } catch {
+      setRecheckMsg("Không bắt đầu kiểm tra lại được. Thử lại sau.");
+    } finally {
+      setRechecking(false);
+    }
+  }
+  // Reload the warnings as the background run advances.
+  useEffect(() => {
+    window.addEventListener(RECHECK_PROGRESS_EVENT, reload);
+    return () => window.removeEventListener(RECHECK_PROGRESS_EVENT, reload);
+  }, [reload]);
 
   useEffect(() => {
     const c = new URLSearchParams(window.location.search).get("card");
@@ -486,6 +508,11 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
             ))}
           </div>
           <HanVietToggle on={showHanViet} onToggle={toggleHanViet} />
+          {mode === "learn" && (
+            <Link href={`/learn/study?deck=${deckId}`} className={btn} title="Học bộ thẻ này">
+              <Icon name="play" /> Học
+            </Link>
+          )}
           {canWrite && deck && (
             <button type="button" className={btn} onClick={() => (editInfo ? setEditInfo(false) : void openInfo())} aria-expanded={editInfo}>
               ✎ Đổi tên / phân loại
@@ -669,10 +696,16 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
               ⚠ Cần xem xét ({data.needsReview})
             </button>
           )}
+          {canWrite && (
+            <button type="button" className={btn} onClick={() => void recheckAll()} disabled={rechecking} title="AI kiểm tra lại cách đọc, Hán Việt, nghĩa của toàn bộ thẻ">
+              {rechecking ? "Đang bắt đầu…" : "↻ Kiểm tra lại cả bộ"}
+            </button>
+          )}
           {canWrite && data && data.missingExamples > 0 && (
             <RetryExamplesButton deckId={deckId} className={btn} onChanged={reload} />
           )}
         </div>
+        {recheckMsg && <p role="status" className="text-sm text-[var(--muted-foreground)]">{recheckMsg}</p>}
         {data && data.tags.length > 0 && (
           <div className="flex max-h-28 flex-wrap items-center gap-1.5 overflow-y-auto">
             <span className="mr-1 text-xs font-medium text-[var(--muted-foreground)]">Tag:</span>

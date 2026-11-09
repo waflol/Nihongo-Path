@@ -2,7 +2,8 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { checkHanViet, checkMeaning, hanVietFits, norm as hvNorm, suggestHanViet } from "./han-viet-suggest.js";
+import { checkHanViet, checkMeaning, correctHanViet, hanVietFits, norm as hvNorm, setKanjiHanViet, suggestHanViet } from "./han-viet-suggest.js";
+import type { KanjiDocument } from "../content/schemas/kanji.schema.js";
 import { AiExampleService, lostKanji } from "../ai/ai-example.service.js";
 import {
   Optional,
@@ -279,6 +280,8 @@ export class ImportService implements OnApplicationBootstrap {
     private readonly jobRecord: Model<PdfJobRecordDocument>,
     @InjectModel("PdfJobPage")
     private readonly jobPage: Model<PdfJobPageDocument>,
+    @InjectModel("Kanji")
+    private readonly kanji: Model<KanjiDocument>,
     private readonly morph: ReadingService,
     private readonly exampleSuggest: ExampleSuggestService,
     @Optional() private readonly ai?: AiExampleService,
@@ -1138,7 +1141,8 @@ export class ImportService implements OnApplicationBootstrap {
         if (r?.reading && c.reading && /^[\p{Script=Hiragana}ー]+$/u.test(r.reading) && !readingVariants(c.reading).includes(r.reading)) {
           out.push(`cách đọc “${c.reading}” có thể chưa đúng (AI gợi ý: ${r.reading})`);
         }
-        if (r?.hanViet && c.hanViet && hvNorm(r.hanViet) !== hvNorm(c.hanViet) && hanVietFits(c.front, r.hanViet)) {
+        // Hán Việt comes from the kanji data when every kanji is in it — the AI does not second-guess that.
+        if (r?.hanViet && c.hanViet && suggestHanViet(c.front) === "" && hvNorm(r.hanViet) !== hvNorm(c.hanViet) && hanVietFits(c.front, r.hanViet)) {
           out.push(`Hán Việt “${c.hanViet}” có thể chưa đúng (AI gợi ý: ${r.hanViet})`);
         }
         if (r?.meaning && c.meaning && hvNorm(r.meaning) !== hvNorm(c.meaning)) {
@@ -1164,8 +1168,9 @@ export class ImportService implements OnApplicationBootstrap {
     if (!given.trim()) return { value: v?.hanViet || tableValue, issue: null };
     const issue = checkHanViet(front, given);
     if (!issue || v?.ok) return { value: given, issue: null };
-    const fixed = v?.hanViet || tableValue;
-    return { value: fixed || given, issue: fixed ? `${issue} → đã tự sửa thành ${fixed}` : issue };
+    // The kanji data settles it: keep valid syllables, replace the wrong ones.
+    const fixed = v?.hanViet || correctHanViet(front, given) || tableValue;
+    return { value: fixed || given, issue: fixed ? `${issue} → đã tự sửa thành ${fixed} (theo dữ liệu Kanji)` : issue };
   }
 
   /**
@@ -1174,7 +1179,21 @@ export class ImportService implements OnApplicationBootstrap {
    * still open — a cell the table disagrees with, or a word it does not know —
    * goes to the AI.
    */
+  /** The kanji admin data (`kanjis.hanViet`), reloaded at most once a minute. */
+  private kanjiTableAt = 0;
+  private async ensureKanjiTable(): Promise<void> {
+    if (Date.now() - this.kanjiTableAt < 60_000) return;
+    try {
+      const rows = await this.kanji.find({ hanViet: { $exists: true, $ne: "" } }, { char: 1, hanViet: 1 }).lean().exec();
+      setKanjiHanViet(Object.fromEntries(rows.map((r) => [r.char, r.hanViet as string])));
+      this.kanjiTableAt = Date.now();
+    } catch {
+      /* the curated JSON table still answers */
+    }
+  }
+
   private async verifyHanViet(table: Table, mapping: ColumnMapping, task?: ImportTask, useAi = true): Promise<void> {
+    await this.ensureKanjiTable();
     const clean = (f: string) => f.replace(/[（(][^）)]*[）)]/g, "").trim();
     const pairs = new Map<string, { word: string; given: string }>();
     for (const row of table.rows) {
@@ -1182,6 +1201,8 @@ export class ImportService implements OnApplicationBootstrap {
       if (!front || !/[\u4e00-\u9fff]/.test(front)) continue;
       const given = mapping.hanViet ? (row[mapping.hanViet] ?? "").trim() : "";
       const key = ImportService.hvKey(front, given);
+      // Every kanji is in the kanji data: it fills / corrects the cell itself (hanVietOf), no lookup, no AI.
+      if (suggestHanViet(front) !== "") continue;
       if (!this.hvCache.has(key)) pairs.set(key, { word: clean(front), given });
     }
     if (pairs.size === 0) return;

@@ -738,6 +738,63 @@ export class AiExampleService {
   }
 
   /**
+   * Trắc nghiệm hiragana → kanji: for each word, three WRONG spellings composed
+   * only from `allowed` (the kanji already created for N5–N1). The model
+   * analyses the word's kanji and swaps one or several for look-alikes from that
+   * list, keeping okurigana; the result does not have to be a real word.
+   * Keyed by the word as sent; spellings that use any other kanji are dropped.
+   */
+  async kanjiDistractors(
+    items: { term: string; reading: string; meaning: string }[],
+    allowed: string,
+  ): Promise<Map<string, string[]> | null> {
+    if (items.length === 0 || allowed === "") return new Map();
+    const allowedSet = new Set([...allowed]);
+    const HAN = /\p{Script=Han}/u;
+    const prompt = [
+      "You write kanji-spelling questions for JLPT learners: the learner reads a word in hiragana and must pick its kanji spelling among four look-alike spellings.",
+      "For each word below, analyse its kanji and write 3 WRONG spellings: swap one kanji, or several, for kanji that look similar (same radical/component, near-identical shape, or same on-reading). Keep the okurigana/kana unchanged. The wrong spelling may be a nonsense word — that is fine — but it must look plausible next to the word.",
+      "IMPORTANT: every kanji you put into a wrong spelling MUST come from this allowed list (kanji already created for N5-N1), never any other kanji:",
+      allowed,
+      'Return JSON only: {"items":[{"term":string,"wrong":[string,string,string]}]} with "term" copied exactly from the input. The 3 spellings must differ from each other and from the word.',
+      "Words:",
+      ...items.map((i) => `- ${i.term}（${i.reading}）: ${i.meaning}`),
+    ].join("\n");
+    for (const svc of await this.services.available()) {
+      if (this.isTranslator(svc)) continue;
+      try {
+        await this.pace(svc);
+        const text = await this.call(svc, prompt, "example", items.map((i) => i.term));
+        await this.services.reportOk(svc.id);
+        const json = /\{[\s\S]*\}/.exec(text)?.[0];
+        const parsed = json ? (JSON.parse(json) as { items?: unknown }) : null;
+        if (!parsed || !Array.isArray(parsed.items)) continue;
+        const out = new Map<string, string[]>();
+        for (const r of parsed.items) {
+          if (typeof r !== "object" || r === null) continue;
+          const o = r as Record<string, unknown>;
+          const term = String(o.term ?? "").trim();
+          if (!term || !Array.isArray(o.wrong)) continue;
+          const wrong = [...new Set(o.wrong.map((w) => String(w).trim()))].filter(
+            (w) =>
+              w !== "" &&
+              w !== term &&
+              // only kanji from the created N5–N1 set (kana/okurigana are free)
+              [...w].every((ch) => !HAN.test(ch) || allowedSet.has(ch)) &&
+              [...w].some((ch) => HAN.test(ch)),
+          );
+          if (wrong.length > 0) out.set(term, wrong.slice(0, 3));
+        }
+        if (out.size > 0) return out;
+      } catch (err) {
+        if (err instanceof AiFailure) await this.services.reportFailure(svc.id, err.kind, err.message, err.retryAfterMs);
+        // else: unparsable answer — try the next service
+      }
+    }
+    return null;
+  }
+
+  /**
    * Vietnamese meanings for dictionary words (kanji related-words list).
    * Input carries the English gloss as grounding. Keyed by `term`; words the
    * model skipped are left out. `null` when no service could answer.

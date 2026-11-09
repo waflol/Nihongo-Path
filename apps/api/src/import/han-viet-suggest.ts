@@ -9,8 +9,22 @@ import { fileURLToPath } from "node:url";
  * suggestion.
  */
 let table: Record<string, string> | null = null;
+/** Kanji admin data (`kanjis` collection, `char → "a/b/c"`): curated by hand, so it wins over the JSON table. */
+let kanjiDb: Record<string, string> = {};
+let merged: Record<string, string> | null = null;
+
+/** Replace the kanji-admin Hán Việt table used by every lookup in this file. */
+export function setKanjiHanViet(map: Record<string, string>): void {
+  kanjiDb = map;
+  merged = null;
+}
 
 function load(): Record<string, string> {
+  if (merged) return merged;
+  return (merged = { ...loadJson(), ...kanjiDb });
+}
+
+function loadJson(): Record<string, string> {
   if (table) return table;
   const here = dirname(fileURLToPath(import.meta.url));
   const candidates = [
@@ -40,6 +54,32 @@ export function suggestHanViet(text: string): string {
     else if (/[\u4e00-\u9fff]/.test(ch)) return ""; // an unknown kanji: a partial reading would mislead
   }
   return out.join(" ");
+}
+
+/**
+ * The given Hán Việt corrected from the kanji table, position by position: a
+ * syllable that is one of the kanji's readings stays (so a valid alternative
+ * such as 行 = HẠNH is kept), a wrong one becomes the kanji's main reading, and
+ * a missing/extra syllable is rebuilt from the main readings. `null` when a
+ * kanji is not in the table (the table cannot decide) or the word has none.
+ */
+export function correctHanViet(front: string, given: string): string | null {
+  const t = load();
+  const kanji = [...front.replace(/[（(][^）)]*[）)]?/g, "")].filter((c) => /[\u4e00-\u9fff々]/.test(c));
+  if (kanji.length === 0 || kanji.some((k) => !t[k])) return null;
+  const tokens = given.trim().split(/\s+/).filter(Boolean);
+  const sameCount = tokens.length === kanji.length;
+  return kanji
+    .map((k, i) => {
+      const readings = t[k].split("/");
+      const exact = (x: string) => x.normalize("NFC").toLocaleLowerCase("vi");
+      // The same syllable wins (HẠNH vs HÀNH differ only by tone), else the one equal without tones.
+      const keep = sameCount
+        ? (readings.find((r) => exact(r) === exact(tokens[i])) ?? readings.find((r) => norm(r) === norm(tokens[i])))
+        : undefined;
+      return (keep ?? readings[0]).toLocaleUpperCase("vi");
+    })
+    .join(" ");
 }
 
 /**

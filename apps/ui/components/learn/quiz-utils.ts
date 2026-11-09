@@ -61,6 +61,30 @@ export function answerMatches(typed: string, expected: string): boolean {
   return e.split(" ").some((w) => w.length >= 3 && t.includes(w));
 }
 
+/** Katakana → hiragana so a reading typed in either script compares equal. */
+function toHiragana(value: string): string {
+  return value.replace(/[\u30a1-\u30f6]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0x60));
+}
+
+/** Keep only kana (and the long-vowel mark) — spaces, punctuation and furigana brackets drop out. */
+function kanaOnly(value: string): string {
+  return toHiragana(value.normalize("NFC")).replace(/\[[^\]]*\]/g, "").replace(/[^\u3041-\u3096\u30fc]/g, "");
+}
+
+/**
+ * Typed reading vs the card's hiragana reading. Unlike `answerMatches` it must
+ * NOT strip combining marks (が ≠ か), so it compares plain kana. Several
+ * readings may be listed on the card (separated by ・ 、 / ,): any one matches.
+ */
+export function readingMatches(typed: string, reading: string): boolean {
+  const t = kanaOnly(typed);
+  if (t === "") return false;
+  return reading
+    .split(/[・、,，/／;；]/)
+    .map(kanaOnly)
+    .some((r) => r !== "" && r === t);
+}
+
 // ── Choice questions for the exercises area ────────────────────────────
 
 /** A card as the exercises area sees it (the API returns the full document). */
@@ -105,6 +129,8 @@ export type ChoiceMode = "test" | "kanji" | "reading" | "sentence" | "formation"
 
 const HAN = /\p{Script=Han}/u;
 export const hasKanji = (c: ExerciseCard) => HAN.test(c.front);
+/** The type-answer drill asks for the hiragana reading when the front is kanji. */
+export const asksReading = (c: ExerciseCard) => hasKanji(c) && hasReading(c);
 const hasReading = (c: ExerciseCard) =>
   !!c.reading && c.reading.trim() !== "" && c.reading.trim() !== c.front.trim();
 
@@ -274,6 +300,57 @@ export function buildKanjiQuestions(
   return out;
 }
 
+/** Vocabulary → Vietnamese meaning (4 meanings from the deck). */
+function meaningQuestion(c: ExerciseCard, others: ExerciseCard[], s: number): ChoiceQuestion | null {
+  const d = pickDistractors(others.map((o) => o.back), c.back, 3, s);
+  if (d.length < 3) return null;
+  return { id: c._id, kind: "meaning-pick", source: "local", label: "Chọn nghĩa tiếng Việt đúng", prompt: c.front, options: [c.back, ...d], answer: c.back };
+}
+
+/**
+ * Hiragana → the kanji word, among four look-alike words of the deck (those
+ * sharing kanji with the answer first, topped up with spellings composed from
+ * the deck's own kanji when the deck has too few similar words).
+ */
+function kanjiQuestion(c: ExerciseCard, others: ExerciseCard[], s: number): ChoiceQuestion | null {
+  if (!isKanjiReadingCard(c)) return null;
+  const pool = others.filter(hasKanji).map((o) => o.front);
+  const wrong = [...similarKanji(c.front, pool, 3, s)];
+  if (wrong.length < 3) {
+    for (const w of composedKanji(c.front, pool, 3, s)) {
+      if (wrong.length < 3 && w !== c.front && !wrong.includes(w)) wrong.push(w);
+    }
+  }
+  if (wrong.length < 3) return null;
+  return {
+    id: c._id,
+    kind: "kanji-pick",
+    source: "local",
+    label: "Chữ kanji nào có cách đọc này?",
+    prompt: c.reading!.trim(),
+    sub: c.back,
+    options: [c.front, ...wrong],
+    answer: c.front,
+  };
+}
+
+/** Kanji word → its correct hiragana reading (readings of other deck words as distractors). */
+function readingQuestion(c: ExerciseCard, others: ExerciseCard[], s: number): ChoiceQuestion | null {
+  if (!isKanjiReadingCard(c)) return null;
+  const d = pickDistractors(others.filter(hasReading).map((o) => o.reading!.trim()), c.reading!.trim(), 3, s);
+  if (d.length < 3) return null;
+  return {
+    id: c._id,
+    kind: "reading-pick",
+    source: "local",
+    label: "Cách đọc hiragana đúng là?",
+    prompt: c.front,
+    sub: c.back,
+    options: [c.reading!.trim(), ...d],
+    answer: c.reading!.trim(),
+  };
+}
+
 /**
  * Build the questions of a local (no-AI) choice mode. Cards that cannot make a
  * valid question for the mode (no kanji, no reading, no example, too few
@@ -291,9 +368,10 @@ export function buildChoiceQuestions(
     let q: ChoiceQuestion | null = null;
 
     if (mode === "test") {
-      const d = pickDistractors(others.map((o) => o.back), c.back, 3, s);
-      if (d.length === 3)
-        q = { id: c._id, kind: "meaning-pick", source: "local", label: "Chọn đáp án đúng", prompt: c.front, options: [c.back, ...d], answer: c.back };
+      // Trắc nghiệm mixes three kinds, rotated card by card; a card that cannot
+      // make the kind it was given falls back to the next one.
+      const makers = [meaningQuestion, kanjiQuestion, readingQuestion];
+      for (let k = 0; k < makers.length && !q; k++) q = makers[(out.length + k) % makers.length](c, others, s);
     } else if (mode === "kanji") {
       // The reading is the question; the answer is the kanji word.
       if (hasKanji(c) && hasReading(c)) {

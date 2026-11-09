@@ -9,6 +9,7 @@ import { buildAiModule } from "../ai/ai.module.js";
 import { ExampleSuggestService } from "../flashcards/example-suggest.service.js";
 import { TatoebaSentenceSchema } from "../flashcards/schemas/tatoeba.schema.js";
 import { PdfJobPageSchema, PdfJobRecordSchema } from "./schemas/pdf-job.schema.js";
+import { Kanji, KanjiSchema } from "../content/schemas/kanji.schema.js";
 import { ReadingModule } from "../flashcards/reading.module.js";
 
 /**
@@ -37,6 +38,7 @@ export function buildImportModule(): DynamicModule {
         { name: "TatoebaSentence", schema: TatoebaSentenceSchema },
         { name: "PdfJobRecord", schema: PdfJobRecordSchema },
         { name: "PdfJobPage", schema: PdfJobPageSchema },
+        { name: Kanji.name, schema: KanjiSchema },
       ]),
     ],
     controllers: [ImportController],

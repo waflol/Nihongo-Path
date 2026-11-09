@@ -180,7 +180,7 @@ export function StudySession() {
   return (
     <Suspense
       fallback={
-        <p className="mx-auto max-w-3xl px-4 py-16 text-center text-sm text-[var(--muted-foreground)] sm:px-6">
+        <p className="mx-auto max-w-6xl px-4 py-16 text-center text-sm text-[var(--muted-foreground)] sm:px-6">
           Đang tải…
         </p>
       }
@@ -653,7 +653,7 @@ function StudySessionInner() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-2xl px-4 py-6 sm:px-6 sm:py-8">
+    <div className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6">
       <ConfirmDialog
         open={confirmReset}
         title="Đặt lại tiến độ?"
@@ -666,7 +666,7 @@ function StudySessionInner() {
         }}
       />
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border)] pb-4">
-        <h1 className="text-xl font-semibold tracking-tight text-[var(--foreground)]">
+        <h1 className="text-2xl font-semibold tracking-tight text-[var(--foreground)]">
           Ôn tập
         </h1>
         <div className="flex items-center gap-3">
@@ -712,6 +712,8 @@ function StudySessionInner() {
         </div>
       </div>
 
+      {/* Same page width as the other /learn pages; the card stays a readable column. */}
+      <div className="mx-auto w-full max-w-2xl">
       {error && (
         <p role="alert" className="mt-4 rounded-lg bg-[#fef2f2] px-4 py-3 text-sm text-[#b91c1c]">
           {error}
@@ -995,6 +997,7 @@ function StudySessionInner() {
           </p>
         </div>
       )}
+      </div>
     </div>
   );
 }
