@@ -157,6 +157,14 @@ export class KanjiService {
     return rows.map((r) => ({ level: r._id, count: r.count }));
   }
 
+  /** On/kun readings (hiragana-able) of up to 60 distinct characters: char → { on, kun }. */
+  async readings(chars: string): Promise<Record<string, { on: string[]; kun: string[] }>> {
+    const list = [...new Set([...chars].filter((c) => /[\u4e00-\u9fff々]/.test(c)))].slice(0, 60);
+    if (list.length === 0) return {};
+    const docs = await this.model.find({ char: { $in: list } }, { char: 1, onyomi: 1, kunyomi: 1 }).lean().exec();
+    return Object.fromEntries(docs.map((d) => [d.char, { on: d.onyomi ?? [], kun: d.kunyomi ?? [] }]));
+  }
+
   async get(char: string, publishedOnly: boolean): Promise<KanjiDocument> {
     const doc = await this.model
       .findOne(publishedOnly ? { char, status: "PUBLISHED" } : { char })

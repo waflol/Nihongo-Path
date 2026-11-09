@@ -116,7 +116,7 @@ export function iAdjectiveForms(term: string): string[] {
  * part of speech); when unknown, both verb and adjective forms are tried.
  * Nouns and な-adjectives return only the word itself.
  */
-export function conjugatedForms(term: string, pos: "verb" | "noun" | "adjective" | null): string[] {
+export function conjugatedForms(term: string, pos: "verb" | "noun" | "adjective" | "phrase" | null): string[] {
   const t = term.trim();
   if (!t) return [];
   if (pos === "verb") return verbForms(t);
@@ -126,6 +126,6 @@ export function conjugatedForms(term: string, pos: "verb" | "noun" | "adjective"
 }
 
 /** True when `sentence` contains the word in any grammatical form (long enough to mean something). */
-export function sentenceUsesForm(sentence: string, term: string, pos: "verb" | "noun" | "adjective" | null): boolean {
+export function sentenceUsesForm(sentence: string, term: string, pos: "verb" | "noun" | "adjective" | "phrase" | null): boolean {
   return conjugatedForms(term, pos).some((f) => [...f].length >= 2 && sentence.includes(f));
 }

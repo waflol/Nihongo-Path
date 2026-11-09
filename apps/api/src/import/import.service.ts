@@ -85,7 +85,7 @@ export interface ColumnMapping {
   order?: string;
 }
 
-type Pos = "verb" | "noun" | "adjective" | "";
+type Pos = "verb" | "noun" | "adjective" | "phrase" | "";
 
 /** Accepts English, Vietnamese, Japanese and short forms. */
 function normalizePos(raw: string | undefined): Pos | null {
@@ -94,6 +94,7 @@ function normalizePos(raw: string | undefined): Pos | null {
   if (/^(verb|v|động từ|dong tu|động|動詞)$/.test(v)) return "verb";
   if (/^(noun|n|danh từ|danh tu|danh|名詞)$/.test(v)) return "noun";
   if (/^(adjective|adj|a|tính từ|tinh tu|tính|形容詞|形容動詞)$/.test(v)) return "adjective";
+  if (/^(phrase|expr|expression|idiom|cụm từ|cum tu|cụm|thành ngữ|慣用句|連語|句)$/.test(v)) return "phrase";
   return null;
 }
 
@@ -1173,7 +1174,7 @@ export class ImportService implements OnApplicationBootstrap {
    * still open — a cell the table disagrees with, or a word it does not know —
    * goes to the AI.
    */
-  private async verifyHanViet(table: Table, mapping: ColumnMapping, task?: ImportTask): Promise<void> {
+  private async verifyHanViet(table: Table, mapping: ColumnMapping, task?: ImportTask, useAi = true): Promise<void> {
     const clean = (f: string) => f.replace(/[（(][^）)]*[）)]/g, "").trim();
     const pairs = new Map<string, { word: string; given: string }>();
     for (const row of table.rows) {
@@ -1210,7 +1211,7 @@ export class ImportService implements OnApplicationBootstrap {
     }
 
     // 2. The table could not settle these: ask the AI.
-    if (!this.ai || open.length === 0) return;
+    if (!useAi || !this.ai || open.length === 0) return;
     const list = open.slice(0, 200);
     if (task) Object.assign(task, { phase: "Đang kiểm tra Hán Việt", done: 0, total: list.length });
     await this.inBatches(list, 20, 3, task, async (batch) => {
@@ -1266,7 +1267,7 @@ export class ImportService implements OnApplicationBootstrap {
    * with the same word, then the analyser, and only then the AI. Cached per word so the
    * preview and the confirm of one file agree. `null` → caller falls back.
    */
-  private async knownOrAiReading(front: string): Promise<string | null> {
+  private async knownOrAiReading(front: string, useAi = true): Promise<string | null> {
     const word = front.replace(/[（(][^）)]*[）)]/g, "").trim();
     if (!word) return null;
     if (this.readingCache.has(word)) return this.readingCache.get(word) ?? null;
@@ -1290,10 +1291,35 @@ export class ImportService implements OnApplicationBootstrap {
         /* analyser unavailable — ask the AI */
       }
     }
-    if (!found && this.ai) found = await this.ai.suggestReading(word).catch(() => null);
+    if (!found && this.ai && useAi) found = await this.ai.suggestReading(word).catch(() => null);
+    if (!useAi && !found) return null; // not cached: a later AI-enabled run may still settle it
     if (this.readingCache.size > 5000) this.readingCache.clear();
     this.readingCache.set(word, found);
     return found;
+  }
+
+  /**
+   * A bracketed note split across two cells: the meaning ends with an opened "(迫"
+   * while the reading starts with the rest "られる) せまる". Hand the tail back and
+   * keep only the reading proper (what follows the closing bracket).
+   */
+  private repairSplitCells(table: Table, mapping: ColumnMapping | undefined): void {
+    if (mapping?.front) {
+      // PDF text often puts a space between characters (人 見 知 り): not part of the word.
+      const JA = "\\u3000-\\u30ff\\u4e00-\\u9fff\\uff00-\\uffef";
+      const gap = new RegExp(`(?<=[${JA}])\\s+(?=[${JA}])`, "g");
+      for (const row of table.rows) if (row[mapping.front]) row[mapping.front] = row[mapping.front].replace(gap, "");
+    }
+    if (!mapping?.reading || !mapping.back) return;
+    for (const row of table.rows) {
+      const reading = (row[mapping.reading] ?? "").trim();
+      const back = (row[mapping.back] ?? "").trim();
+      const close = /^[^()（）]*[)）]\s*/.exec(reading);
+      const open = /[(（][^()（）]*$/.exec(back);
+      if (!close || !open) continue;
+      row[mapping.reading] = reading.slice(close[0].length).trim();
+      row[mapping.back] = back.slice(0, open.index).trim();
+    }
   }
 
   /** Why a row's own (not derived) meaning / reading / Hán Việt looks wrong. */
@@ -1339,7 +1365,7 @@ export class ImportService implements OnApplicationBootstrap {
    * meaning (row index → suggestion). Cached per word so the preview and the
    * confirm of the same file agree. Best effort: no AI service → no entry.
    */
-  private async suggestMeanings(table: Table, mapping: ColumnMapping, task?: ImportTask): Promise<Map<number, string>> {
+  private async suggestMeanings(table: Table, mapping: ColumnMapping, task?: ImportTask, useAi = true): Promise<Map<number, string>> {
     const out = new Map<number, string>();
     const wanted: { idx: number; term: string; reading: string }[] = [];
     table.rows.forEach((row, idx) => {
@@ -1368,7 +1394,7 @@ export class ImportService implements OnApplicationBootstrap {
       }
     }
     const todo = fresh.filter((w) => !this.meaningCache.has(w.term)).slice(0, 100);
-    if (this.ai && todo.length > 0) {
+    if (useAi && this.ai && todo.length > 0) {
       if (task) Object.assign(task, { phase: "Đang gợi ý nghĩa", done: 0, total: todo.length });
       for (let i = 0; i < todo.length; i += 20) {
         if (task?.cancelled) throw new HttpException("Đã hủy", HttpStatus.CONFLICT);
@@ -1395,6 +1421,7 @@ export class ImportService implements OnApplicationBootstrap {
     table: Table,
     mapping: ColumnMapping,
     task?: ImportTask,
+    useAi = true,
   ): Promise<(Awaited<ReturnType<ImportService["extras"]>> | null)[]> {
     // Readings the file does not give: look them up (database, then AI) word by word, with progress.
     const words = new Set<string>();
@@ -1402,12 +1429,12 @@ export class ImportService implements OnApplicationBootstrap {
       const front = (row[mapping.front] ?? "").trim();
       if (front && KANJI_RE.test(front) && !(mapping.reading && (row[mapping.reading] ?? "").trim())) words.add(front);
     }
-    await this.verifyHanViet(table, mapping, task);
+    await this.verifyHanViet(table, mapping, task, useAi);
     if (words.size > 0) {
       if (task) Object.assign(task, { phase: "Đang gợi ý cách đọc", done: 0, total: words.size });
       for (const w of words) {
         if (task?.cancelled) throw new HttpException("Đã hủy", HttpStatus.CONFLICT);
-        await this.knownOrAiReading(w);
+        await this.knownOrAiReading(w, useAi);
         if (task) task.done += 1;
       }
     }
@@ -1517,6 +1544,7 @@ export class ImportService implements OnApplicationBootstrap {
   ): Promise<ImportPreview> {
     await this.resolveWritableDeck(caller, deckId);
     const table = await this.parseTable(file);
+    this.repairSplitCells(table, mapping);
     const targetDeck = await this.resolveWritableDeck(caller, deckId);
     // Any file other than a scanned PDF gets its page check as soon as it is mapped.
     if (!table.ocr && mapping?.front && mapping.back) {
@@ -1683,14 +1711,16 @@ export class ImportService implements OnApplicationBootstrap {
   ): Promise<ImportConfirmResult> {
     const targetDeck = await this.resolveWritableDeck(caller, deckId);
     const table = await this.parseTable(file);
+    this.repairSplitCells(table, mapping);
     if (!table.ocr) {
       await this.saveTableReview(deckId, caller.sub, file.originalname, table, mapping, file).catch(() => undefined);
     }
 
     // Rebuild the exact rows the preview showed, in the same order.
-    const extrasByRow = await this.rowExtras(table, mapping, task);
-    const suggested = await this.suggestMeanings(table, mapping, task);
-    await this.verifyCards(table, mapping, extrasByRow, suggested, task);
+    // The AI checks (missing meaning / Hán Việt / reading, card proofreading) belong to the
+    // column-mapping preview; confirming only reuses what that step already settled.
+    const extrasByRow = await this.rowExtras(table, mapping, task, false);
+    const suggested = await this.suggestMeanings(table, mapping, task, false);
     const needsReview: NonNullable<ImportConfirmResult["needsReview"]> = [];
     const needsMeaning: NonNullable<ImportConfirmResult["needsMeaning"]> = [];
     const existing = await this.card

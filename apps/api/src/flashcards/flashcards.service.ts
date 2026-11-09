@@ -62,7 +62,7 @@ export interface CardWriteInput {
   reading?: string;
   image?: string;
   imageCredit?: string;
-  partOfSpeech?: "verb" | "noun" | "adjective" | "";
+  partOfSpeech?: "verb" | "noun" | "adjective" | "phrase" | "";
   examples?: CardExample[];
   tags?: string[];
   /** `manual` (default) or `saved` — provenance only; never `import` here. */
@@ -795,7 +795,7 @@ export class FlashcardsService implements OnModuleInit {
       reading?: string;
       image?: string;
       imageCredit?: string;
-      partOfSpeech?: "verb" | "noun" | "adjective" | "";
+      partOfSpeech?: "verb" | "noun" | "adjective" | "phrase" | "";
       examples?: CardExample[];
       tags?: string[];
       /** true = an admin looked at the import warnings: clear them. */

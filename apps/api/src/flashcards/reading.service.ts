@@ -5,13 +5,13 @@ import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import kuromoji from "kuromoji";
 
-export const PARTS_OF_SPEECH = ["verb", "noun", "adjective"] as const;
+export const PARTS_OF_SPEECH = ["verb", "noun", "adjective", "phrase"] as const;
 export type PartOfSpeech = (typeof PARTS_OF_SPEECH)[number];
 
 export interface ReadingResult {
   /** Hiragana reading; `""` when the text has no kanji (pure kana / katakana). */
   reading: string;
-  /** Best-guess part of speech (verb / noun / adjective) or `null`. */
+  /** Best-guess part of speech (verb / noun / adjective / phrase) or `null`. */
   partOfSpeech: PartOfSpeech | null;
 }
 
@@ -150,7 +150,9 @@ export class ReadingService {
       (t) => t.pos !== "記号" && t.pos !== "助詞" && t.pos !== "助動詞",
     );
     const head = content[content.length - 1];
-    const partOfSpeech: PartOfSpeech | null = head ? tokenPos(head) : null;
+    // A particle between two words (心が狭い, 気を付ける) makes it a set phrase, not a single part of speech.
+    const inner = tokens.findIndex((t, i) => t.pos === "助詞" && i > 0 && i < tokens.length - 1);
+    const partOfSpeech: PartOfSpeech | null = inner > 0 ? "phrase" : head ? tokenPos(head) : null;
 
     if (!KANJI_RE.test(text)) return { reading: "", partOfSpeech };
 

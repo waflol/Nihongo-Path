@@ -47,7 +47,7 @@ export function CardEditForm({
   const [imageCredit, setImageCredit] = useState(card.imageCredit ?? "");
   const [reading, setReading] = useState(card.reading ?? "");
   const [partOfSpeech, setPartOfSpeech] = useState<PartOfSpeech | "">(
-    card.partOfSpeech === "verb" || card.partOfSpeech === "noun" || card.partOfSpeech === "adjective"
+    card.partOfSpeech === "verb" || card.partOfSpeech === "noun" || card.partOfSpeech === "adjective" || card.partOfSpeech === "phrase"
       ? card.partOfSpeech
       : "",
   );

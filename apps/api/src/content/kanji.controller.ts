@@ -36,6 +36,13 @@ export class KanjiController {
     return this.kanji.levels();
   }
 
+  // Before `kanji/:char`. On/kun readings of the given characters, to split a word's furigana per kanji.
+  @Get("kanji/readings")
+  @IsPublic()
+  readings(@Query("chars") chars = "") {
+    return this.kanji.readings(chars);
+  }
+
   @Get("kanji/:char")
   @IsPublic()
   get(@Param("char") char: string) {

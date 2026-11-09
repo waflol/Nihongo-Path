@@ -93,6 +93,7 @@ const POS_LABEL: Record<string, string> = {
   verb: "Động từ",
   noun: "Danh từ",
   adjective: "Tính từ",
+  phrase: "Cụm từ",
 };
 
 /** Sample CSV (UTF-8 + BOM so Excel opens Japanese correctly). */

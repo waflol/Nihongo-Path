@@ -2,12 +2,13 @@
 
 import { useEffect, useRef } from "react";
 
-export type PartOfSpeech = "verb" | "noun" | "adjective";
+export type PartOfSpeech = "verb" | "noun" | "adjective" | "phrase";
 
 export const POS_LABEL: Record<PartOfSpeech, string> = {
   verb: "Động từ",
   noun: "Danh từ",
   adjective: "Tính từ",
+  phrase: "Cụm từ",
 };
 
 const inputClass =
@@ -115,6 +116,7 @@ export function ReadingFields({
           <option value="verb">{POS_LABEL.verb}</option>
           <option value="noun">{POS_LABEL.noun}</option>
           <option value="adjective">{POS_LABEL.adjective}</option>
+          <option value="phrase">{POS_LABEL.phrase}</option>
         </select>
       </label>
     </>
@@ -123,11 +125,12 @@ export function ReadingFields({
 
 /** Small coloured chip for a part of speech. */
 export function PosChip({ pos }: { pos?: string }) {
-  if (pos !== "verb" && pos !== "noun" && pos !== "adjective") return null;
+  if (pos !== "verb" && pos !== "noun" && pos !== "adjective" && pos !== "phrase") return null;
   const tone = {
     verb: "bg-[#dbeafe] text-[#1d4ed8] dark:bg-[#172554] dark:text-[#93c5fd]",
     noun: "bg-[#dcfce7] text-[#15803d] dark:bg-[#052e16] dark:text-[#86efac]",
     adjective: "bg-[#fef3c7] text-[#b45309] dark:bg-[#422006] dark:text-[#fcd34d]",
+    phrase: "bg-[#f3e8ff] text-[#7e22ce] dark:bg-[#3b0764] dark:text-[#d8b4fe]",
   }[pos];
   return (
     <span className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${tone}`}>

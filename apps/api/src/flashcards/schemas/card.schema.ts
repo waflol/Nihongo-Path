@@ -75,8 +75,8 @@ export class Flashcard {
   imageCredit?: string;
 
   /** Only verb / noun / adjective are distinguished. */
-  @Prop({ type: String, enum: ["verb", "noun", "adjective", ""], default: "" })
-  partOfSpeech?: "verb" | "noun" | "adjective" | "";
+  @Prop({ type: String, enum: ["verb", "noun", "adjective", "phrase", ""], default: "" })
+  partOfSpeech?: "verb" | "noun" | "adjective" | "phrase" | "";
 
   @Prop({
     type: [
