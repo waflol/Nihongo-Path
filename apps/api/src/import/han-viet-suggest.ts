@@ -33,12 +33,23 @@ function load(): Record<string, string> {
 export function suggestHanViet(text: string): string {
   const t = load();
   const out: string[] = [];
-  for (const ch of text) {
+  // A note in brackets ("エンジンがかかる (=エンジンが動く)", also an unclosed one) is not part of the word.
+  for (const ch of text.replace(/[（(][^）)]*[）)]?/g, "")) {
     const v = t[ch];
-    if (v) out.push(v.toLocaleUpperCase("vi"));
+    if (v) out.push(v.split("/")[0].toLocaleUpperCase("vi"));
     else if (/[\u4e00-\u9fff]/.test(ch)) return ""; // an unknown kanji: a partial reading would mislead
   }
   return out.join(" ");
+}
+
+/**
+ * Does a Hán Việt reading have one syllable per kanji of the word (brackets ignored)?
+ * Catches an AI suggestion that pads or splits a reading ("扱いにくい" → "TRÁP XỬ"
+ * for the single kanji 扱). A word without kanji has no Hán Việt at all.
+ */
+export function hanVietFits(word: string, hv: string): boolean {
+  const kanji = [...word.replace(/[（(][^）)]*[）)]?/g, "")].filter((c) => /[\u4e00-\u9fff々]/.test(c)).length;
+  return kanji > 0 && hv.trim().split(/\s+/).filter(Boolean).length === kanji;
 }
 
 export const norm = (x: string) =>

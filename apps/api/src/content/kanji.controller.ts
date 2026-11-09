@@ -13,7 +13,7 @@ import {
 import { ApiOperation, ApiTags } from "@nestjs/swagger";
 import { ContentAdmin } from "../auth/decorators/roles.decorator.js";
 import { IsPublic } from "../auth/decorators/is-public.decorator.js";
-import { KanjiDto, KanjiQuery, KanjiUpdateDto } from "./dto/kanji.dto.js";
+import { KanjiBulkDto, KanjiDto, KanjiQuery, KanjiUpdateDto } from "./dto/kanji.dto.js";
 import { KanjiService } from "./kanji.service.js";
 
 /** Kanji surface (plan-kanji §5). Public reads are forced to PUBLISHED. */
@@ -55,6 +55,19 @@ export class KanjiController {
     return this.kanji.list(query);
   }
 
+  // Declared before `admin/kanji/:char` so "levels" is not read as a character.
+  @Get("admin/kanji/levels")
+  @ContentAdmin()
+  adminLevels() {
+    return this.kanji.adminLevels();
+  }
+
+  @Post("admin/kanji/bulk")
+  @ContentAdmin()
+  bulkUpdate(@Body() body: KanjiBulkDto) {
+    return this.kanji.bulkUpdate(body);
+  }
+
   @Get("admin/kanji/:char")
   @ContentAdmin()
   adminGet(@Param("char") char: string) {
@@ -65,6 +78,12 @@ export class KanjiController {
   @ContentAdmin()
   create(@Body() body: KanjiDto) {
     return this.kanji.create(body);
+  }
+
+  @Post("admin/kanji/:char/generate")
+  @ContentAdmin()
+  generate(@Param("char") char: string) {
+    return this.kanji.generateAi(char);
   }
 
   @Patch("admin/kanji/:char")

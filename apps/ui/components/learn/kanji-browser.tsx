@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { KANJI_LEVELS, type KanjiPage } from "./kanji-types";
+import { KANJI_LEVELS, splitHanViet, type KanjiPage } from "./kanji-types";
 
 const LIMIT = 60;
 
@@ -97,7 +97,7 @@ export function KanjiBrowser() {
           >
             <div className="text-4xl text-[var(--foreground)]">{k.char}</div>
             <div className="mt-1 text-xs font-semibold uppercase text-[var(--accent)]">
-              {k.hanViet || "—"}
+              {splitHanViet(k.hanViet).join(" · ") || "—"}
             </div>
             <div className="mt-1 truncate text-xs text-[var(--muted-foreground)]">
               {[...k.onyomi.slice(0, 1), ...k.kunyomi.slice(0, 1)].join(" · ")}

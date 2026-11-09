@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { StrokeOrder } from "./stroke-order";
-import type { KanjiItem } from "./kanji-types";
+import { splitHanViet, type KanjiItem } from "./kanji-types";
 
 /** Kunyomi "まな.ぶ" → stem + okurigana highlight. */
 function Kun({ value }: { value: string }) {
@@ -52,7 +52,23 @@ export function KanjiDetail({ char }: { char: string }) {
           )}
         </div>
         <div>
-          {row("Hán Việt", <b className="uppercase text-[var(--accent)]">{k.hanViet || "—"}</b>)}
+          {row(
+            "Hán Việt",
+            splitHanViet(k.hanViet).length ? (
+              <span className="flex flex-wrap gap-1.5">
+                {splitHanViet(k.hanViet).map((hv) => (
+                  <b
+                    key={hv}
+                    className="rounded-md bg-[color-mix(in_srgb,var(--accent)_14%,transparent)] px-2 py-0.5 text-xs font-semibold uppercase text-[var(--accent)]"
+                  >
+                    {hv}
+                  </b>
+                ))}
+              </span>
+            ) : (
+              "—"
+            ),
+          )}
           {row("Cấp", k.level || "—")}
           {row("Onyomi", k.onyomi.join("、") || "—")}
           {row("Kunyomi", k.kunyomi.length ? k.kunyomi.map((v, i) => <span key={v}>{i > 0 && "、"}<Kun value={v} /></span>) : "—")}

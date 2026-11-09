@@ -4,11 +4,13 @@ export interface KanjiWord {
   meaning: string;
   glossEn?: string;
   chars: string[];
+  level?: string;
 }
 
 export interface KanjiItem {
   char: string;
   level: string;
+  rank?: number;
   hanViet: string;
   onyomi: string[];
   kunyomi: string[];
@@ -18,6 +20,8 @@ export interface KanjiItem {
   meaningsEn: string[];
   mnemonic: string;
   words: KanjiWord[];
+  radicals?: string[];
+  status?: "DRAFT" | "PUBLISHED";
 }
 
 export interface KanjiPage {
@@ -28,3 +32,12 @@ export interface KanjiPage {
 }
 
 export const KANJI_LEVELS = ["N5", "N4", "N3", "N2", "N1"] as const;
+
+/** Split a kanji's Hán Việt string ("trường/trưởng" or "trường, trưởng") into distinct readings. */
+export function splitHanViet(hanViet: string | string[] | null | undefined): string[] {
+  const raw = Array.isArray(hanViet) ? hanViet.join("/") : String(hanViet ?? "");
+  return raw
+    .split(/[/,;|·、\n]+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+}

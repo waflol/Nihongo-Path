@@ -115,6 +115,16 @@ const NAV: NavItem[] = [
     ),
   },
   {
+    href: "/admin/kanji",
+    label: "Kanji N5–N1",
+    desc: "Quản lý chữ Hán, âm Hán Việt, liên tưởng",
+    icon: (
+      <svg {...iconProps}>
+        <path d="M4 6h16M12 6v14M7 11h10M6 16h12" />
+      </svg>
+    ),
+  },
+  {
     href: "/admin/users",
     label: "Người dùng",
     desc: "Tài khoản, trạng thái, phân quyền",
