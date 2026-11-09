@@ -2,13 +2,25 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { KanjiGroups } from "./kanji-groups";
 import { KANJI_LEVELS, splitHanViet, type KanjiPage } from "./kanji-types";
 
 const LIMIT = 60;
 
 /** /learn/kanji — level tabs + Hán Việt search (plan-kanji §7.1). */
-export function KanjiBrowser() {
-  const [level, setLevel] = useState<string>("N5");
+export function KanjiBrowser({
+  initialView,
+  initialLevel,
+}: {
+  initialView?: string;
+  initialLevel?: string;
+}) {
+  const [level, setLevel] = useState<string>(
+    initialLevel && (initialLevel === "ALL" || (KANJI_LEVELS as readonly string[]).includes(initialLevel))
+      ? initialLevel
+      : "N5",
+  );
+  const [view, setView] = useState<"cards" | "groups">(initialView === "groups" ? "groups" : "cards");
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
   const [data, setData] = useState<KanjiPage | null>(null);
@@ -24,27 +36,51 @@ export function KanjiBrowser() {
       .catch(() => {});
   }, []);
 
+  // Keep the view and level in the URL so a refresh (F5) restores them.
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    if (view === "groups") url.searchParams.set("view", "groups");
+    else url.searchParams.delete("view");
+    if (level !== "N5") url.searchParams.set("level", level);
+    else url.searchParams.delete("level");
+    window.history.replaceState(window.history.state, "", url);
+  }, [view, level]);
+
   useEffect(() => {
     const ctrl = new AbortController();
-    const timer = setTimeout(() => {
-      const p = new URLSearchParams({ page: String(page), limit: String(LIMIT) });
-      if (level !== "ALL") p.set("level", level);
-      if (query.trim()) p.set("hanViet", query.trim());
-      fetch(`/api/kanji?${p}`, { signal: ctrl.signal })
-        .then((r) => (r.ok ? r.json() : Promise.reject()))
-        .then((d: KanjiPage) => {
-          setData(d);
-          setError(false);
-        })
-        .catch((e) => {
-          if (e?.name !== "AbortError") setError(true);
-        });
+    const grouped = view === "groups";
+    const timer = setTimeout(async () => {
+      const build = (pg: number) => {
+        const p = new URLSearchParams({ page: String(pg), limit: grouped ? "100" : String(LIMIT) });
+        if (level !== "ALL") p.set("level", level);
+        if (query.trim()) p.set("hanViet", query.trim());
+        return p;
+      };
+      const get = (pg: number) =>
+        fetch(`/api/kanji?${build(pg)}`, { signal: ctrl.signal }).then((r) =>
+          r.ok ? (r.json() as Promise<KanjiPage>) : Promise.reject(),
+        );
+      try {
+        const first = await get(grouped ? 1 : page);
+        if (grouped) {
+          // Group view shows the whole level: pull the remaining pages (max 100 each).
+          const last = Math.min(30, Math.ceil(first.total / 100));
+          const rest = await Promise.all(
+            Array.from({ length: Math.max(0, last - 1) }, (_, i) => get(i + 2).catch(() => null)),
+          );
+          first.items = [...first.items, ...rest.flatMap((r) => r?.items ?? [])];
+        }
+        setData(first);
+        setError(false);
+      } catch (e) {
+        if ((e as { name?: string })?.name !== "AbortError") setError(true);
+      }
     }, 250);
     return () => {
       clearTimeout(timer);
       ctrl.abort();
     };
-  }, [level, query, page]);
+  }, [level, query, page, view]);
 
   const pages = data ? Math.max(1, Math.ceil(data.total / data.limit)) : 1;
   const tab = (id: string, label: string) => (
@@ -72,6 +108,32 @@ export function KanjiBrowser() {
       <div className="mt-4 flex flex-wrap items-center gap-2">
         {KANJI_LEVELS.map((l) => tab(l, l))}
         {tab("ALL", "Tất cả")}
+        <div
+          role="group"
+          aria-label="Chế độ xem"
+          className="ml-auto flex items-center gap-0.5 rounded-full border border-[var(--border)] bg-[var(--layer)] p-0.5 text-sm"
+        >
+          {(
+            [
+              { id: "cards", label: "Thẻ" },
+              { id: "groups", label: "Nhóm 20 chữ" },
+            ] as const
+          ).map((v) => (
+            <button
+              key={v.id}
+              type="button"
+              aria-pressed={view === v.id}
+              onClick={() => setView(v.id)}
+              className={`rounded-full px-3 py-1 ${
+                view === v.id
+                  ? "bg-[var(--accent)] text-white"
+                  : "text-[var(--foreground)] hover:bg-[var(--layer-hover)]"
+              }`}
+            >
+              {v.label}
+            </button>
+          ))}
+        </div>
         <input
           value={query}
           onChange={(e) => {
@@ -79,7 +141,7 @@ export function KanjiBrowser() {
             setPage(1);
           }}
           placeholder="Tìm theo âm Hán Việt (vd: hoc)"
-          className="ml-auto w-full rounded-lg border border-[var(--border)] bg-[var(--background-1)] px-3 py-1.5 text-sm sm:w-64"
+          className="w-full rounded-lg border border-[var(--border)] bg-[var(--background-1)] px-3 py-1.5 text-sm sm:w-64"
         />
       </div>
 
@@ -88,6 +150,14 @@ export function KanjiBrowser() {
         <p className="mt-6 text-sm text-[var(--muted-foreground)]">Chưa có kanji nào được xuất bản.</p>
       )}
 
+      {view === "groups" ? (
+        <KanjiGroups
+          items={data?.items ?? []}
+          loading={!data && !error}
+          href={(k) => `/learn/kanji/${encodeURIComponent(k.char)}`}
+        />
+      ) : (
+        <>
       <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-6">
         {data?.items.map((k) => (
           <Link
@@ -117,6 +187,8 @@ export function KanjiBrowser() {
             ›
           </button>
         </div>
+      )}
+        </>
       )}
     </div>
   );
