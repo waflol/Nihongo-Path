@@ -528,6 +528,14 @@ export class AiServicesService {
       const rt = await this.runtimeOf(input.serviceId);
       provider = rt.provider;
       if (!key) key = rt.key;
+      // Editing a custom service: the admin may have typed a new Base URL.
+      if (provider.custom && input.baseUrl?.trim()) {
+        provider = {
+          ...provider,
+          kind: input.apiFormat === "anthropic" ? "anthropic" : provider.kind,
+          baseUrl: validateBaseUrl(input.baseUrl),
+        };
+      }
     } else if (provider?.custom) {
       provider = {
         ...provider,

@@ -119,7 +119,7 @@ function ModelPicker({
     setItems(null);
     setErr(null);
     setOpen(false);
-  }, [providerId, serviceId]);
+  }, [providerId, serviceId, baseUrl, apiFormat]);
 
   async function load() {
     setLoading(true);
