@@ -136,6 +136,13 @@ export function ImportJobTracker() {
     setSeenIds(next);
   }
 
+  /** ✕ on a job card: delete the job (and its saved pages) from the DB, not just hide it. */
+  function removeJob(id: string) {
+    dismiss(id);
+    setJobs((prev) => prev.filter((j) => j.id !== id));
+    void fetch(`/api/import?job=${encodeURIComponent(id)}`, { method: "DELETE" }).catch(() => null);
+  }
+
   if (!signedIn) return null;
   const visible = jobs.filter((j) => j.status === "running" || j.retry || !seenIds.includes(j.id));
   const visibleTasks = tasks.filter((t) => t.status === "running" || !seenIds.includes(t.id));
@@ -217,8 +224,9 @@ export function ImportJobTracker() {
               {j.status !== "running" && (
                 <button
                   type="button"
-                  onClick={() => dismiss(j.id)}
-                  aria-label="Đóng"
+                  onClick={() => removeJob(j.id)}
+                  aria-label="Xóa"
+                  title="Xóa kết quả đọc này"
                   className="text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
                 >
                   ✕
