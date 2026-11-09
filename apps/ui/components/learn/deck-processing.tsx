@@ -156,6 +156,12 @@ export function RetryExamplesButton({
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (!note) return;
+    const t = window.setTimeout(() => setNote(null), 4000);
+    return () => window.clearTimeout(t);
+  }, [note]);
+
   async function run() {
     setBusy(true);
     setNote(null);
@@ -165,7 +171,8 @@ export function RetryExamplesButton({
       setNote("Không tạo được ví dụ — thử lại sau");
       return;
     }
-    setNote(remaining === 0 ? "Mọi thẻ đều đã có ví dụ" : `Đang tạo ví dụ cho ${remaining} thẻ ở nền — xem khung tiến trình, bạn có thể sang trang khác.`);
+    // When cards were queued, the progress strip below already says so.
+    setNote(remaining === 0 ? "Mọi thẻ đều đã có ví dụ" : null);
     onChanged();
   }
 
@@ -188,7 +195,10 @@ export function RetryExamplesButton({
         )}
       </button>
       {note && (
-        <span role="status" className="basis-full text-right text-xs text-[var(--muted-foreground)]">
+        <span
+          role="status"
+          className="fixed bottom-4 right-4 z-50 rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-xs text-[var(--foreground)] shadow-lg"
+        >
           {note}
         </span>
       )}
