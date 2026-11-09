@@ -1,4 +1,4 @@
-import { suggestHanViet } from "../import/han-viet-suggest.js";
+import { hanVietFits, suggestHanViet } from "../import/han-viet-suggest.js";
 import { ReadingService } from "./reading.service.js";
 import {
   BadRequestException,
@@ -145,7 +145,7 @@ export class FlashcardsService implements OnModuleInit {
       const ai = /\(AI gợi ý: (.+)\)$/.exec(text)?.[1];
       if (ai) {
         const cur = field === "hanViet" ? c.hanViet : field === "reading" ? c.reading : c.back;
-        if (ai !== (cur ?? "")) fix = ai;
+        if (ai !== (cur ?? "") && (field !== "hanViet" || hanVietFits(c.front, ai))) fix = ai;
       } else if (field === "hanViet") {
         const v = suggestHanViet(c.front);
         if (v && v !== (c.hanViet ?? "")) fix = v;

@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { checkHanViet, checkMeaning, norm as hvNorm, suggestHanViet } from "./han-viet-suggest.js";
+import { checkHanViet, checkMeaning, hanVietFits, norm as hvNorm, suggestHanViet } from "./han-viet-suggest.js";
 import { AiExampleService, lostKanji } from "../ai/ai-example.service.js";
 import {
   Optional,
@@ -1138,7 +1138,7 @@ export class ImportService implements OnApplicationBootstrap {
         if (r?.reading && c.reading && /^[\p{Script=Hiragana}ー]+$/u.test(r.reading) && !readingVariants(c.reading).includes(r.reading)) {
           out.push(`cách đọc “${c.reading}” có thể chưa đúng (AI gợi ý: ${r.reading})`);
         }
-        if (r?.hanViet && c.hanViet && hvNorm(r.hanViet) !== hvNorm(c.hanViet)) {
+        if (r?.hanViet && c.hanViet && hvNorm(r.hanViet) !== hvNorm(c.hanViet) && hanVietFits(c.front, r.hanViet)) {
           out.push(`Hán Việt “${c.hanViet}” có thể chưa đúng (AI gợi ý: ${r.hanViet})`);
         }
         if (r?.meaning && c.meaning && hvNorm(r.meaning) !== hvNorm(c.meaning)) {

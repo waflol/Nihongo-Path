@@ -6,6 +6,7 @@
  *   node scripts/import-kanji.mjs                 # dry run: download + report
  *   node scripts/import-kanji.mjs --write         # upsert into `kanjis`
  *   node scripts/import-kanji.mjs --write --level N5
+ *   node scripts/import-kanji.mjs --write --pinned-only   # only chars with a fixed rank
  *   node scripts/import-kanji.mjs --all           # all 13k chars, not just JLPT
  *
  * Sources are cached under apps/api/data/kanji/ (gitignored). Re-running is
@@ -20,7 +21,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { unzipSync } from "fflate";
 import mongoose from "mongoose";
-import { extractStrokePaths, hanVietNorm, parseUnihan, levelForRank, pickKanjiData, rankJoyo, resolveHanViet, wordsByKanji } from "./kanji-lib.mjs";
+import { PINNED_ORDER, extractStrokePaths, hanVietNorm, parseUnihan, levelForRank, pickKanjiData, rankJoyo, resolveHanViet, wordsByKanji } from "./kanji-lib.mjs";
 import { hanvietData } from "hanviet-pinyin-words";
 
 loadDotenv();
@@ -28,6 +29,8 @@ const here = dirname(fileURLToPath(import.meta.url));
 const CACHE = join(here, "..", "data", "kanji");
 const write = process.argv.includes("--write");
 const all = process.argv.includes("--all");
+// Only the chars whose rank is pinned in kanji-lib (PINNED_BLOCKS); skips the default-ordered rest.
+const pinnedOnly = process.argv.includes("--pinned-only");
 const levelArg = process.argv.includes("--level") ? process.argv[process.argv.indexOf("--level") + 1] : null;
 const UA = { "User-Agent": "NihongoPath/0.1 (kanji import)" };
 mkdirSync(CACHE, { recursive: true });
@@ -88,13 +91,14 @@ const joyo = new Set(
     .filter((l) => l.includes("\tkJoyoKanji\t2010"))
     .map((l) => String.fromCodePoint(parseInt(l.split("\t")[0].slice(2), 16))),
 );
-const rankOf = rankJoyo([...joyo].filter((c) => kanjiData[c]), kanjiData);
+const rankOf = rankJoyo([...new Set([...joyo, ...PINNED_ORDER])].filter((c) => kanjiData[c]), kanjiData);
 const hvCtx = { curated, hvData: hanvietData, variants, kViet: kVietnamese };
 
 const docs = [];
 for (const [char, raw] of Object.entries(kanjiData)) {
   const rec = pickKanjiData(raw);
   if (!all && !rankOf.has(char)) continue;
+  if (pinnedOnly && !PINNED_ORDER.includes(char)) continue;
   const rank = rankOf.get(char) ?? 0;
   const level = levelForRank(rank);
   if (levelArg && level !== levelArg) continue;
@@ -141,11 +145,18 @@ const ops = docs.map((d) => {
   };
 });
 for (let i = 0; i < ops.length; i += 500) await col.bulkWrite(ops.slice(i, i + 500));
-// Fill Hán Việt only where the admin has not set one.
+// Fill Hán Việt where the admin has not set one, or upgrade single-reading imports when multiple readings exist.
 await col.bulkWrite(
-  docs.filter((d) => d.hanViet).map((d) => ({
-    updateOne: { filter: { char: d.char, hanViet: "" }, update: { $set: { hanViet: d.hanViet, hanVietNorm: d.hanVietNorm } } },
-  })),
+  docs.filter((d) => d.hanViet).map((d) => {
+    const primary = d.hanViet.split("/")[0];
+    const matchValues = d.hanViet.includes("/") ? ["", primary] : [""];
+    return {
+      updateOne: {
+        filter: { char: d.char, hanViet: { $in: matchValues } },
+        update: { $set: { hanViet: d.hanViet, hanVietNorm: d.hanVietNorm } },
+      },
+    };
+  }),
 );
 // Chars outside the Jōyō scope (from the earlier JLPT-tag import): hide them.
 const hidden = await col.updateMany(

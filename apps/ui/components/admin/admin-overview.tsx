@@ -53,6 +53,11 @@ export function AdminOverview() {
       title: "Quản lý nội dung học",
       desc: "Giáo trình, đơn vị, từ vựng và ngữ pháp.",
     },
+    {
+      href: "/admin/kanji",
+      title: "Quản lý Kanji N5–N1",
+      desc: "Phân cấp N5–N1, nhiều âm Hán Việt, nghĩa tiếng Việt và liên tưởng.",
+    },
   ];
 
   return (
