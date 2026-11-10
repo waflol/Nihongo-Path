@@ -60,6 +60,24 @@ function suggestCredentials() {
   };
 }
 
+function StatusIcon({ active }: { active: boolean }) {
+  return (
+    <svg viewBox="0 0 16 16" className="size-3.5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      {active ? (
+        <>
+          <circle cx="8" cy="8" r="6.2" />
+          <path d="m5.2 8.2 2 2 3.6-4" />
+        </>
+      ) : (
+        <>
+          <rect x="3.2" y="7" width="9.6" height="6.8" rx="1.6" />
+          <path d="M5.2 7V5.2a2.8 2.8 0 0 1 5.6 0V7" />
+        </>
+      )}
+    </svg>
+  );
+}
+
 function Avatar({ name }: { name: string }) {
   return (
     <span
@@ -377,8 +395,13 @@ export function UsersConsole({ meId, meRole }: { meId: string; meRole: string })
                     </span>
                   </td>
                   <td className="px-4 py-3">
-                    <span className={"inline-block rounded-full px-2.5 py-0.5 text-[11px] font-semibold " + (u.status === "ACTIVE" ? "bg-emerald-500/15 text-emerald-500" : "bg-red-500/15 text-red-500")}>
-                      {u.status === "ACTIVE" ? "Hoạt động" : "Bị khoá"}
+                    <span
+                      title={u.status === "ACTIVE" ? "Hoạt động" : "Bị khoá"}
+                      role="img"
+                      aria-label={u.status === "ACTIVE" ? "Hoạt động" : "Bị khoá"}
+                      className={"inline-grid size-7 place-items-center rounded-full " + (u.status === "ACTIVE" ? "bg-emerald-500/15 text-emerald-500" : "bg-red-500/15 text-red-500")}
+                    >
+                      <StatusIcon active={u.status === "ACTIVE"} />
                     </span>
                   </td>
                   <td className="whitespace-nowrap px-4 py-3">
