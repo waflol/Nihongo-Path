@@ -1059,7 +1059,7 @@ function useJapaneseSpeech() {
   }, [supported]);
 
   const speak = useCallback(
-    (id: string, text: string) => {
+    (id: string, text: string | string[]) => {
       if (!supported) return;
       const synth = window.speechSynthesis;
       if (synth.speaking && speakingId === id) {
@@ -1068,16 +1068,22 @@ function useJapaneseSpeech() {
         return;
       }
       synth.cancel();
-      const utter = new SpeechSynthesisUtterance(speechText(text));
-      utter.lang = "ja-JP";
+      const texts = Array.isArray(text) ? text : [text];
       const voice = pickJapaneseVoice();
-      if (voice) utter.voice = voice;
-      utter.rate = 0.85; // a touch slower — clearer for learners
-      utter.pitch = 1;
-      utter.onstart = () => setSpeakingId(id);
-      utter.onend = () => setSpeakingId((cur) => (cur === id ? null : cur));
-      utter.onerror = () => setSpeakingId((cur) => (cur === id ? null : cur));
-      synth.speak(utter);
+      texts.forEach((t, i) => {
+        const utter = new SpeechSynthesisUtterance(speechText(t));
+        utter.lang = "ja-JP";
+        if (voice) utter.voice = voice;
+        utter.rate = 0.85; // a touch slower — clearer for learners
+        utter.pitch = 1;
+        if (i === 0) utter.onstart = () => setSpeakingId(id);
+        const last = i === texts.length - 1;
+        utter.onend = () => {
+          if (last) setSpeakingId((cur) => (cur === id ? null : cur));
+        };
+        utter.onerror = () => setSpeakingId((cur) => (cur === id ? null : cur));
+        synth.speak(utter); // utterances queue, so they play one after another
+      });
     },
     [supported, speakingId],
   );
@@ -1145,10 +1151,14 @@ function LearnCard({
   const term = parsed.term;
   const reading = cardReading || parsed.reading;
 
-  // Auto-pronounce the term every time the card is flipped over (not when it
+  // Auto-pronounce the term (then the example sentences, if shown) every time the card is flipped over (not when it
   // flips back). Refs keep the effect keyed on `flipped` only.
   const autoSpeakRef = useRef<() => void>(() => {});
-  autoSpeakRef.current = () => speak(`auto-${Date.now()}`, reading || term);
+  autoSpeakRef.current = () =>
+    speak(`auto-${Date.now()}`, [
+      reading || term,
+      ...(showExamples && examples ? examples.map((ex) => ex.sentence) : []),
+    ]);
   useEffect(() => {
     if (flipped) autoSpeakRef.current();
   }, [flipped]);
