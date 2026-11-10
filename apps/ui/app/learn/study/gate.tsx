@@ -15,5 +15,5 @@ export async function LearnStudyGate() {
     redirect("/login?from=/learn/study");
   }
 
-  return <StudySession />;
+  return <StudySession mode="learn" />;
 }

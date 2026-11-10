@@ -208,10 +208,10 @@ export function DecksConsole() {
         </h1>
         <div className="flex gap-2">
           <Link
-            href="/learn/study"
+            href="/learn/review"
             className="rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-semibold text-[var(--primary-foreground)] hover:bg-[var(--primary-hover)]"
           >
-            Bắt đầu ôn tập
+            Ôn tập SRS
           </Link>
         </div>
       </div>
@@ -361,7 +361,7 @@ export function DecksConsole() {
                     />
                   )}
                   <Link
-                      href={`/learn/study?deck=${deck._id}`}
+                      href={`/learn/review?deck=${deck._id}`}
                       title="Ôn tập"
                       aria-label="Ôn tập"
                       className="inline-flex size-9 items-center justify-center rounded-lg border border-[var(--border)] text-[var(--foreground)] hover:bg-[var(--layer-hover)]"

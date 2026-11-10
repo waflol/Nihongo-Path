@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -9,7 +10,10 @@ import {
   Patch,
   Post,
   Query,
+  Res,
+  StreamableFile,
 } from "@nestjs/common";
+import type { Response } from "express";
 import { ApiOperation, ApiTags } from "@nestjs/swagger";
 import { ContentAdmin } from "../auth/decorators/roles.decorator.js";
 import { IsPublic } from "../auth/decorators/is-public.decorator.js";
@@ -60,6 +64,25 @@ export class KanjiController {
   @ContentAdmin()
   adminLevels() {
     return this.kanji.adminLevels();
+  }
+
+  // Before `admin/kanji/:char` so "export" is not read as a character.
+  @Get("admin/kanji/export")
+  @ContentAdmin()
+  @ApiOperation({ summary: "Backup: every kanji as an Excel workbook (restore with POST admin/kanji/import)" })
+  async exportXlsx(@Res({ passthrough: true }) res: Response) {
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", `attachment; filename="kanji-${new Date().toISOString().slice(0, 10)}.xlsx"`);
+    return new StreamableFile(await this.kanji.exportXlsx());
+  }
+
+  @Post("admin/kanji/import")
+  @ContentAdmin()
+  @ApiOperation({ summary: "Restore: upsert kanji from the exported .xlsx (or a CSV) in the request body" })
+  importFile(@Body() body: unknown) {
+    if (Buffer.isBuffer(body) && body.length > 0) return this.kanji.importFile(new Uint8Array(body));
+    if (typeof body === "string" && body.trim() !== "") return this.kanji.importFile(body);
+    throw new BadRequestException("Gửi file .xlsx (hoặc CSV) trong nội dung yêu cầu");
   }
 
   @Post("admin/kanji/bulk")

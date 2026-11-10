@@ -7,6 +7,7 @@ import { seededShuffle } from "./quiz-utils";
 import { PosChip } from "@/components/learn/reading-fields";
 import { ConfirmDialog } from "@/components/learn/confirm-dialog";
 import { CardReportDialog } from "@/components/learn/card-report-dialog";
+import { SentenceFurigana } from "@/components/learn/furigana";
 import { StudyComplete } from "@/components/learn/study-complete";
 import { hanViet } from "@/lib/han-viet";
 import { useHanVietPref } from "@/lib/use-han-viet-pref";
@@ -132,6 +133,8 @@ interface Queue {
   grades?: { AGAIN: number; HARD: number; GOOD: number; EASY: number };
   reviewAhead?: QueueItem[];
   nextDueDay?: string;
+  newToday?: number;
+  newPerDay?: number;
 }
 
 interface DeckRef {
@@ -176,7 +179,7 @@ const FLUSH_DEBOUNCE_MS = 1500;
  * `useSearchParams` call in a statically-rendered tree fails the build, so
  * the real component is wrapped in its own `<Suspense>` boundary here.
  */
-export function StudySession() {
+export function StudySession({ mode }: { mode: "learn" | "review" }) {
   return (
     <Suspense
       fallback={
@@ -185,14 +188,16 @@ export function StudySession() {
         </p>
       }
     >
-      <StudySessionInner />
+      <StudySessionInner mode={mode} />
     </Suspense>
   );
 }
 
-function StudySessionInner() {
+function StudySessionInner({ mode }: { mode: "learn" | "review" }) {
   const searchParams = useSearchParams();
   const deckParam = searchParams.get("deck");
+  // `learn` (/learn/study): new words in deck order, up to the daily amount.
+  // `review` (/learn/review): only the words due by the SRS schedule.
 
   const [deck, setDeck] = useState<DeckRef | null>(null);
   const [decks, setDecks] = useState<DeckRef[]>([]);
@@ -252,6 +257,25 @@ function StudySessionInner() {
     }
   }
   // Example sentences on the meaning face: show / hide, remembered.
+  // Auto-pronounce when a card is flipped over, remembered.
+  const [autoSpeak, setAutoSpeak] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem("np.autoSpeak") !== "0";
+    } catch {
+      return true;
+    }
+  });
+  function toggleAutoSpeak() {
+    setAutoSpeak((v) => {
+      try {
+        localStorage.setItem("np.autoSpeak", v ? "0" : "1");
+      } catch {
+        /* ignore */
+      }
+      if (v && typeof window !== "undefined" && "speechSynthesis" in window) window.speechSynthesis.cancel();
+      return !v;
+    });
+  }
   const [showExamples, setShowExamples] = useState<boolean>(() => {
     try {
       return localStorage.getItem("np.showExamples") !== "0";
@@ -332,7 +356,7 @@ function StudySessionInner() {
   /** Load the deck list + the queue for the target deck. */
   const loadQueue = useCallback(
     async (target: DeckRef) => {
-      const qRes = await fetch(`/api/srs/queue/${target._id}?limit=100`, {
+      const qRes = await fetch(`/api/srs/queue/${target._id}?limit=100&mode=${mode}`, {
         cache: "no-store",
       }).catch(() => null);
       if (!qRes || !qRes.ok) {
@@ -350,7 +374,7 @@ function StudySessionInner() {
       );
       setQueue(q);
     },
-    [],
+    [mode],
   );
 
   useEffect(() => {
@@ -374,9 +398,13 @@ function StudySessionInner() {
       if (cancelled) return;
       setDecks(list);
 
-      const target = deckParam
-        ? list.find((d) => d._id === deckParam) ?? ALL_DECKS
-        : ALL_DECKS;
+      // Learning needs one deck (default: the first); reviewing may span all of them.
+      const target =
+        mode === "learn"
+          ? (list.find((d) => d._id === deckParam) ?? list[0])
+          : deckParam
+            ? (list.find((d) => d._id === deckParam) ?? ALL_DECKS)
+            : ALL_DECKS;
       if (!target) {
         setQueue(null);
         setLoading(false);
@@ -392,7 +420,7 @@ function StudySessionInner() {
     return () => {
       cancelled = true;
     };
-  }, [deckParam, loadQueue]);
+  }, [deckParam, mode, loadQueue]);
 
   /** Flush the buffered reviews in one batched request. */
   const flushingRef = useRef(false);
@@ -667,7 +695,7 @@ function StudySessionInner() {
       />
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border)] pb-4">
         <h1 className="text-2xl font-semibold tracking-tight text-[var(--foreground)]">
-          Ôn tập
+          {mode === "learn" ? "Học từ mới" : "Ôn tập SRS"}
         </h1>
         <div className="flex items-center gap-3">
           {/* Always rendered (just hidden when idle) so the header height —
@@ -699,7 +727,7 @@ function StudySessionInner() {
                 }}
                 className="ml-1 rounded-lg border border-[var(--border)] bg-[var(--background)] px-2 py-1 text-sm text-[var(--foreground)]"
               >
-                <option value={ALL_DECKS._id}>{ALL_DECKS.title}</option>
+                {mode === "review" && <option value={ALL_DECKS._id}>{ALL_DECKS.title}</option>}
                 {decks.map((d) => (
                   <option key={d._id} value={d._id}>
                     {d.title}
@@ -754,18 +782,28 @@ function StudySessionInner() {
         </div>
       )}
 
-      {/* Every card is already learned and scheduled for later: nothing to
-          review today, so show the completion stage, not an empty state. */}
+      {/* Nothing to do in this mode right now — an honest empty state, not a "session complete". */}
       {!loading && queue && !merged.length && queue.total !== 0 && (
-        <StudyComplete
-          total={queue.total ?? 0}
-          reviews={0}
-          grades={queue.grades ?? { AGAIN: 0, HARD: 0, GOOD: 0, EASY: 0 }}
-          resetting={resetting}
-          onReset={deck?._id === ALL_DECKS._id ? undefined : () => setConfirmReset(true)}
-          onRestart={restartWeak}
-          restartLabel={weakCards.length === 0 ? "Đặt lại" : "Học lại phiên này"}
-        />
+        <div className="mt-8 rounded-2xl border border-dashed border-[var(--border)] p-8 text-center text-sm text-[var(--muted-foreground)]">
+          {mode === "review" ? (
+            <>
+              Không có từ nào đến hạn ôn tập{deck && deck._id !== ALL_DECKS._id ? " trong bộ này" : ""}.
+              {queue.nextDueDay ? ` Lần ôn tiếp theo: ${queue.nextDueDay}.` : ""} Học thêm từ mới tại{" "}
+              <Link href={deck && deck._id !== ALL_DECKS._id ? `/learn/study?deck=${deck._id}` : "/learn/decks"} className="font-medium text-[var(--primary)] hover:underline">
+                {deck && deck._id !== ALL_DECKS._id ? "trang học từ mới" : "danh sách bộ thẻ"}
+              </Link>
+              .
+            </>
+          ) : (
+            <>
+              Hôm nay bạn đã học đủ số từ mới ({queue.newToday ?? 0}/{queue.newPerDay ?? 0}) hoặc bộ này không còn từ mới. Ôn lại các từ đến hạn tại{" "}
+              <Link href={`/learn/review${deck ? `?deck=${deck._id}` : ""}`} className="font-medium text-[var(--primary)] hover:underline">
+                Ôn tập SRS
+              </Link>
+              .
+            </>
+          )}
+        </div>
       )}
 
       {!loading && current && (
@@ -855,6 +893,18 @@ function StudySessionInner() {
               </button>
               <button
                 type="button"
+                onClick={toggleAutoSpeak}
+                aria-pressed={autoSpeak}
+                title={autoSpeak ? "Tự động phát âm: bật — bấm để tắt" : "Tự động phát âm: tắt — bấm để bật"}
+                aria-label="Tự động phát âm"
+                className={toolbarBtn(autoSpeak)}
+              >
+                <svg aria-hidden="true" className="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M11 5 6 9H2v6h4l5 4V5ZM15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13" />
+                </svg>
+              </button>
+              <button
+                type="button"
                 onClick={toggleReading}
                 aria-pressed={showReading}
                 title="Bật/tắt cách đọc hiragana trên mặt thuật ngữ"
@@ -916,6 +966,7 @@ function StudySessionInner() {
               examples={current.examples}
               showReading={showReading}
               showExamples={showExamples}
+              autoSpeak={autoSpeak}
               showHanViet={showHanViet}
               startSide={startSide}
               flipped={flipped}
@@ -1118,6 +1169,7 @@ function LearnCard({
   examples,
   showReading,
   showExamples,
+  autoSpeak,
   showHanViet,
   startSide,
   flipped,
@@ -1134,6 +1186,7 @@ function LearnCard({
   examples?: { sentence: string; translation?: string }[];
   showReading: boolean;
   showExamples: boolean;
+  autoSpeak: boolean;
   showHanViet: boolean;
   /** Which side faces the learner first: the term (front) or the meaning (back). */
   startSide: "front" | "back";
@@ -1160,8 +1213,8 @@ function LearnCard({
       ...(showExamples && examples ? examples.map((ex) => ex.sentence) : []),
     ]);
   useEffect(() => {
-    if (flipped) autoSpeakRef.current();
-  }, [flipped]);
+    if (flipped && autoSpeak) autoSpeakRef.current();
+  }, [flipped, autoSpeak]);
 
   const hint = (tone: string, text: string) => (
     <p className={`mt-5 text-xs ${tone}`}>{text}</p>
@@ -1169,8 +1222,9 @@ function LearnCard({
   const termContent = (
     <div className="flex min-h-full flex-col items-center justify-center">
       <div className="text-center">
-        {reading && showReading && (
-          <p lang="ja" className="mb-2 text-base text-white/80 sm:text-lg">
+        {reading && (
+          // Always laid out (just hidden when off) so toggling hiragana never moves the card's content.
+          <p lang="ja" aria-hidden={!showReading} className={"mb-2 text-base text-white/80 sm:text-lg" + (showReading ? "" : " invisible")}>
             {reading}
           </p>
         )}
@@ -1221,8 +1275,8 @@ function LearnCard({
                       <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">
                         Ví dụ{examples.length > 1 ? ` ${i + 1}` : ""}
                       </p>
-                      <p lang="ja" className="mt-0.5 break-words text-base text-[var(--foreground)]">
-                        {ex.sentence}
+                      <p lang="ja" className="mt-0.5 break-words text-base leading-8 text-[var(--foreground)]">
+                        {showReading ? <SentenceFurigana text={ex.sentence} /> : ex.sentence}
                       </p>
                       {ex.translation && (
                         <p className="mt-0.5 break-words text-sm text-[var(--muted-foreground)]">

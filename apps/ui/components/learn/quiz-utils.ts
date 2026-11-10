@@ -334,23 +334,6 @@ function kanjiQuestion(c: ExerciseCard, others: ExerciseCard[], s: number): Choi
   };
 }
 
-/** Kanji word → its correct hiragana reading (readings of other deck words as distractors). */
-function readingQuestion(c: ExerciseCard, others: ExerciseCard[], s: number): ChoiceQuestion | null {
-  if (!isKanjiReadingCard(c)) return null;
-  const d = pickDistractors(others.filter(hasReading).map((o) => o.reading!.trim()), c.reading!.trim(), 3, s);
-  if (d.length < 3) return null;
-  return {
-    id: c._id,
-    kind: "reading-pick",
-    source: "local",
-    label: "Cách đọc hiragana đúng là?",
-    prompt: c.front,
-    sub: c.back,
-    options: [c.reading!.trim(), ...d],
-    answer: c.reading!.trim(),
-  };
-}
-
 /**
  * Build the questions of a local (no-AI) choice mode. Cards that cannot make a
  * valid question for the mode (no kanji, no reading, no example, too few
@@ -368,9 +351,9 @@ export function buildChoiceQuestions(
     let q: ChoiceQuestion | null = null;
 
     if (mode === "test") {
-      // Trắc nghiệm mixes three kinds, rotated card by card; a card that cannot
+      // Trắc nghiệm mixes two kinds (meaning / kanji), rotated card by card; a card that cannot
       // make the kind it was given falls back to the next one.
-      const makers = [meaningQuestion, kanjiQuestion, readingQuestion];
+      const makers = [meaningQuestion, kanjiQuestion];
       for (let k = 0; k < makers.length && !q; k++) q = makers[(out.length + k) % makers.length](c, others, s);
     } else if (mode === "kanji") {
       // The reading is the question; the answer is the kanji word.

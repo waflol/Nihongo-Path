@@ -26,6 +26,12 @@ async function bootstrap() {
   });
   app.useBodyParser("json", { limit: "400kb" });
   app.useBodyParser("urlencoded", { extended: true, limit: "400kb" });
+  // Kanji CSV restore (admin): the file carries stroke data, so it is bigger than a JSON call.
+  app.useBodyParser("text", { type: "text/csv", limit: "40mb" });
+  app.useBodyParser("raw", {
+    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    limit: "40mb",
+  });
 
   app.useGlobalPipes(
     new ValidationPipe({

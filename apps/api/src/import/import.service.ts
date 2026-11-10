@@ -1170,7 +1170,8 @@ export class ImportService implements OnApplicationBootstrap {
     if (!issue || v?.ok) return { value: given, issue: null };
     // The kanji data settles it: keep valid syllables, replace the wrong ones.
     const fixed = v?.hanViet || correctHanViet(front, given) || tableValue;
-    return { value: fixed || given, issue: fixed ? `${issue} → đã tự sửa thành ${fixed} (theo dữ liệu Kanji)` : issue };
+    // Corrected from the table: no warning to act on — the stored value is already right.
+    return { value: fixed || given, issue: fixed ? null : issue };
   }
 
   /**

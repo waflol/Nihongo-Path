@@ -25,17 +25,23 @@ const MAX_LEN = 300;
 export function ComposeDrill({
   deckId,
   cards,
+  tierOf,
   round,
   onRestart,
 }: {
   deckId: string;
   cards: ExerciseCard[];
+  /** 0 = learned today, 1 = due, 2 = rest: drilled in that order. */
+  tierOf?: (id: string) => number;
   round: number;
   onRestart: () => void;
 }) {
   const order = useMemo(
-    () => seededShuffle(cards.filter((c) => c.front && c.back), hashSeed(deckId) + round),
-    [cards, deckId, round],
+    () => {
+      const list = seededShuffle(cards.filter((c) => c.front && c.back), hashSeed(deckId) + round);
+      return tierOf ? list.sort((a, b) => tierOf(a._id) - tierOf(b._id)) : list;
+    },
+    [cards, deckId, round, tierOf],
   );
   const [step, setStep] = useState(0);
   const [text, setText] = useState("");

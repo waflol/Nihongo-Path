@@ -39,14 +39,14 @@ export default function LearnPage() {
           </p>
         </Link>
         <Link
-          href="/learn/study"
+          href="/learn/review"
           className="rounded-2xl border border-[var(--border)] bg-[var(--background-1)] p-6 transition-colors hover:bg-[var(--layer-hover)]"
         >
           <h2 className="text-sm font-semibold text-[var(--foreground)]">
             Ôn tập SRS
           </h2>
           <p className="mt-1 text-sm text-[var(--muted-foreground)]">
-            Phiên ôn tập thẻ mới + đến hạn theo lịch cá nhân.
+            Ôn lại những từ đến hạn theo thuật toán lặp lại ngắt quãng.
           </p>
         </Link>
         <Link

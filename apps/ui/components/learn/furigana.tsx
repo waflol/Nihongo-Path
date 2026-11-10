@@ -60,3 +60,60 @@ export function Furigana({ front, reading }: { front: string; reading?: string }
     </>
   );
 }
+
+const sentenceCache = new Map<string, string>();
+const sentenceAsked = new Set<string>();
+
+/**
+ * A whole example sentence with furigana over its kanji. The sentence's
+ * hiragana comes from the reading analyser (once per sentence); until it
+ * arrives — or when it cannot be lined up with the sentence — the plain
+ * sentence is shown.
+ */
+export function SentenceFurigana({ text }: { text: string }) {
+  const [, bump] = useState(0);
+  const dict = useKanjiReadings(text);
+  useEffect(() => {
+    if (sentenceCache.has(text) || sentenceAsked.has(text) || !/[一-鿿]/.test(text)) return;
+    sentenceAsked.add(text);
+    let alive = true;
+    (async () => {
+      const res = await fetch("/api/flashcards/reading", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: text.slice(0, 200) }),
+      }).catch(() => null);
+      const data = res?.ok ? ((await res.json().catch(() => null)) as { reading?: string } | null) : null;
+      sentenceCache.set(text, data?.reading ?? "");
+      if (alive) bump((n) => n + 1);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [text]);
+
+  const reading = sentenceCache.get(text);
+  if (!reading) return <>{text}</>;
+  const parts = furiganaParts(text, reading, dict);
+  // One ruby over the whole sentence means the reading did not line up: show it plain.
+  if (parts.length === 1 && parts[0].rt) return <>{text}</>;
+  return (
+    <>
+      {parts.map((p, i) =>
+        p.rt ? (
+          <ruby key={i} style={{ rubyAlign: "center", rubyPosition: "over", letterSpacing: 0 }}>
+            {p.text}
+            <rt
+              data-rt={p.rt}
+              aria-hidden="true"
+              className="select-none text-[0.5em] font-medium tracking-normal text-[var(--muted-foreground)] before:content-[attr(data-rt)]"
+              style={{ rubyAlign: "center", letterSpacing: 0 }}
+            />
+          </ruby>
+        ) : (
+          <span key={i}>{p.text}</span>
+        ),
+      )}
+    </>
+  );
+}

@@ -57,7 +57,10 @@ function text(node: unknown): string {
   const runs = toArray<{ t?: unknown }>(obj.r);
   if (runs.length > 0) return runs.map((run) => text(run)).filter(Boolean).join("");
   const t = obj.t;
-  return typeof t === "string" ? t : Array.isArray(t) ? (t[0] ?? "") : "";
+  // `<t xml:space="preserve">…</t>` parses to an object carrying the text under "#text".
+  const str = (x: unknown): string =>
+    typeof x === "string" ? x : typeof x === "number" ? String(x) : typeof (x as { "#text"?: unknown } | null)?.["#text"] !== "undefined" ? String((x as { "#text": unknown })["#text"]) : "";
+  return Array.isArray(t) ? str(t[0]) : str(t);
 }
 
 /** `"B12"` → `{ col: 2, row: 1 }` (1-based). */

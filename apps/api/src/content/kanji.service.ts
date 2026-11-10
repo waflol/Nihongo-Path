@@ -9,6 +9,10 @@ import { InjectModel } from "@nestjs/mongoose";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { parse as parseCsvSync } from "csv-parse/sync";
+import { parseXlsx } from "../import/parsers/xlsx.js";
+import type { Table } from "../import/parsers/types.js";
+import { buildXlsx } from "./kanji-xlsx.js";
 import { FilterQuery, Model } from "mongoose";
 import { AiExampleService } from "../ai/ai-example.service.js";
 import { formatHanViet, hanVietNorm } from "./han-viet-norm.js";
@@ -60,6 +64,39 @@ function loadCuratedHanViet(): Record<string, string> {
     }
   }
   return {};
+}
+
+/** Columns of the kanji CSV backup (export → import round-trips every field). */
+export const KANJI_CSV_COLUMNS = [
+  "char", "level", "rank", "status", "hanViet", "onyomi", "kunyomi", "strokeCount",
+  "meanings", "meaningsEn", "mnemonic", "radicals", "words", "strokes", "source", "strokeCredit", "lang",
+] as const;
+
+const LIST_SEP = " | ";
+const splitList = (v: string): string[] =>
+  v.split("|").map((x) => x.trim()).filter(Boolean);
+
+/** Workbook / CSV column titles → the field they fill. */
+const KANJI_HEADER_ALIAS: Record<string, string> = {
+  "Chữ": "char", "Cấp": "level", "STT": "rank", "Trạng thái": "status", "Hán Việt": "hanViet",
+  "Onyomi": "onyomi", "Kunyomi": "kunyomi", "Số nét": "strokeCount", "Nghĩa tiếng Việt": "meanings",
+  "Nghĩa tiếng Anh": "meaningsEn", "Liên tưởng": "mnemonic", "Bộ thủ": "radicals", "Nguồn": "source",
+  "Credit nét vẽ": "strokeCredit", "Ngôn ngữ": "lang",
+};
+const STATUS_ALIAS: Record<string, "DRAFT" | "PUBLISHED"> = {
+  draft: "DRAFT", published: "PUBLISHED", "bản nháp": "DRAFT", "xuất bản": "PUBLISHED", "đã xuất bản": "PUBLISHED",
+};
+interface KanjiExtra {
+  words?: Map<string, RelatedWord[]>;
+  strokes?: Map<string, string[]>;
+}
+
+export interface KanjiCsvResult {
+  rows: number;
+  created: number;
+  updated: number;
+  skipped: number;
+  errors: { line: number; char: string; message: string }[];
 }
 
 @Injectable()
@@ -358,6 +395,230 @@ export class KanjiService implements OnModuleInit {
       .exec();
     if (!doc) throw new NotFoundException("Kanji not found");
     return doc;
+  }
+
+  /**
+   * Every kanji as an Excel workbook: "Kanji" (one row per kanji), "Từ vựng"
+   * (one row per related word) and "Nét vẽ" (one row per stroke path). Nothing
+   * is dropped, so `importFile` restores a database exactly.
+   */
+  async exportXlsx(): Promise<Uint8Array> {
+    const docs = await this.model.find({}).sort({ rank: 1, char: 1 }).lean().exec();
+    const join = (a?: string[]) => (a ?? []).join(LIST_SEP);
+    const main = docs.map((d) => [
+      d.char, d.level ?? "", d.rank ?? 0, d.status === "PUBLISHED" ? "Xuất bản" : "Bản nháp", d.hanViet ?? "",
+      join(d.onyomi), join(d.kunyomi), d.strokeCount ?? 0, join(d.meanings), join(d.meaningsEn),
+      d.mnemonic ?? "", join(d.radicals), d.source ?? "", d.strokeCredit ?? "", d.lang ?? "vi",
+    ]);
+    const words = docs.flatMap((d) =>
+      (d.words ?? []).map((w) => [d.char, w.term, w.reading ?? "", w.meaning ?? "", w.glossEn ?? "", w.level ?? ""]),
+    );
+    const strokes = docs.flatMap((d) => (d.strokes ?? []).map((path, i) => [d.char, i + 1, path]));
+    return buildXlsx([
+      {
+        name: "Kanji",
+        columns: [
+          { header: "Chữ", width: 8, center: true }, { header: "Cấp", width: 7, center: true },
+          { header: "STT", width: 7, center: true }, { header: "Trạng thái", width: 12, center: true },
+          { header: "Hán Việt", width: 16 }, { header: "Onyomi", width: 18 }, { header: "Kunyomi", width: 22 },
+          { header: "Số nét", width: 8, center: true }, { header: "Nghĩa tiếng Việt", width: 32 },
+          { header: "Nghĩa tiếng Anh", width: 28 }, { header: "Liên tưởng", width: 50 }, { header: "Bộ thủ", width: 14 },
+          { header: "Nguồn", width: 18 }, { header: "Credit nét vẽ", width: 30 }, { header: "Ngôn ngữ", width: 10, center: true },
+        ],
+        rows: main,
+      },
+      {
+        name: "Từ vựng",
+        columns: [
+          { header: "Chữ", width: 8, center: true }, { header: "Từ", width: 16 }, { header: "Cách đọc", width: 18 },
+          { header: "Nghĩa tiếng Việt", width: 30 }, { header: "Nghĩa tiếng Anh", width: 40 }, { header: "Cấp", width: 7, center: true },
+        ],
+        rows: words,
+      },
+      {
+        name: "Nét vẽ",
+        columns: [
+          { header: "Chữ", width: 8, center: true }, { header: "Nét số", width: 8, center: true },
+          { header: "Đường vẽ (SVG path)", width: 90 },
+        ],
+        rows: strokes,
+      },
+      {
+        name: "Ghi chú",
+        table: false,
+        columns: [{ header: "Hướng dẫn", width: 110 }],
+        rows: [
+          ["Đây là bản sao lưu chữ Kanji của Nihongo Path. Dùng nút “Nhập” ở trang Quản lý Kanji để khôi phục vào bất kỳ database nào."],
+          ["Sheet “Kanji”: mỗi dòng một chữ (khoá là cột Chữ). Danh sách (Onyomi, Kunyomi, Nghĩa, Bộ thủ) ngăn cách bằng dấu |."],
+          ["Sheet “Từ vựng” và “Nét vẽ”: mỗi dòng một từ / một nét; nếu sheet có chữ nào thì danh sách của chữ đó được thay bằng nội dung sheet."],
+          ["Đừng đổi tên sheet hoặc tiêu đề cột. Có thể sửa nội dung, thêm dòng chữ mới, hoặc để trống ô để xoá giá trị (trừ Từ vựng/Nét vẽ)."],
+        ],
+      },
+    ]);
+  }
+
+  /** Restore from an uploaded file: `.xlsx` (the export) or a CSV with the same columns. */
+  async importFile(body: Uint8Array | string): Promise<KanjiCsvResult> {
+    if (typeof body !== "string" && body[0] === 0x50 && body[1] === 0x4b) return this.importXlsx(body);
+    const text = typeof body === "string" ? body : new TextDecoder().decode(body);
+    return this.importCsv(text);
+  }
+
+  private async importXlsx(buf: Uint8Array): Promise<KanjiCsvResult> {
+    const grid = (t: Table): string[][] => [t.columns, ...t.rows.map((r) => t.columns.map((c) => r[c] ?? ""))];
+    let main: Table;
+    try {
+      main = parseXlsx(buf, "Kanji");
+    } catch (e) {
+      throw new BadRequestException(`Không đọc được sheet “Kanji”: ${(e as Error).message}`);
+    }
+    const sheet = (name: string): Table | null => {
+      try {
+        return parseXlsx(buf, name);
+      } catch {
+        return null; // the sheet is optional
+      }
+    };
+    const extra: KanjiExtra = {};
+    const wordsT = sheet("Từ vựng");
+    if (wordsT) {
+      extra.words = new Map();
+      for (const r of wordsT.rows) {
+        const ch = (r["Chữ"] ?? "").trim();
+        const term = (r["Từ"] ?? "").trim();
+        if (!ch || !term) continue;
+        const list = extra.words.get(ch) ?? [];
+        list.push({
+          term, reading: (r["Cách đọc"] ?? "").trim(), meaning: (r["Nghĩa tiếng Việt"] ?? "").trim(),
+          glossEn: (r["Nghĩa tiếng Anh"] ?? "").trim() || undefined, chars: [...term],
+          level: (r["Cấp"] ?? "").trim() || undefined,
+        });
+        extra.words.set(ch, list);
+      }
+    }
+    const strokesT = sheet("Nét vẽ");
+    if (strokesT) {
+      extra.strokes = new Map();
+      const rows = strokesT.rows
+        .map((r) => ({ ch: (r["Chữ"] ?? "").trim(), n: Number(r["Nét số"]) || 0, d: (r["Đường vẽ (SVG path)"] ?? "").trim() }))
+        .filter((r) => r.ch && r.d)
+        .sort((a, b) => a.n - b.n);
+      for (const r of rows) extra.strokes.set(r.ch, [...(extra.strokes.get(r.ch) ?? []), r.d]);
+    }
+    return this.importRecords(grid(main), extra);
+  }
+
+  /**
+   * Upsert kanji from CSV text (same columns as the workbook's "Kanji" sheet,
+   * or the original English names; `words` / `strokes` may be JSON cells).
+   */
+  async importCsv(text: string): Promise<KanjiCsvResult> {
+    let records: string[][];
+    try {
+      records = parseCsvSync(text, { bom: true, relax_column_count: true, skip_empty_lines: true }) as string[][];
+    } catch (e) {
+      throw new BadRequestException(`CSV không đọc được: ${(e as Error).message}`);
+    }
+    return this.importRecords(records);
+  }
+
+  /**
+   * Upsert kanji from a header + rows grid (only the columns present are
+   * written, `char` is required). A row with a bad value is skipped and
+   * reported. Empty `words` / `strokes` never wipe existing data.
+   */
+  private async importRecords(records: string[][], extra: KanjiExtra = {}): Promise<KanjiCsvResult> {
+    if (records.length < 2) throw new BadRequestException("File không có dòng dữ liệu");
+    const header = records[0].map((h) => KANJI_HEADER_ALIAS[h.trim()] ?? h.trim());
+    const col = new Map<string, number>(header.map((h, i) => [h, i]));
+    if (!col.has("char")) throw new BadRequestException("File thiếu cột “Chữ” (char)");
+    const known = new Set<string>(KANJI_CSV_COLUMNS);
+    const result: KanjiCsvResult = { rows: records.length - 1, created: 0, updated: 0, skipped: 0, errors: [] };
+    const ops: Parameters<typeof this.model.bulkWrite>[0] = [];
+    const fail = (line: number, char: string, message: string) => {
+      result.skipped++;
+      if (result.errors.length < 30) result.errors.push({ line, char, message });
+    };
+    records.slice(1).forEach((r, idx) => {
+      const line = idx + 2;
+      const get = (c: string) => (col.has(c) ? (r[col.get(c)!] ?? "").trim() : undefined);
+      const char = (get("char") ?? "").trim();
+      if (!char) return; // blank spreadsheet row
+      if ([...char].length > 4) return fail(line, char, "chữ Kanji quá dài");
+      const set: Record<string, unknown> = {};
+      for (const c of known) {
+        const v = get(c);
+        if (v === undefined || c === "char") continue;
+        switch (c) {
+          case "level":
+            if (v !== "" && !["N5", "N4", "N3", "N2", "N1"].includes(v)) return fail(line, char, `cấp “${v}” không hợp lệ`);
+            set.level = v;
+            break;
+          case "status": {
+            const st = STATUS_ALIAS[v.toLowerCase()];
+            if (!st) return fail(line, char, `trạng thái “${v}” không hợp lệ`);
+            set.status = st;
+            break;
+          }
+          case "rank":
+          case "strokeCount": {
+            const n = v === "" ? 0 : Number(v);
+            if (!Number.isInteger(n) || n < 0) return fail(line, char, `${c} “${v}” không phải số nguyên ≥ 0`);
+            set[c] = n;
+            break;
+          }
+          case "hanViet": {
+            const f = formatHanViet(v);
+            set.hanViet = f;
+            set.hanVietNorm = hanVietNorm(f);
+            break;
+          }
+          case "onyomi": case "kunyomi": case "meanings": case "meaningsEn": case "radicals":
+            set[c] = splitList(v);
+            break;
+          case "words":
+          case "strokes": {
+            if (v === "") break; // never wipe the heavy data with an empty cell
+            try {
+              const j = JSON.parse(v) as unknown;
+              if (!Array.isArray(j)) throw new Error("không phải mảng");
+              if (c === "strokes") {
+                if (!j.every((x) => typeof x === "string")) throw new Error("nét vẽ phải là chuỗi");
+                set.strokes = j;
+              } else {
+                set.words = j
+                  .filter((w): w is Record<string, unknown> => typeof w === "object" && w !== null && typeof (w as Record<string, unknown>).term === "string")
+                  .map((w) => ({
+                    term: String(w.term),
+                    reading: String(w.reading ?? ""),
+                    meaning: String(w.meaning ?? ""),
+                    glossEn: w.glossEn === undefined ? undefined : String(w.glossEn),
+                    chars: Array.isArray(w.chars) ? w.chars.map(String) : [...String(w.term)],
+                    level: w.level === undefined ? undefined : String(w.level),
+                  }));
+              }
+            } catch (e) {
+              return fail(line, char, `${c}: JSON lỗi (${(e as Error).message})`);
+            }
+            break;
+          }
+          default:
+            set[c] = v; // mnemonic, source, strokeCredit, lang
+        }
+      }
+      // The "Từ vựng" / "Nét vẽ" sheets replace the lists of the kanji they mention.
+      const w = extra.words?.get(char);
+      if (w) set.words = w;
+      const st = extra.strokes?.get(char);
+      if (st) set.strokes = st;
+      ops.push({ updateOne: { filter: { char }, update: { $set: set, $setOnInsert: { char } }, upsert: true } });
+    });
+    for (let i = 0; i < ops.length; i += 500) {
+      const res = await this.model.bulkWrite(ops.slice(i, i + 500), { ordered: false });
+      result.created += res.upsertedCount ?? 0;
+      result.updated += res.matchedCount ?? 0;
+    }
+    return result;
   }
 
   async bulkUpdate(dto: KanjiBulkDto): Promise<{ modifiedCount: number }> {

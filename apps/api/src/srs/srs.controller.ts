@@ -47,6 +47,11 @@ class QueueQuery {
   @Min(1)
   @Max(100)
   limit?: number;
+
+  /** `learn`: a deck's new words (in deck order); `review` (default): only the words due. */
+  @IsOptional()
+  @IsIn(["learn", "review"])
+  mode?: "learn" | "review";
 }
 
 export class ReviewDto {
@@ -126,6 +131,12 @@ class SettingsDto {
 export class SrsController {
   constructor(private readonly srs: SrsService) {}
 
+  @Get("exercise-priority")
+  @ApiOperation({ summary: "Per deck: words learned today, then words due — what the exercises drill first" })
+  exercisePriority(@CurrentUser() caller: AuthUser, @Query() query: QueueQuery) {
+    return this.srs.exercisePriority(caller, query.tz);
+  }
+
   @Get("queue/:deckId")
   @ApiOperation({
     summary: "My review queue for a deck (new / due / hard / mastered)",
@@ -135,7 +146,7 @@ export class SrsController {
     @Param("deckId") deckId: string,
     @Query() query: QueueQuery,
   ) {
-    return this.srs.getQueue(caller, deckId, query.tz, query.limit ?? 20);
+    return this.srs.getQueue(caller, deckId, query.tz, query.limit ?? 20, query.mode);
   }
 
   @Post("reviews")

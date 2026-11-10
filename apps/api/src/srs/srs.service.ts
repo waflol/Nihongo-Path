@@ -191,10 +191,13 @@ export class SrsService {
     deckId: string,
     tz?: string,
     limit = 20,
+    mode: "learn" | "review" = "review",
   ): Promise<StudyQueue> {
     // `all` = the review hub: every card the caller has already learned, from
     // any deck they can read — no new cards, no deck distinction.
     const reviewAll = deckId === "all";
+    // learn = a deck's new words only; review (SRS) = due words only, for "all" or one deck.
+    const learn = mode === "learn" && !reviewAll;
     if (!reviewAll) await this.resolveAccessibleDeck(caller, deckId);
     const timezone = await this.resolveTimezone(caller, tz);
     const today = localDayKey(Date.now(), timezone);
@@ -341,8 +344,8 @@ export class SrsService {
     return {
       deckId,
       today,
-      newCards: newCards.slice(0, Math.min(limit, newAllowed)),
-      dueCards: dueCards.slice(0, limit),
+      newCards: learn ? newCards.slice(0, Math.min(limit, newAllowed)) : [],
+      dueCards: learn ? [] : dueCards.slice(0, limit),
       newPerDay,
       newTotal: newCards.length,
       newToday: introducedToday,
@@ -358,6 +361,37 @@ export class SrsService {
       nextDueDay,
       limit,
     };
+  }
+
+  /**
+   * What the exercises should drill first, per deck: the words first learned
+   * today (in deck order), then the words due today. Ids only.
+   */
+  async exercisePriority(
+    caller: AuthUser,
+    tz?: string,
+  ): Promise<Record<string, { today: string[]; due: string[] }>> {
+    const timezone = await this.resolveTimezone(caller, tz);
+    const today = localDayKey(Date.now(), timezone);
+    const startOfDay = new Date(localStartOfDay(Date.now(), timezone));
+    const userId = new Types.ObjectId(caller.sub);
+    const docs = await this.progress
+      .find({ user: userId, $or: [{ createdAt: { $gte: startOfDay } }, { dueDay: { $lte: today } }] })
+      .exec();
+    if (docs.length === 0) return {};
+    const cards = await this.card
+      .find({ _id: { $in: docs.map((d) => d.card) } })
+      .select("deck order")
+      .sort({ order: 1, _id: 1 })
+      .lean()
+      .exec();
+    const isNew = new Map(docs.map((d) => [String(d.card), d.createdAt >= startOfDay]));
+    const out: Record<string, { today: string[]; due: string[] }> = {};
+    for (const c of cards) {
+      const bucket = (out[String(c.deck)] ??= { today: [], due: [] });
+      (isNew.get(String(c._id)) ? bucket.today : bucket.due).push(String(c._id));
+    }
+    return out;
   }
 
   /** Per-deck progress snapshot for the deck list screen (P3-UI-03). */

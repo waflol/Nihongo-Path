@@ -3,8 +3,8 @@ import { Suspense } from "react";
 import { LearnStudyGate } from "./gate";
 
 export const metadata: Metadata = {
-  title: "Ôn tập flashcard",
-  description: "Phiên ôn tập với lặp lại ngắt quãng (SRS).",
+  title: "Học từ mới",
+  description: "Học từ mới theo thứ tự bộ thẻ, theo số từ mỗi ngày.",
   robots: { index: false, follow: true },
 };
 
@@ -18,10 +18,10 @@ export default function LearnStudyPage() {
       fallback={
         <div className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6">
           <h1 className="text-2xl font-semibold tracking-tight text-[var(--foreground)]">
-            Ôn tập
+            Học từ mới
           </h1>
           <p className="mt-8 text-center text-sm text-[var(--muted-foreground)]">
-            Đang tải danh sách ôn tập…
+            Đang tải…
           </p>
         </div>
       }

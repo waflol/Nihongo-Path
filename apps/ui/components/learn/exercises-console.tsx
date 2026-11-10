@@ -46,7 +46,7 @@ type DeckCard = ExerciseCard;
 type Mode = ChoiceMode | "type" | "synonym" | "compose";
 
 const MODES: { key: Mode; label: string; hint: string }[] = [
-  { key: "test", label: "Trắc nghiệm", hint: "Xen kẽ 3 dạng: từ vựng → nghĩa, hiragana → kanji, kanji → hiragana" },
+  { key: "test", label: "Trắc nghiệm", hint: "Xen kẽ: chọn nghĩa tiếng Việt và chọn chữ kanji" },
   { key: "type", label: "Gõ đáp án", hint: "Chữ kanji hiện ra, gõ cách đọc hiragana (chỉ gồm thẻ có kanji)" },
   { key: "reading", label: "問題1 Cách đọc kanji", hint: "Chọn cách đọc hiragana đúng của từ" },
   { key: "kanji", label: "問題2 Cách đọc Hiragana", hint: "Hiragana là cách đọc của chữ kanji nào (đáp án sai là kanji gần giống, AI tạo)" },
@@ -91,6 +91,26 @@ export function ExercisesConsole({ variant = "exercises" }: { variant?: "exercis
   const [mode, setMode] = useState<Mode>(exam ? "reading" : "test");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Per deck: ids learned today, then ids due today — these are drilled first.
+  const [priority, setPriority] = useState<Record<string, { today: string[]; due: string[] }>>({});
+  /** 0 = learned today, 1 = due today, 2 = the rest. */
+  const tierMap = useMemo(() => {
+    const p = deck ? priority[deck._id] : undefined;
+    const m = new Map<string, number>();
+    for (const id of p?.due ?? []) m.set(id, 1);
+    for (const id of p?.today ?? []) m.set(id, 0);
+    return m;
+  }, [deck, priority]);
+  const tierOf = (id: string) => tierMap.get(id) ?? 2;
+  // With words learned today / due, the drill is just those words (the rest of the deck
+  // only serves as wrong answers).
+  const focused = tierMap.size > 0;
+  const inFocus = <T,>(list: T[], idOf: (x: T) => string): T[] =>
+    focused ? list.filter((x) => tierOf(idOf(x)) < 2) : list;
+  /** Stable: learned-today first, then due, then the rest (the shuffle within each stays). */
+  function byPriority<T>(list: T[], idOf: (x: T) => string): T[] {
+    return [...list].sort((a, b) => tierOf(idOf(a)) - tierOf(idOf(b)));
+  }
 
   // Per-sitting drill state.
   const [order, setOrder] = useState<DeckCard[]>([]);
@@ -119,7 +139,18 @@ export function ExercisesConsole({ variant = "exercises" }: { variant?: "exercis
       // Shared (published) decks are readable by every learner, so they can be drilled too.
       const usable = (Array.isArray(list) ? list : []).filter((d) => !!d._id);
       setDecks(usable);
-      if (usable[0]) setDeck(usable[0]);
+      type Prio = Record<string, { today: string[]; due: string[] }>;
+      const pr: Prio = await fetch("/api/srs/exercise-priority", { cache: "no-store" })
+        .then((r) => (r.ok ? (r.json() as Promise<Prio>) : ({} as Prio)))
+        .catch(() => ({}) as Prio);
+      if (cancelled) return;
+      setPriority(pr);
+      // Start with the deck that has words learned today, else words due, else the first.
+      const start =
+        usable.find((d) => (pr[d._id]?.today.length ?? 0) > 0) ??
+        usable.find((d) => (pr[d._id]?.due.length ?? 0) > 0) ??
+        usable[0];
+      if (start) setDeck(start);
       setLoading(false);
     })();
     return () => {
@@ -152,6 +183,7 @@ export function ExercisesConsole({ variant = "exercises" }: { variant?: "exercis
       // Shuffle the drill order — exercises are random by nature.
       // "Gõ đáp án" only drills kanji cards (with a hiragana reading to type).
       setOrder(seededShuffle(usable.filter(asksReading), hashSeed(deck._id)));
+      // (re-ordered by priority below, once the priority is known)
       setStep(0);
       setPicked(null);
       setTyped("");
@@ -164,7 +196,8 @@ export function ExercisesConsole({ variant = "exercises" }: { variant?: "exercis
     };
   }, [deck]);
 
-  const current = order[step];
+  const orderP = useMemo(() => inFocus(byPriority(order, (c) => c._id), (c) => c._id), [order, tierMap, focused]); // eslint-disable-line react-hooks/exhaustive-deps
+  const current = orderP[step];
 
   // AI-backed modes (synonym, look-alike kanji): questions come from the AI in
   // batches of AI_BATCH. State is tagged with the mode+deck+round it belongs to,
@@ -189,8 +222,8 @@ export function ExercisesConsole({ variant = "exercises" }: { variant?: "exercis
   /** Questions of the local choice modes (rebuilt when the deck, mode or round changes). */
   const localQs = useMemo<ChoiceQuestion[]>(() => {
     if (mode === "type" || mode === "compose" || aiMode) return [];
-    return buildChoiceQuestions(mode, cards, hashSeed(deck?._id ?? "") + round);
-  }, [mode, aiMode, cards, deck, round]);
+    return inFocus(byPriority(buildChoiceQuestions(mode, cards, hashSeed(deck?._id ?? "") + round), (q) => q.id), (q) => q.id);
+  }, [mode, aiMode, cards, deck, round, tierMap, focused]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Trắc nghiệm, hiragana → kanji questions: the AI composes 3 look-alike wrong
   // spellings from the N5–N1 kanji already created (nonsense words are fine). They
@@ -238,11 +271,11 @@ export function ExercisesConsole({ variant = "exercises" }: { variant?: "exercis
   /** Cards an AI mode can ask about, in a stable shuffled order. */
   const aiOrder = useMemo(() => {
     const usable = mode === "kanji" ? cards.filter(isKanjiReadingCard) : cards.filter((c) => c.front && c.back);
-    return seededShuffle(usable, hashSeed(deck?._id ?? "") + round);
-  }, [mode, cards, deck, round]);
+    return inFocus(byPriority(seededShuffle(usable, hashSeed(deck?._id ?? "") + round), (c) => c._id), (c) => c._id);
+  }, [mode, cards, deck, round, tierMap, focused]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const questions = aiMode ? ai.qs : localQs;
-  const total = mode === "type" ? order.length : questions.length;
+  const total = mode === "type" ? orderP.length : questions.length;
   const baseQuestion: ChoiceQuestion | undefined = questions[step];
   const aiWrong = distractors.key === distractorKey ? distractors.map : {};
   const frozen = decided.key === distractorKey ? decided.opts : {};
@@ -442,13 +475,20 @@ export function ExercisesConsole({ variant = "exercises" }: { variant?: "exercis
             </label>
           )}
           <Link
-            href="/learn/study"
+            href="/learn/review"
             className="rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs font-medium text-[var(--foreground)] hover:bg-[var(--layer-hover)]"
           >
             Ôn tập thẻ
           </Link>
         </div>
       </div>
+
+      {deck && (priority[deck._id]?.today.length || priority[deck._id]?.due.length) ? (
+        <p className="mt-3 rounded-lg bg-[var(--layer)] px-4 py-2.5 text-sm text-[var(--foreground)]">
+          Bài tập hôm nay: <strong>{priority[deck._id]?.today.length ?? 0} từ mới học hôm nay</strong> trước, sau đó{" "}
+          <strong>{priority[deck._id]?.due.length ?? 0} từ đến hạn ôn tập</strong>.
+        </p>
+      ) : null}
 
       {error && (
         <p role="alert" className="mt-4 rounded-lg bg-[#fef2f2] px-4 py-3 text-sm text-[#b91c1c]">
@@ -494,7 +534,8 @@ export function ExercisesConsole({ variant = "exercises" }: { variant?: "exercis
       {!loading && deck && compose && (
         <ComposeDrill
           deckId={deck._id}
-          cards={cards}
+          cards={inFocus(cards, (c) => c._id)}
+          tierOf={tierOf}
           round={round}
           onRestart={() => setRound((n) => n + 1)}
         />
@@ -528,7 +569,7 @@ export function ExercisesConsole({ variant = "exercises" }: { variant?: "exercis
           </h2>
           <p className="mt-2 text-sm text-[var(--muted-foreground)]">
             Bài tập không ảnh hưởng lịch ôn tập — hãy quay lại{" "}
-            <Link href="/learn/study" className="font-medium text-[var(--primary)] hover:underline">
+            <Link href="/learn/review" className="font-medium text-[var(--primary)] hover:underline">
               ôn tập thẻ
             </Link>{" "}
             để ghi nhận tiến độ SRS.
@@ -586,16 +627,16 @@ export function ExercisesConsole({ variant = "exercises" }: { variant?: "exercis
             {mode !== "type" && question ? (
               <>
                 <div className="mt-6 grid gap-2 sm:grid-cols-2">
-                  {question.options.map((opt) => {
+                  {question.options.map((opt, idx) => {
                     const isRight = opt === question.answer;
                     const isPicked = picked === opt;
                     const reveal = picked !== null;
                     const tone = !reveal
                       ? "border-[var(--border)] bg-[var(--background)] hover:bg-[var(--layer-hover)]"
                       : isRight
-                        ? "border-[#16a34a] bg-[#f0fdf4] text-[#15803d]"
+                        ? "border-[#16a34a] bg-[var(--background)] ring-1 ring-[#16a34a]"
                         : isPicked
-                          ? "border-[#ef4444] bg-[#fef2f2] text-[#b91c1c]"
+                          ? "border-[#ef4444] bg-[var(--background)] ring-1 ring-[#ef4444]"
                           : "border-[var(--border)] bg-[var(--background)] opacity-60";
                     return (
                       <button
@@ -604,22 +645,27 @@ export function ExercisesConsole({ variant = "exercises" }: { variant?: "exercis
                         disabled={reveal}
                         onClick={() => setPicked(opt)}
                         className={
-                          "rounded-xl border px-4 text-left font-medium text-[var(--foreground)] transition-colors disabled:cursor-default " +
-                          (bigOptions ? "py-5 text-3xl " : "py-3 text-sm ") +
+                          "flex min-h-[4.5rem] items-center rounded-xl border px-4 py-3 text-left font-medium leading-snug text-[var(--foreground)] transition-colors disabled:cursor-default " +
+                          "text-[1.4rem] " + // one size for every kind of option
                           tone
                         }
                       >
-                        {opt}
-                        {reveal && isRight && (
-                          <span className="ml-2 text-xs font-semibold text-[#16a34a]">
-                            ✓ đúng
+                        <span className="flex w-full items-center gap-3">
+                          <span className="inline-flex size-7 shrink-0 items-center justify-center rounded-full border border-[var(--border)] text-xs font-semibold text-[var(--muted-foreground)]">
+                            {"ABCD"[idx] ?? idx + 1}
                           </span>
-                        )}
-                        {reveal && isPicked && !isRight && (
-                          <span className="ml-2 text-xs font-semibold text-[#ef4444]">
-                            ✕ sai
-                          </span>
-                        )}
+                          <span className="min-w-0 flex-1 break-words" lang={bigOptions ? "ja" : "vi"}>{opt}</span>
+                          {reveal && isRight && (
+                            <span aria-label="đúng" className="inline-flex size-6 shrink-0 items-center justify-center rounded-full bg-[#16a34a] text-sm font-bold text-white">
+                              ✓
+                            </span>
+                          )}
+                          {reveal && isPicked && !isRight && (
+                            <span aria-label="sai" className="inline-flex size-6 shrink-0 items-center justify-center rounded-full bg-[#ef4444] text-sm font-bold text-white">
+                              ✕
+                            </span>
+                          )}
+                        </span>
                       </button>
                     );
                   })}

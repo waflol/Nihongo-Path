@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import {
   KANJI_LEVELS,
   splitHanViet,
@@ -483,6 +483,49 @@ export function KanjiAdminConsole({
     await Promise.all([loadList(), loadSummaries()]);
   }
 
+  const csvInput = useRef<HTMLInputElement>(null);
+  const [csvBusy, setCsvBusy] = useState(false);
+
+  /** Restore kanji from the backup the "Xuất Excel" button produced (or a CSV). */
+  async function handleCsvFile(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    const ok = await confirm({
+      title: `Nhập file “${file.name}”?`,
+      message:
+        "Chữ Kanji trùng sẽ được cập nhật theo file, chữ mới sẽ được thêm. Ô từ vựng / nét vẽ để trống sẽ không xoá dữ liệu đang có.",
+      confirmLabel: "Nhập",
+      tone: "primary",
+    });
+    if (!ok) return;
+    setCsvBusy(true);
+    setError(null);
+    const res = await fetch("/api/admin/kanji/import", {
+      method: "POST",
+      headers: {
+        "Content-Type": file.name.toLowerCase().endsWith(".csv")
+          ? "text/csv"
+          : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      },
+      body: file.name.toLowerCase().endsWith(".csv") ? await file.text() : await file.arrayBuffer(),
+    }).catch(() => null);
+    setCsvBusy(false);
+    const body = (await res?.json().catch(() => null)) as
+      | { created?: number; updated?: number; skipped?: number; errors?: { line: number; char: string; message: string }[]; message?: string | string[] }
+      | null;
+    if (!res?.ok || !body) {
+      const m = body?.message;
+      setError(`Nhập file thất bại${m ? `: ${Array.isArray(m) ? m.join(", ") : m}` : "."}`);
+      return;
+    }
+    const bad = body.errors?.length
+      ? ` Bỏ qua ${body.skipped}: ${body.errors.slice(0, 5).map((x) => `dòng ${x.line} (${x.char || "?"}) ${x.message}`).join("; ")}${body.errors.length > 5 ? "…" : ""}`
+      : "";
+    setNotice(`Đã nhập: thêm ${body.created ?? 0}, cập nhật ${body.updated ?? 0}.${bad}`);
+    await Promise.all([loadList(), loadSummaries()]);
+  }
+
   const items = data?.items ?? [];
   const total = data?.total ?? 0;
   const pages = Math.max(1, Math.ceil(total / LIMIT));
@@ -543,6 +586,30 @@ export function KanjiAdminConsole({
               </button>
             ))}
           </div>
+          <a
+            href="/api/admin/kanji/export"
+            download
+            title="Tải toàn bộ chữ Kanji (cả từ vựng, nét vẽ) về file Excel để sao lưu"
+            className="rounded-xl border border-[var(--border)] bg-[var(--background-1)] px-3.5 py-2 text-xs font-semibold text-[var(--foreground)] transition-colors hover:bg-[var(--layer-hover)]"
+          >
+            Xuất Excel
+          </a>
+          <button
+            type="button"
+            disabled={csvBusy}
+            onClick={() => csvInput.current?.click()}
+            title="Khôi phục / nhập chữ Kanji từ file Excel đã xuất (cả khi đổi database)"
+            className="rounded-xl border border-[var(--border)] bg-[var(--background-1)] px-3.5 py-2 text-xs font-semibold text-[var(--foreground)] transition-colors hover:bg-[var(--layer-hover)] disabled:opacity-50"
+          >
+            {csvBusy ? "Đang nhập…" : "Nhập Excel"}
+          </button>
+          <input
+            ref={csvInput}
+            type="file"
+            accept=".xlsx,.csv"
+            className="hidden"
+            onChange={(e) => void handleCsvFile(e)}
+          />
           <Link
             href="/learn/kanji"
             className="rounded-xl border border-[var(--border)] bg-[var(--background-1)] px-3.5 py-2 text-xs font-semibold text-[var(--foreground)] transition-colors hover:bg-[var(--layer-hover)]"
