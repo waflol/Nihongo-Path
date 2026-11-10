@@ -1144,6 +1144,15 @@ function LearnCard({
   const parsed = splitReading(front);
   const term = parsed.term;
   const reading = cardReading || parsed.reading;
+
+  // Auto-pronounce the term every time the card is flipped over (not when it
+  // flips back). Refs keep the effect keyed on `flipped` only.
+  const autoSpeakRef = useRef<() => void>(() => {});
+  autoSpeakRef.current = () => speak(`auto-${Date.now()}`, reading || term);
+  useEffect(() => {
+    if (flipped) autoSpeakRef.current();
+  }, [flipped]);
+
   const hint = (tone: string, text: string) => (
     <p className={`mt-5 text-xs ${tone}`}>{text}</p>
   );
