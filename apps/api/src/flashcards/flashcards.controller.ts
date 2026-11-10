@@ -46,7 +46,7 @@ class ListCardsQuery {
   @Type(() => Number)
   @IsInt()
   @Min(1)
-  @Max(500)
+  @Max(5000)
   limit?: number;
 }
 
@@ -268,7 +268,7 @@ export class FlashcardsController {
     @Body() body: SynonymQuizDto,
   ) {
     const wanted = new Set(body.cardIds);
-    const cards = (await this.flashcards.listCards(caller, id, 500)).filter((c) =>
+    const cards = (await this.flashcards.listCards(caller, id, 5000)).filter((c) =>
       wanted.has(String(c._id)),
     );
     const map = await this.ai.synonymQuiz(
@@ -292,7 +292,7 @@ export class FlashcardsController {
     @Body() body: SynonymQuizDto,
   ) {
     const wanted = new Set(body.cardIds);
-    const cards = (await this.flashcards.listCards(caller, id, 500)).filter((c) =>
+    const cards = (await this.flashcards.listCards(caller, id, 5000)).filter((c) =>
       wanted.has(String(c._id)),
     );
     const map = await this.ai.kanjiLookalikes(
@@ -317,7 +317,7 @@ export class FlashcardsController {
     @Body() body: SynonymQuizDto,
   ) {
     const wanted = new Set(body.cardIds);
-    const cards = (await this.flashcards.listCards(caller, id, 500)).filter((c) =>
+    const cards = (await this.flashcards.listCards(caller, id, 5000)).filter((c) =>
       wanted.has(String(c._id)),
     );
     const map = await this.ai.kanjiDistractors(
@@ -354,7 +354,7 @@ export class FlashcardsController {
     @Param("id") id: string,
     @Body() body: GradeSentenceDto,
   ) {
-    const card = (await this.flashcards.listCards(caller, id, 500)).find(
+    const card = (await this.flashcards.listCards(caller, id, 5000)).find(
       (c) => String(c._id) === body.cardId,
     );
     if (!card) throw new NotFoundException("Card not found in this deck");

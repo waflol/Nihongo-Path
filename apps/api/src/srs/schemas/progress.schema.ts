@@ -61,3 +61,5 @@ export const UserCardProgressSchema =
 UserCardProgressSchema.index({ user: 1, card: 1 }, { unique: true });
 // The review queue: what is due for this user today (P3-SRS-02 / T-P3-05).
 UserCardProgressSchema.index({ user: 1, dueDay: 1 });
+// "Learned today" lookups (new-card allowance, exercise priority).
+UserCardProgressSchema.index({ user: 1, createdAt: 1 });

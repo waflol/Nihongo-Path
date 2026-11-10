@@ -1,5 +1,6 @@
 "use client";
 
+import { fetchShared } from "@/lib/inflight-fetch";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -35,7 +36,7 @@ export function AccountMenu({ className = "hidden md:inline-flex" }: AccountMenu
   const [user, setUser] = useState<SessionUser | null>(null);
 
   const loadSession = useCallback(() => {
-    fetch("/api/auth/session")
+    fetchShared("/api/auth/session")
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
         setUser(data?.user ?? null);

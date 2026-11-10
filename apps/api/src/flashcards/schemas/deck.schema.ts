@@ -76,3 +76,5 @@ export const FlashcardDeckSchema =
   SchemaFactory.createForClass(FlashcardDeck);
 // Personal listing for one user; shared listing (user = null).
 FlashcardDeckSchema.index({ user: 1, shared: 1, status: 1 });
+// Published shared decks (every learner lists them).
+FlashcardDeckSchema.index({ shared: 1, status: 1 });

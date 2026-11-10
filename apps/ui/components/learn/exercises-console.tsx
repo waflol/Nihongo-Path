@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { ComposeDrill } from "./compose-drill";
 import {
@@ -11,6 +11,7 @@ import {
   seededShuffle,
   type ChoiceMode,
   type ChoiceQuestion,
+  type TestKind,
   type ExerciseCard,
   buildKanjiQuestions,
   isKanjiReadingCard,
@@ -42,12 +43,44 @@ interface DeckRef {
 }
 
 type DeckCard = ExerciseCard;
+type TypeItem = DeckCard & { drill: "reading" | "meaning" };
+
+/** Pseudo-deck: every deck at once (cards are routed to their own deck for server calls). */
+const ALL_DECKS: DeckRef = { _id: "all", title: "Tất cả bộ thẻ", shared: false };
+
+/**
+ * POST `{cardIds}` to a per-deck endpoint, grouping the ids by the deck that owns
+ * each card (one request per deck), and merge the `items` of the answers.
+ * Null when every request failed.
+ */
+async function postByDeck<T>(
+  endpoint: string,
+  ids: string[],
+  deckOf: (id: string) => string,
+): Promise<{ items: T[] } | null> {
+  const groups = new Map<string, string[]>();
+  for (const id of ids) groups.set(deckOf(id), [...(groups.get(deckOf(id)) ?? []), id]);
+  const results = await Promise.all(
+    [...groups].map(async ([deckId, cardIds]) => {
+      const res = await fetch(`/api/flashcards/decks/${deckId}/${endpoint}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cardIds }),
+      }).catch(() => null);
+      if (!res?.ok) return null;
+      const data = (await res.json().catch(() => null)) as { items?: T[] } | null;
+      return data?.items ?? null;
+    }),
+  );
+  const ok = results.filter((r): r is T[] => r !== null);
+  return ok.length ? { items: ok.flat() } : null;
+}
 
 type Mode = ChoiceMode | "type" | "synonym" | "compose";
 
 const MODES: { key: Mode; label: string; hint: string }[] = [
-  { key: "test", label: "Trắc nghiệm", hint: "Xen kẽ: chọn nghĩa tiếng Việt và chọn chữ kanji" },
-  { key: "type", label: "Gõ đáp án", hint: "Chữ kanji hiện ra, gõ cách đọc hiragana (chỉ gồm thẻ có kanji)" },
+  { key: "test", label: "Trắc nghiệm", hint: "Chọn nghĩa tiếng Việt hoặc chọn chữ kanji tương ứng" },
+  { key: "type", label: "Gõ đáp án", hint: "Gõ cách phát âm (hiragana) hoặc nghĩa tiếng Việt" },
   { key: "reading", label: "問題1 Cách đọc kanji", hint: "Chọn cách đọc hiragana đúng của từ" },
   { key: "kanji", label: "問題2 Cách đọc Hiragana", hint: "Hiragana là cách đọc của chữ kanji nào (đáp án sai là kanji gần giống, AI tạo)" },
   { key: "formation", label: "問題3 Cấu tạo từ", hint: "Chọn chữ kanji còn thiếu để tạo thành từ" },
@@ -93,18 +126,25 @@ export function ExercisesConsole({ variant = "exercises" }: { variant?: "exercis
   const [error, setError] = useState<string | null>(null);
   // Per deck: ids learned today, then ids due today — these are drilled first.
   const [priority, setPriority] = useState<Record<string, { today: string[]; due: string[] }>>({});
+  const prio = useMemo(() => {
+    if (!deck) return undefined;
+    if (deck._id !== ALL_DECKS._id) return priority[deck._id];
+    const all = Object.values(priority);
+    return { today: all.flatMap((p) => p.today), due: all.flatMap((p) => p.due) };
+  }, [deck, priority]);
   /** 0 = learned today, 1 = due today, 2 = the rest. */
   const tierMap = useMemo(() => {
-    const p = deck ? priority[deck._id] : undefined;
+    const p = prio;
     const m = new Map<string, number>();
     for (const id of p?.due ?? []) m.set(id, 1);
     for (const id of p?.today ?? []) m.set(id, 0);
     return m;
-  }, [deck, priority]);
+  }, [prio]);
   const tierOf = (id: string) => tierMap.get(id) ?? 2;
-  // With words learned today / due, the drill is just those words (the rest of the deck
-  // only serves as wrong answers).
-  const focused = tierMap.size > 0;
+  // The drill is always just the words learned today + the words due for SRS review
+  // (the rest of the deck only serves as wrong answers).
+  const focused = true;
+  const nothingDue = tierMap.size === 0;
   const inFocus = <T,>(list: T[], idOf: (x: T) => string): T[] =>
     focused ? list.filter((x) => tierOf(idOf(x)) < 2) : list;
   /** Stable: learned-today first, then due, then the rest (the shuffle within each stays). */
@@ -113,13 +153,30 @@ export function ExercisesConsole({ variant = "exercises" }: { variant?: "exercis
   }
 
   // Per-sitting drill state.
-  const [order, setOrder] = useState<DeckCard[]>([]);
+  const [testKind, setTestKind] = useState<TestKind>("meaning");
+  const [typeKind, setTypeKind] = useState<"reading" | "meaning" | "mixed">("reading");
   const [step, setStep] = useState(0);
   const [picked, setPicked] = useState<string | null>(null);
   const [typed, setTyped] = useState("");
   const [checked, setChecked] = useState(false);
   const [score, setScore] = useState({ right: 0, wrong: 0 });
   const [round, setRound] = useState(0);
+
+  // Remember the learner's chosen sub-modes across visits.
+  useEffect(() => {
+    try {
+      const t = localStorage.getItem("exercises.testKind");
+      const y = localStorage.getItem("exercises.typeKind");
+      if (t === "meaning" || t === "kanji" || t === "mixed") setTestKind(t);
+      if (y === "reading" || y === "meaning" || y === "mixed") setTypeKind(y);
+    } catch {}
+  }, []);
+  useEffect(() => {
+    try {
+      localStorage.setItem("exercises.testKind", testKind);
+      localStorage.setItem("exercises.typeKind", typeKind);
+    } catch {}
+  }, [testKind, typeKind]);
 
   // Load the deck list.
   useEffect(() => {
@@ -145,11 +202,10 @@ export function ExercisesConsole({ variant = "exercises" }: { variant?: "exercis
         .catch(() => ({}) as Prio);
       if (cancelled) return;
       setPriority(pr);
-      // Start with the deck that has words learned today, else words due, else the first.
-      const start =
-        usable.find((d) => (pr[d._id]?.today.length ?? 0) > 0) ??
-        usable.find((d) => (pr[d._id]?.due.length ?? 0) > 0) ??
-        usable[0];
+      // Words learned today / due can sit in several decks: start on "all decks" so the drill
+      // matches the totals on /learn; else the first deck.
+      const hasWords = Object.values(pr).some((p) => p.today.length + p.due.length > 0);
+      const start = usable.length > 1 && hasWords ? ALL_DECKS : usable[0];
       if (start) setDeck(start);
       setLoading(false);
     })();
@@ -164,26 +220,30 @@ export function ExercisesConsole({ variant = "exercises" }: { variant?: "exercis
     let cancelled = false;
     (async () => {
       setLoading(true);
-      const res = await fetch(`/api/flashcards/decks/${deck._id}/cards?limit=500`, {
-        cache: "no-store",
-      }).catch(() => null);
+      const sources = deck._id === ALL_DECKS._id ? decks : [deck];
+      const responses = await Promise.all(
+        sources.map((d) =>
+          fetch(`/api/flashcards/decks/${d._id}/cards?limit=5000`, { cache: "no-store" }).catch(() => null),
+        ),
+      );
       if (cancelled) return;
-      if (!res || !res.ok) {
+      const res = responses.length > 0 && responses.every((r) => r?.ok) ? responses : null;
+      if (!res) {
         setError("Không tải được thẻ của bộ này");
         setCards([]);
         setLoading(false);
         return;
       }
-      const list = (await res.json().catch(() => [])) as DeckCard[];
-      if (cancelled) return;
-      const usable = (Array.isArray(list) ? list : []).filter(
-        (c) => c.front && c.back,
+      const lists = await Promise.all(
+        res.map(async (r, i) => {
+          const l = (await r!.json().catch(() => [])) as DeckCard[];
+          return (Array.isArray(l) ? l : []).map((c) => ({ ...c, deck: String(c.deck ?? sources[i]._id) }));
+        }),
       );
+      if (cancelled) return;
+      const seen = new Set<string>();
+      const usable = lists.flat().filter((c) => c.front && c.back && !seen.has(c._id) && seen.add(c._id));
       setCards(usable);
-      // Shuffle the drill order — exercises are random by nature.
-      // "Gõ đáp án" only drills kanji cards (with a hiragana reading to type).
-      setOrder(seededShuffle(usable.filter(asksReading), hashSeed(deck._id)));
-      // (re-ordered by priority below, once the priority is known)
       setStep(0);
       setPicked(null);
       setTyped("");
@@ -194,7 +254,31 @@ export function ExercisesConsole({ variant = "exercises" }: { variant?: "exercis
     return () => {
       cancelled = true;
     };
-  }, [deck]);
+  }, [deck, decks]);
+
+  // "Gõ đáp án": reading mode only drills kanji cards (with a hiragana reading to type);
+  // meaning mode drills every card. Shuffled, then re-ordered by priority.
+  const order = useMemo<TypeItem[]>(() => {
+    const seed = hashSeed(deck?._id ?? "") + round;
+    const readings = seededShuffle(cards.filter(asksReading), seed).map((c) => ({ ...c, drill: "reading" as const }));
+    const meanings = seededShuffle(cards, seed + 7).map((c) => ({ ...c, drill: "meaning" as const }));
+    // One exercise per word: a word without kanji/reading to type is asked for its meaning instead.
+    if (typeKind === "reading")
+      return seededShuffle(cards, seed).map((c) => ({ ...c, drill: asksReading(c) ? ("reading" as const) : ("meaning" as const) }));
+    if (typeKind === "meaning") return meanings;
+    // Both: every card is asked each way, the two kinds alternating.
+    const out: TypeItem[] = [];
+    for (let i = 0; i < Math.max(readings.length, meanings.length); i++) {
+      if (readings[i]) out.push(readings[i]);
+      if (meanings[i]) out.push(meanings[i]);
+    }
+    return out;
+  }, [cards, typeKind, deck, round]);
+  /** The deck a card belongs to (cards of "all decks" are routed to their own deck). */
+  const deckOf = useCallback(
+    (cardId: string) => cards.find((c) => c._id === cardId)?.deck ?? deck?._id ?? "",
+    [cards, deck],
+  );
 
   const orderP = useMemo(() => inFocus(byPriority(order, (c) => c._id), (c) => c._id), [order, tierMap, focused]); // eslint-disable-line react-hooks/exhaustive-deps
   const current = orderP[step];
@@ -222,8 +306,8 @@ export function ExercisesConsole({ variant = "exercises" }: { variant?: "exercis
   /** Questions of the local choice modes (rebuilt when the deck, mode or round changes). */
   const localQs = useMemo<ChoiceQuestion[]>(() => {
     if (mode === "type" || mode === "compose" || aiMode) return [];
-    return inFocus(byPriority(buildChoiceQuestions(mode, cards, hashSeed(deck?._id ?? "") + round), (q) => q.id), (q) => q.id);
-  }, [mode, aiMode, cards, deck, round, tierMap, focused]); // eslint-disable-line react-hooks/exhaustive-deps
+    return inFocus(byPriority(buildChoiceQuestions(mode, cards, hashSeed(deck?._id ?? "") + round, testKind, new Set(tierMap.keys())), (q) => q.id), (q) => q.id);
+  }, [mode, aiMode, cards, deck, round, testKind, tierMap, focused]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Trắc nghiệm, hiragana → kanji questions: the AI composes 3 look-alike wrong
   // spellings from the N5–N1 kanji already created (nonsense words are fine). They
@@ -244,16 +328,12 @@ export function ExercisesConsole({ variant = "exercises" }: { variant?: "exercis
     let cancelled = false;
     (async () => {
       for (let i = 0; i < ids.length && !cancelled; i += AI_BATCH) {
-        const res = await fetch(`/api/flashcards/decks/${deck._id}/kanji-distractors`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ cardIds: ids.slice(i, i + AI_BATCH) }),
-        }).catch(() => null);
-        if (cancelled || !res?.ok) return; // no AI: keep the local look-alikes
-        const data = (await res.json().catch(() => null)) as {
-          items?: { cardId: string; wrong: string[] }[];
-        } | null;
-        if (cancelled || !data?.items) return;
+        const data = await postByDeck<{ cardId: string; wrong: string[] }>(
+          "kanji-distractors",
+          ids.slice(i, i + AI_BATCH),
+          deckOf,
+        );
+        if (cancelled || !data?.items) return; // no AI: keep the local look-alikes
         setDistractors((prev) => ({
           key: distractorKey,
           map: {
@@ -266,7 +346,7 @@ export function ExercisesConsole({ variant = "exercises" }: { variant?: "exercis
     return () => {
       cancelled = true;
     };
-  }, [mode, deck, localQs, distractorKey]);
+  }, [mode, deck, localQs, distractorKey, deckOf]);
 
   /** Cards an AI mode can ask about, in a stable shuffled order. */
   const aiOrder = useMemo(() => {
@@ -325,20 +405,12 @@ export function ExercisesConsole({ variant = "exercises" }: { variant?: "exercis
     const kanji = mode === "kanji";
     (async () => {
       setAiState({ ...base, loading: true });
-      const res = await fetch(
-        `/api/flashcards/decks/${deck._id}/${kanji ? "kanji-lookalikes" : "synonym-quiz"}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ cardIds: batch.map((c) => c._id) }),
-        },
-      ).catch(() => null);
-      const data =
-        res && res.ok
-          ? ((await res.json().catch(() => null)) as {
-              items?: { cardId: string; synonym?: string; wrong?: string[]; chars?: Record<string, string[]> }[];
-            } | null)
-          : null;
+      const data = await postByDeck<{
+        cardId: string;
+        synonym?: string;
+        wrong?: string[];
+        chars?: Record<string, string[]>;
+      }>(kanji ? "kanji-lookalikes" : "synonym-quiz", batch.map((c) => c._id), deckOf);
       const byId = new Map(batch.map((c) => [c._id, c]));
       const aiItems = new Map((data?.items ?? []).map((it) => [it.cardId, it]));
       const fresh: ChoiceQuestion[] = kanji
@@ -388,14 +460,14 @@ export function ExercisesConsole({ variant = "exercises" }: { variant?: "exercis
             },
       );
     })();
-  }, [mode, aiMode, deck, cards, ai, aiExhausted, aiOrder, step, round]);
+  }, [mode, aiMode, deck, cards, ai, aiExhausted, aiOrder, step, round, deckOf]);
 
   // Keep every question that is put in front of the learner in the question
   // bank (reused by the JLPT / Nattest practice later). Fire-and-forget: the
   // server de-duplicates, and a failed save never interrupts the drill.
   useEffect(() => {
     if (!question || !deck) return;
-    void fetch(`/api/flashcards/decks/${deck._id}/exercise-questions`, {
+    void fetch(`/api/flashcards/decks/${deckOf(question.id)}/exercise-questions`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -413,10 +485,10 @@ export function ExercisesConsole({ variant = "exercises" }: { variant?: "exercis
         ],
       }),
     }).catch(() => null);
-  }, [question, deck]);
+  }, [question, deck, deckOf]);
 
   // Kanji front + known reading → the answer is the hiragana reading; otherwise the back (meaning).
-  const typeReading = mode === "type" && !!current && asksReading(current);
+  const typeReading = mode === "type" && !!current && current.drill === "reading";
   const typeCorrect =
     checked &&
     mode === "type" &&
@@ -438,9 +510,11 @@ export function ExercisesConsole({ variant = "exercises" }: { variant?: "exercis
 
   const waitingSyn = aiMode && !question && !aiExhausted;
   const finished = total > 0 && step >= total && !waitingSyn;
-  const compose = mode === "compose";
+  const compose = mode === "compose" && !nothingDue;
   const empty =
-    compose
+    nothingDue
+      ? true
+      : compose
       ? false
       : aiMode
       ? aiDone && ai.qs.length === 0
@@ -461,11 +535,13 @@ export function ExercisesConsole({ variant = "exercises" }: { variant?: "exercis
               <select
                 value={deck?._id ?? ""}
                 onChange={(e) => {
-                  const next = decks.find((d) => d._id === e.target.value);
+                  const next =
+                    e.target.value === ALL_DECKS._id ? ALL_DECKS : decks.find((d) => d._id === e.target.value);
                   if (next) setDeck(next);
                 }}
                 className="ml-1 rounded-lg border border-[var(--border)] bg-[var(--background)] px-2 py-1 text-sm text-[var(--foreground)]"
               >
+                {decks.length > 1 && <option value={ALL_DECKS._id}>{ALL_DECKS.title}</option>}
                 {decks.map((d) => (
                   <option key={d._id} value={d._id}>
                     {d.title}
@@ -483,10 +559,10 @@ export function ExercisesConsole({ variant = "exercises" }: { variant?: "exercis
         </div>
       </div>
 
-      {deck && (priority[deck._id]?.today.length || priority[deck._id]?.due.length) ? (
+      {deck && (prio?.today.length || prio?.due.length) ? (
         <p className="mt-3 rounded-lg bg-[var(--layer)] px-4 py-2.5 text-sm text-[var(--foreground)]">
-          Bài tập hôm nay: <strong>{priority[deck._id]?.today.length ?? 0} từ mới học hôm nay</strong> trước, sau đó{" "}
-          <strong>{priority[deck._id]?.due.length ?? 0} từ đến hạn ôn tập</strong>.
+          Bài tập hôm nay: <strong>{prio?.today.length ?? 0} từ mới học hôm nay</strong> trước, sau đó{" "}
+          <strong>{prio?.due.length ?? 0} từ đến hạn ôn tập</strong>.
         </p>
       ) : null}
 
@@ -525,6 +601,42 @@ export function ExercisesConsole({ variant = "exercises" }: { variant?: "exercis
         ))}
       </div>
 
+      {(mode === "test" || mode === "type") && (
+        <div className="mt-3 inline-flex flex-wrap rounded-xl border border-[var(--border)] bg-[var(--background-1)] p-0.5 sm:ml-3">
+          {(mode === "test"
+            ? ([["meaning", "Chọn nghĩa tiếng Việt"], ["kanji", "Chọn chữ kanji"], ["mixed", "Xen kẽ cả hai"]] as const)
+            : ([["reading", "Nhập cách phát âm"], ["meaning", "Nhập nghĩa tiếng Việt"], ["mixed", "Xen kẽ cả hai"]] as const)
+          ).map(([k, label]) => {
+            const active = mode === "test" ? testKind === k : typeKind === k;
+            return (
+              <button
+                key={k}
+                type="button"
+                aria-pressed={active}
+                onClick={() => {
+                  if (mode === "test") setTestKind(k as TestKind);
+                  else setTypeKind(k as "reading" | "meaning" | "mixed");
+                  setError(null);
+                  setStep(0);
+                  setPicked(null);
+                  setTyped("");
+                  setChecked(false);
+                  setScore({ right: 0, wrong: 0 });
+                }}
+                className={
+                  "rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors " +
+                  (active
+                    ? "bg-[var(--primary)] text-[var(--primary-foreground)]"
+                    : "text-[var(--muted-foreground)] hover:text-[var(--foreground)]")
+                }
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       {loading && (
         <p className="mt-8 text-center text-sm text-[var(--muted-foreground)]">
           Đang tải…
@@ -543,10 +655,16 @@ export function ExercisesConsole({ variant = "exercises" }: { variant?: "exercis
 
       {!loading && empty && (
         <p className="mt-8 rounded-2xl border border-dashed border-[var(--border)] p-8 text-center text-sm text-[var(--muted-foreground)]">
-          {mode === "type"
-            ? "Bộ thẻ này chưa có thẻ kanji nào có cách đọc hiragana để gõ."
+          {nothingDue
+            ? "Chưa có từ nào mới học hôm nay hoặc đến hạn ôn tập theo SRS trong bộ này — bài tập sẽ có khi bạn học từ mới hoặc có từ đến hạn."
+            : mode === "type"
+            ? typeKind === "reading"
+              ? "Bộ thẻ này chưa có thẻ kanji nào có cách đọc hiragana để gõ."
+              : "Bộ thẻ này chưa có thẻ nào để làm bài."
             : mode === "test"
-            ? "Bộ thẻ này chưa có thẻ nào để làm bài."
+            ? testKind === "kanji"
+              ? "Bộ thẻ này chưa đủ từ có kanji và cách đọc hiragana (cần ít nhất 4 thẻ)."
+              : "Bộ thẻ này chưa có đủ thẻ để làm bài (cần ít nhất 4 thẻ)."
             : mode === "sentence" || mode === "context"
               ? "Bộ thẻ này chưa đủ câu ví dụ chứa từ vựng (cần ít nhất 4 thẻ có ví dụ)."
               : mode === "formation"
@@ -554,9 +672,9 @@ export function ExercisesConsole({ variant = "exercises" }: { variant?: "exercis
               : mode === "synonym"
                 ? "Chưa tạo được câu hỏi đồng nghĩa (cần dịch vụ AI đang hoạt động)."
                 : "Bộ thẻ này chưa đủ từ có kanji và cách đọc hiragana (cần ít nhất 4 thẻ)."}{" "}
-          Tạo thẻ tại{" "}
-          <Link href="/learn/decks" className="font-medium text-[var(--primary)] hover:underline">
-            danh sách bộ thẻ
+          {nothingDue ? "Học từ mới tại " : "Tạo thẻ tại "}
+          <Link href={nothingDue ? "/learn/study" : "/learn/decks"} className="font-medium text-[var(--primary)] hover:underline">
+            {nothingDue ? "trang học từ mới" : "danh sách bộ thẻ"}
           </Link>
           .
         </p>
@@ -577,7 +695,6 @@ export function ExercisesConsole({ variant = "exercises" }: { variant?: "exercis
           <button
             type="button"
             onClick={() => {
-              setOrder(seededShuffle(cards.filter(asksReading), hashSeed(deck?._id ?? "") + step + 1));
               setRound((n) => n + 1);
               setStep(0);
               setPicked(null);
@@ -766,7 +883,7 @@ export function ExercisesConsole({ variant = "exercises" }: { variant?: "exercis
           </div>
 
           <p className={"mt-3 text-center text-xs text-[var(--muted-foreground)] " + (mode === "type" ? "" : "hidden")}>
-            So khớp bỏ qua dấu và dấu câu — ví dụ “mèo” khớp với “Mèo!”. Với từ kanji, hãy gõ cách đọc hiragana (gõ katakana cũng được).
+            So khớp bỏ qua dấu và dấu câu — ví dụ “mèo” khớp với “Mèo!”. {typeReading ? " Hãy gõ cách đọc hiragana (gõ katakana cũng được)." : ""}
           </p>
         </div>
       )}

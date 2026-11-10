@@ -381,6 +381,15 @@ function StudySessionInner({ mode }: { mode: "learn" | "review" }) {
     let cancelled = false;
 
     async function load() {
+      // The queue's deck is already known for the review hub (all decks) and for a
+      // `?deck=` link, so fetch it alongside the deck list instead of after it.
+      const guess: DeckRef | null =
+        deckParam || mode === "review"
+          ? deckParam
+            ? { _id: deckParam, title: "", shared: false }
+            : ALL_DECKS
+          : null;
+      const early = guess ? loadQueue(guess) : null;
       const res = await fetch("/api/flashcards/decks", { cache: "no-store" }).catch(
         () => null,
       );
@@ -411,7 +420,13 @@ function StudySessionInner({ mode }: { mode: "learn" | "review" }) {
         return;
       }
       setDeck(target);
-      await loadQueue(target);
+      if (early && guess && guess._id === target._id) {
+        await early;
+      } else {
+        await early;
+        setError(null);
+        await loadQueue(target);
+      }
       if (cancelled) return;
       setLoading(false);
     }

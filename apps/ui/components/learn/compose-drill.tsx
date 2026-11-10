@@ -56,7 +56,7 @@ export function ComposeDrill({
     if (!card || busy || text.trim() === "") return;
     setBusy(true);
     setError(null);
-    const res = await fetch(`/api/flashcards/decks/${deckId}/grade-sentence`, {
+    const res = await fetch(`/api/flashcards/decks/${card.deck ?? deckId}/grade-sentence`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ cardId: card._id, sentence: text.trim() }),

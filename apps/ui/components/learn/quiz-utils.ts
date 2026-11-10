@@ -93,6 +93,8 @@ export interface ExerciseCard {
   front: string;
   back: string;
   reading?: string;
+  /** Owning deck id (needed when drilling several decks at once). */
+  deck?: string;
   examples?: { sentence: string; translation?: string }[];
 }
 
@@ -124,6 +126,9 @@ export interface ChoiceQuestion {
   /** Shown after answering (e.g. the sentence's translation). */
   explain?: string;
 }
+
+/** Trắc nghiệm sub-mode: pick the Vietnamese meaning, pick the kanji, or both interleaved. */
+export type TestKind = "mixed" | "meaning" | "kanji";
 
 export type ChoiceMode = "test" | "kanji" | "reading" | "sentence" | "formation" | "context";
 
@@ -343,9 +348,24 @@ export function buildChoiceQuestions(
   mode: ChoiceMode,
   cards: ExerciseCard[],
   seed: number,
+  testKind: TestKind = "mixed",
+  /** When given, only these cards get a question (the rest still serve as distractors). */
+  onlyIds?: ReadonlySet<string>,
 ): ChoiceQuestion[] {
+  if (testKind === "mixed") {
+    // Both kinds: every card is asked each way, so the count is the two modes added up.
+    const a = buildChoiceQuestions(mode, cards, seed, "meaning", onlyIds);
+    const b = buildChoiceQuestions(mode, cards, seed + 3, "kanji", onlyIds).filter((q) => q.kind === "kanji-pick");
+    const out: ChoiceQuestion[] = [];
+    for (let i = 0; i < Math.max(a.length, b.length); i++) {
+      if (a[i]) out.push(a[i]);
+      if (b[i]) out.push(b[i]);
+    }
+    return out;
+  }
   const out: ChoiceQuestion[] = [];
   for (const c of seededShuffle(cards, seed)) {
+    if (onlyIds && !onlyIds.has(c._id)) continue;
     const others = cards.filter((o) => o._id !== c._id);
     const s = hashSeed(c._id) + seed;
     let q: ChoiceQuestion | null = null;
@@ -353,8 +373,8 @@ export function buildChoiceQuestions(
     if (mode === "test") {
       // Trắc nghiệm mixes two kinds (meaning / kanji), rotated card by card; a card that cannot
       // make the kind it was given falls back to the next one.
-      const makers = [meaningQuestion, kanjiQuestion];
-      for (let k = 0; k < makers.length && !q; k++) q = makers[(out.length + k) % makers.length](c, others, s);
+      // One question per word: a word that cannot make a kanji question gets a meaning one.
+      q = testKind === "kanji" ? (kanjiQuestion(c, others, s) ?? meaningQuestion(c, others, s)) : meaningQuestion(c, others, s);
     } else if (mode === "kanji") {
       // The reading is the question; the answer is the kanji word.
       if (hasKanji(c) && hasReading(c)) {

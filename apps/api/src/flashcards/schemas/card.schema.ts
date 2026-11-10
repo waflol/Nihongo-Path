@@ -130,5 +130,7 @@ export type FlashcardDocument = HydratedDocument<Flashcard>;
 export const FlashcardSchema = SchemaFactory.createForClass(Flashcard);
 // List the cards of one deck (P3-CARD-02 "index theo deckId").
 FlashcardSchema.index({ deck: 1 });
+// Deck card lists are always read in (order, _id) order — serve the sort from the index.
+FlashcardSchema.index({ deck: 1, order: 1, _id: 1 });
 // Idempotent save / import + duplicate detection within a deck.
 FlashcardSchema.index({ deck: 1, dedupeKey: 1 }, { unique: true });

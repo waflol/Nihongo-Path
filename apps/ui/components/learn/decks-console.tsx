@@ -1,5 +1,6 @@
 "use client";
 
+import { fetchShared } from "@/lib/inflight-fetch";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
@@ -72,7 +73,7 @@ export function DecksConsole() {
     let cancelled = false;
 
     (async () => {
-      const res = await fetch("/api/flashcards/decks", { cache: "no-store" }).catch(
+      const res = await fetchShared("/api/flashcards/decks", { cache: "no-store" }).catch(
         () => null,
       );
       if (cancelled) return;

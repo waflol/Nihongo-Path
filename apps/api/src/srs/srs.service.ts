@@ -198,26 +198,36 @@ export class SrsService {
     const reviewAll = deckId === "all";
     // learn = a deck's new words only; review (SRS) = due words only, for "all" or one deck.
     const learn = mode === "learn" && !reviewAll;
-    if (!reviewAll) await this.resolveAccessibleDeck(caller, deckId);
-    const timezone = await this.resolveTimezone(caller, tz);
+    // Independent lookups run together (each is a separate DB round trip).
+    const [, timezone, newPerDay] = await Promise.all([
+      reviewAll ? undefined : this.resolveAccessibleDeck(caller, deckId),
+      this.resolveTimezone(caller, tz),
+      this.newCardsPerDay(caller),
+    ]);
     const today = localDayKey(Date.now(), timezone);
     const userId = new Types.ObjectId(caller.sub);
 
     let cards: FlashcardDocument[];
     let progressDocs: UserCardProgressDocument[];
     if (reviewAll) {
-      progressDocs = await this.progress.find({ user: userId }).exec();
-      const decks = await this.deck
-        .find({ $or: [{ user: userId }, { shared: true, status: "PUBLISHED" }] }, { _id: 1 })
-        .lean()
-        .exec();
-      cards = await this.card
+      // Plain (lean) objects: hydrating thousands of mongoose documents is the slow part.
+      const [progressRows, decks] = await Promise.all([
+        this.progress.find({ user: userId }).select("card state dueDay lastReviewedAtMs").lean().exec(),
+        this.deck
+          .find({ $or: [{ user: userId }, { shared: true, status: "PUBLISHED" }] }, { _id: 1 })
+          .lean()
+          .exec(),
+      ]);
+      progressDocs = progressRows as unknown as UserCardProgressDocument[];
+      cards = (await this.card
         .find({
           _id: { $in: progressDocs.map((p) => p.card) },
           deck: { $in: decks.map((d) => d._id) },
         })
+        .select("_id front reading")
         .sort({ order: 1, _id: 1 })
-        .exec();
+        .lean()
+        .exec()) as unknown as FlashcardDocument[];
       // The same word in several decks counts as one card: keep the copy
       // reviewed most recently (its state is the freshest).
       const lastMs = new Map(progressDocs.map((p) => [String(p.card), p.lastReviewedAtMs ?? 0]));
@@ -232,22 +242,27 @@ export class SrsService {
       const keep = new Set([...best.values()].map((c) => String(c._id)));
       cards = cards.filter((c) => keep.has(String(c._id)));
     } else {
-      cards = await this.card
+      cards = (await this.card
         .find({ deck: new Types.ObjectId(deckId) })
+        .select("_id")
         .sort({ order: 1, _id: 1 })
-        .exec();
+        .lean()
+        .exec()) as unknown as FlashcardDocument[];
       // The caller's progress for exactly these cards — one lookup.
-      progressDocs = await this.progress
-        .find({ user: userId, card: cards.map((c) => c._id) })
-        .exec();
+      progressDocs = (await this.progress
+        .find({ user: userId, card: { $in: cards.map((c) => c._id) } })
+        .select("card state dueDay")
+        .lean()
+        .exec()) as unknown as UserCardProgressDocument[];
     }
     const byCard = new Map<string, UserCardProgressDocument>();
     for (const p of progressDocs) byCard.set(String(p.card), p);
 
-    const newCards: CardQueueItem[] = [];
-    const dueCards: CardQueueItem[] = [];
-    const newPerDay = await this.newCardsPerDay(caller);
-    // Cards first introduced today in this deck use up today's allowance.
+    // Classify using only light rows (no examples/images); the full card is loaded
+    // afterwards for just the cards that are actually returned.
+    type Stub = { id: string; extra: Pick<CardQueueItem, "bucket" | "state"> & Partial<CardQueueItem> };
+    const newCards: Stub[] = [];
+    const dueCards: Stub[] = [];
     const introducedToday = await this.progress.countDocuments({
       user: userId,
       card: { $in: cards.map((c) => c._id) },
@@ -258,25 +273,13 @@ export class SrsService {
     let masteredCount = 0;
     let nextDueDay: string | undefined;
     const grades = { AGAIN: 0, HARD: 0, GOOD: 0, EASY: 0 };
-    const reviewAhead: CardQueueItem[] = [];
+    const reviewAhead: Stub[] = [];
 
     for (const c of cards) {
-      const p = byCard.get(String(c._id));
+      const id = String(c._id);
+      const p = byCard.get(id);
       if (!p) {
-        newCards.push({
-          id: String(c._id),
-          front: c.front,
-          back: c.back,
-          reading: c.reading || undefined,
-          image: c.image || undefined,
-          imageCredit: c.imageCredit || undefined,
-          partOfSpeech: c.partOfSpeech || undefined,
-          hanViet: c.hanViet || undefined,
-          examples: c.examples?.length ? c.examples.map((e) => ({ sentence: e.sentence, translation: e.translation })) : undefined,
-          kind: c.kind,
-          bucket: "new",
-          state: { ...SRS_DEFAULT_STATE },
-        });
+        newCards.push({ id, extra: { bucket: "new", state: { ...SRS_DEFAULT_STATE } } });
         continue;
       }
       // Classify by SM-2 state: a lapse leaves repetitions at 0; otherwise
@@ -295,20 +298,8 @@ export class SrsService {
         if (!nextDueDay || p.dueDay < nextDueDay) nextDueDay = p.dueDay;
         if (cls !== "EASY") {
           reviewAhead.push({
-            id: String(c._id),
-            front: c.front,
-            back: c.back,
-            reading: c.reading || undefined,
-            image: c.image || undefined,
-            imageCredit: c.imageCredit || undefined,
-            partOfSpeech: c.partOfSpeech || undefined,
-          hanViet: c.hanViet || undefined,
-            examples: c.examples?.length ? c.examples.map((e) => ({ sentence: e.sentence, translation: e.translation })) : undefined,
-            kind: c.kind,
-            bucket: "due",
-            label: this.dueLabel(p.state),
-            dueDay: p.dueDay,
-            state: p.state,
+            id,
+            extra: { bucket: "due", label: this.dueLabel(p.state), dueDay: p.dueDay, state: p.state },
           });
         }
         continue;
@@ -317,35 +308,55 @@ export class SrsService {
       const label = this.dueLabel(p.state);
       if (label === "hard") hardCount += 1;
       if (label === "mastered") masteredCount += 1;
-      dueCards.push({
-        id: String(c._id),
-        front: c.front,
-        back: c.back,
-        reading: c.reading || undefined,
-        image: c.image || undefined,
-        imageCredit: c.imageCredit || undefined,
-        partOfSpeech: c.partOfSpeech || undefined,
-          hanViet: c.hanViet || undefined,
-        examples: c.examples?.length ? c.examples.map((e) => ({ sentence: e.sentence, translation: e.translation })) : undefined,
-        kind: c.kind,
-        bucket: "due",
-        label,
-        dueDay: p.dueDay,
-        state: p.state,
-      });
+      dueCards.push({ id, extra: { bucket: "due", label, dueDay: p.dueDay, state: p.state } });
     }
 
     dueCards.sort(
       (a, b) =>
-        (a.dueDay ?? "").localeCompare(b.dueDay ?? "") ||
+        (a.extra.dueDay ?? "").localeCompare(b.extra.dueDay ?? "") ||
         a.id.localeCompare(b.id),
     );
+
+    const pickedNew = learn ? newCards.slice(0, Math.min(limit, newAllowed)) : [];
+    const pickedDue = learn ? [] : dueCards.slice(0, limit);
+    const wanted = [...pickedNew, ...pickedDue, ...reviewAhead];
+    const full = new Map(
+      (wanted.length
+        ? ((await this.card
+            .find({ _id: { $in: wanted.map((w) => new Types.ObjectId(w.id)) } })
+            .lean()
+            .exec()) as unknown as FlashcardDocument[])
+        : []
+      ).map((c) => [String(c._id), c]),
+    );
+    const hydrate = (list: Stub[]): CardQueueItem[] =>
+      list.flatMap((w) => {
+        const c = full.get(w.id);
+        if (!c) return [];
+        return [
+          {
+            id: w.id,
+            front: c.front,
+            back: c.back,
+            reading: c.reading || undefined,
+            image: c.image || undefined,
+            imageCredit: c.imageCredit || undefined,
+            partOfSpeech: c.partOfSpeech || undefined,
+            hanViet: c.hanViet || undefined,
+            examples: c.examples?.length
+              ? c.examples.map((e) => ({ sentence: e.sentence, translation: e.translation }))
+              : undefined,
+            kind: c.kind,
+            ...w.extra,
+          },
+        ];
+      });
 
     return {
       deckId,
       today,
-      newCards: learn ? newCards.slice(0, Math.min(limit, newAllowed)) : [],
-      dueCards: learn ? [] : dueCards.slice(0, limit),
+      newCards: hydrate(pickedNew),
+      dueCards: hydrate(pickedDue),
       newPerDay,
       newTotal: newCards.length,
       newToday: introducedToday,
@@ -357,7 +368,7 @@ export class SrsService {
       },
       total: cards.length,
       grades,
-      reviewAhead,
+      reviewAhead: hydrate(reviewAhead),
       nextDueDay,
       limit,
     };
@@ -377,6 +388,8 @@ export class SrsService {
     const userId = new Types.ObjectId(caller.sub);
     const docs = await this.progress
       .find({ user: userId, $or: [{ createdAt: { $gte: startOfDay } }, { dueDay: { $lte: today } }] })
+      .select("card createdAt")
+      .lean()
       .exec();
     if (docs.length === 0) return {};
     const cards = await this.card

@@ -1,5 +1,6 @@
 "use client";
 
+import { fetchShared } from "@/lib/inflight-fetch";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { onSessionChanged } from "@/lib/session-events";
 
@@ -12,7 +13,7 @@ export function LoginCta({ children }: { children: ReactNode }) {
   const [state, setState] = useState<"loading" | "out" | "in">("loading");
 
   const load = useCallback(() => {
-    fetch("/api/auth/session")
+    fetchShared("/api/auth/session")
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => setState(data?.user ? "in" : "out"))
       .catch(() => setState("out"));
