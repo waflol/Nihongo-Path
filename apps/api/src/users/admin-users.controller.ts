@@ -1,7 +1,7 @@
 import { Body, Controller, Get, Param, Patch, Post, Query } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { Type } from "class-transformer";
-import { IsIn, IsInt, IsOptional, IsString, Max, MaxLength, Min } from "class-validator";
+import { IsEmail, IsIn, IsInt, IsOptional, IsString, Max, MaxLength, Min, MinLength } from "class-validator";
 import type { AuthUser } from "../auth/auth.types.js";
 import { CurrentUser } from "../auth/decorators/current-user.decorator.js";
 import { ContentAdmin, Roles } from "../auth/decorators/roles.decorator.js";
@@ -36,6 +36,22 @@ export class SetRoleDto {
   role: "USER" | "ADMIN";
 }
 
+export class CreateAdminDto {
+  @IsEmail() @MaxLength(320)
+  email: string;
+
+  @IsString() @MinLength(8) @MaxLength(200)
+  password: string;
+
+  @IsOptional() @IsString() @MaxLength(120)
+  displayName?: string;
+}
+
+export class SetPasswordDto {
+  @IsString() @MinLength(8) @MaxLength(200)
+  password: string;
+}
+
 @ApiTags("admin-users")
 @ApiBearerAuth()
 @Controller("admin/users")
@@ -54,6 +70,20 @@ export class AdminUsersController {
   @ApiOperation({ summary: "User counts: total / active / suspended / admins / online" })
   summary() {
     return this.service.summary();
+  }
+
+  @Post()
+  @Roles("SUPER_ADMIN")
+  @ApiOperation({ summary: "Create an ADMIN account with email + password (SUPER_ADMIN only)" })
+  createAdmin(@Body() body: CreateAdminDto) {
+    return this.service.createAdmin(body);
+  }
+
+  @Patch(":id/password")
+  @ContentAdmin()
+  @ApiOperation({ summary: "Set a new password for an account (logs it out everywhere)" })
+  setPassword(@CurrentUser() caller: AuthUser, @Param("id") id: string, @Body() body: SetPasswordDto) {
+    return this.service.setPassword(caller, id, body.password);
   }
 
   @Patch(":id/status")

@@ -1,11 +1,13 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
 import { InjectModel } from "@nestjs/mongoose";
 import { type FilterQuery, type Model, Types } from "mongoose";
+import { hashPassword } from "../common/password.js";
 import type { AuthUser } from "../auth/auth.types.js";
 import { AuthSession } from "../auth/schemas/auth-session.schema.js";
 import { AuthAccount } from "./schemas/auth-account.schema.js";
@@ -147,6 +149,47 @@ export class AdminUsersService {
     // Force re-login so the new role lands in the access token.
     await this.revokeAll(doc._id);
     return { id, role };
+  }
+
+  async createAdmin(input: { email: string; password: string; displayName?: string }) {
+    const email = input.email.trim().toLowerCase();
+    if (await this.users.exists({ email })) throw new ConflictException("Email đã tồn tại");
+    const doc = await this.users.create({
+      email,
+      role: "ADMIN",
+      status: "ACTIVE",
+      lang: "vi",
+      displayName: input.displayName?.trim() || undefined,
+      passwordHash: await hashPassword(input.password),
+    });
+    const link = await this.accounts.create({
+      provider: "email",
+      providerAccountId: email,
+      user: doc._id,
+      manual: true,
+    });
+    await this.users.updateOne({ _id: doc._id }, { $set: { authAccounts: [link._id] } });
+    return { id: doc.id, email, role: "ADMIN" as const };
+  }
+
+  async setPassword(caller: AuthUser, id: string, password: string) {
+    const doc = await this.target(caller, id);
+    if (!doc.email) throw new BadRequestException("Tài khoản không có email");
+    doc.passwordHash = await hashPassword(password);
+    await doc.save();
+    // Ensure an email credential link exists (e.g. OAuth-only accounts), then force re-login.
+    const has = await this.accounts.exists({ provider: "email", providerAccountId: doc.email });
+    if (!has) {
+      const link = await this.accounts.create({
+        provider: "email",
+        providerAccountId: doc.email,
+        user: doc._id,
+        manual: true,
+      });
+      await this.users.updateOne({ _id: doc._id }, { $addToSet: { authAccounts: link._id } });
+    }
+    await this.revokeAll(doc._id);
+    return { id };
   }
 
   async revokeSessions(caller: AuthUser, id: string) {
