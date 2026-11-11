@@ -1188,6 +1188,8 @@ export class FlashcardsService implements OnModuleInit {
       bHash: string;
       /** Reading parts neither the kanji data nor the analyser could confirm: what the AI is still asked. */
       askReading: string[];
+      /** A katakana word whose reading does not match the word. */
+      kataIssue?: string;
       /** A reading valid for the word but tied to another meaning (from what people confirmed). */
       readingClash?: string;
     };
@@ -1211,7 +1213,11 @@ export class FlashcardsService implements OnModuleInit {
         judgeBack: wants("back") && (force || c.backChecked !== bHash),
         askReading: [],
       };
-      if (p.judgeReading && reading) {
+      if (p.judgeReading && reading && /^[\p{Script=Katakana}ー・\s]+$/u.test(word)) {
+        // A katakana word is its own reading: only check the reading matches the word (no AI, no hiragana suggestion).
+        const norm = (t: string) => t.replace(/[\s・]/g, "").replace(/[\u30A1-\u30F6]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0x60));
+        if (norm(reading) !== norm(word) && readingVariants(reading).every((v) => norm(v) !== norm(word))) p.kataIssue = `cách đọc “${reading}” không khớp với từ katakana “${word}”`;
+      } else if (p.judgeReading && reading) {
         const variants = readingVariants(reading);
         // Every reading on the card is checked on its own: one valid one does not vouch for the rest.
         let invalid = variants.filter((v) => !readingFitsKanji(c.front, v));
@@ -1239,6 +1245,7 @@ export class FlashcardsService implements OnModuleInit {
       const reading = c.reading ?? "";
       const hanViet = c.hanViet ?? "";
       const meaning = c.back ?? "";
+      if (p.kataIssue) out.push(p.kataIssue);
       if (p.readingClash) out.push(p.readingClash);
       if (p.askReading.length > 0 && r?.reading && /^[\p{Script=Hiragana}ー]+$/u.test(r.reading) && !p.askReading.includes(r.reading)) {
         out.push(`cách đọc “${p.askReading.join(" / ")}” có thể chưa đúng (AI gợi ý: ${r.reading})`);

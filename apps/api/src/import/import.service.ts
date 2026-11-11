@@ -1128,7 +1128,8 @@ export class ImportService implements OnApplicationBootstrap {
       const given = mapping.hanViet ? (row[mapping.hanViet] ?? "").trim() : "";
       const hanViet =
         extra.hanViet && suggestHanViet(front) === "" && !this.hvCache.has(ImportService.hvKey(front, given)) ? extra.hanViet : "";
-      const reading = extra.reading && !(await this.readingConfirmed(front, extra.reading)) ? extra.reading : "";
+      // A katakana word is its own reading: nothing to ask the AI.
+      const reading = extra.reading && !/^[\p{Script=Katakana}ー・\s]+$/u.test(front) && !(await this.readingConfirmed(front, extra.reading)) ? extra.reading : "";
       if (!reading && !hanViet && !meaning) {
         this.cardCheckCache.set(key, []); // everything is settled locally
         continue;
