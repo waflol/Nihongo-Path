@@ -845,7 +845,7 @@ export class AiExampleService {
     onyomi?: string[];
     kunyomi?: string[];
     meaningsEn?: string[];
-  }): Promise<{ hanViet: string[]; meanings: string[]; mnemonic: string } | null> {
+  }): Promise<{ meanings: string[]; mnemonic: string } | null> {
     const prompt = [
       "You are a Japanese-Vietnamese kanji lexicographer.",
       `For the kanji "${input.char}":`,
@@ -853,8 +853,7 @@ export class AiExampleService {
       `- Onyomi: ${(input.onyomi ?? []).join(", ") || "(none)"}`,
       `- Kunyomi: ${(input.kunyomi ?? []).join(", ") || "(none)"}`,
       `- English glosses: ${(input.meaningsEn ?? []).join(", ") || "(none)"}`,
-      'Return JSON only: {"hanViet":[string],"meanings":[string],"mnemonic":string}',
-      '- "hanViet": 1 to 3 standard Sino-Vietnamese readings in lowercase Vietnamese (e.g. ["trường","trưởng"] or ["học"]).',
+      'Return JSON only: {"meanings":[string],"mnemonic":string}',
       '- "meanings": 1 to 4 concise Vietnamese meanings of the kanji (1-4 words each).',
       '- "mnemonic": 1-2 short, vivid Vietnamese sentences helping a learner remember the kanji shape, Hán Việt and meaning.',
     ].join("\n");
@@ -867,17 +866,12 @@ export class AiExampleService {
         const json = /\{[\s\S]*\}/.exec(text)?.[0];
         const parsed = json ? (JSON.parse(json) as Record<string, unknown>) : null;
         if (!parsed || typeof parsed !== "object") continue;
-        const hanViet = Array.isArray(parsed.hanViet)
-          ? parsed.hanViet.map((x) => String(x).trim().toLocaleLowerCase("vi")).filter(Boolean).slice(0, 5)
-          : typeof parsed.hanViet === "string"
-          ? parsed.hanViet.split(/[/,;]+/).map((x) => x.trim().toLocaleLowerCase("vi")).filter(Boolean).slice(0, 5)
-          : [];
         const meanings = Array.isArray(parsed.meanings)
           ? parsed.meanings.map((x) => String(x).trim()).filter(Boolean).slice(0, 6)
           : [];
         const mnemonic = typeof parsed.mnemonic === "string" ? parsed.mnemonic.trim().slice(0, 1000) : "";
-        if (hanViet.length > 0 || meanings.length > 0 || mnemonic) {
-          return { hanViet, meanings, mnemonic };
+        if (meanings.length > 0 || mnemonic) {
+          return { meanings, mnemonic };
         }
       } catch (err) {
         if (err instanceof AiFailure) await this.services.reportFailure(svc.id, err.kind, err.message, err.retryAfterMs);

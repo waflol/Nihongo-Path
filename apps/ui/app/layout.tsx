@@ -1,5 +1,6 @@
 import { RecheckTracker } from "@/components/learn/recheck-tracker";
 import { ImportJobTracker } from "@/components/admin/import-job-tracker";
+import { MaziiSyncTracker } from "@/components/admin/mazii-sync-tracker";
 import { ExampleJobTracker } from "@/components/learn/example-job-tracker";
 import type { Metadata } from "next";
 import { Suspense } from "react";
@@ -64,6 +65,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         <ClientIpv4Reporter />
         <div className="fixed bottom-4 right-4 z-50 flex w-80 max-w-[calc(100vw-2rem)] flex-col gap-2">
           <ImportJobTracker />
+          <MaziiSyncTracker />
           <RecheckTracker />
           <ExampleJobTracker />
         </div>

@@ -17,14 +17,18 @@ import type { Response } from "express";
 import { ApiOperation, ApiTags } from "@nestjs/swagger";
 import { ContentAdmin } from "../auth/decorators/roles.decorator.js";
 import { IsPublic } from "../auth/decorators/is-public.decorator.js";
-import { KanjiBulkDto, KanjiDto, KanjiQuery, KanjiUpdateDto } from "./dto/kanji.dto.js";
+import { KanjiBulkDto, KanjiDto, KanjiQuery, KanjiUpdateDto, MaziiSyncStartDto } from "./dto/kanji.dto.js";
+import { MaziiSyncService } from "./mazii-sync.service.js";
 import { KanjiService } from "./kanji.service.js";
 
 /** Kanji surface (plan-kanji §5). Public reads are forced to PUBLISHED. */
 @ApiTags("kanji")
 @Controller()
 export class KanjiController {
-  constructor(private readonly kanji: KanjiService) {}
+  constructor(
+    private readonly kanji: KanjiService,
+    private readonly mazii: MaziiSyncService,
+  ) {}
 
   @Get("kanji")
   @IsPublic()
@@ -64,6 +68,48 @@ export class KanjiController {
   @ContentAdmin()
   adminLevels() {
     return this.kanji.adminLevels();
+  }
+
+  // Background Mazii sync (progress is polled; survives page changes). Before `admin/kanji/:char`.
+  @Get("admin/kanji/mazii-sync")
+  @ContentAdmin()
+  maziiSyncStatus() {
+    return this.mazii.current();
+  }
+
+  @Post("admin/kanji/mazii-sync")
+  @ContentAdmin()
+  @ApiOperation({ summary: "Start a background Mazii update of Hán Việt / on / kun for the given kanji" })
+  async maziiSyncStart(@Body() body: MaziiSyncStartDto) {
+    return this.mazii.start(body.all ? await this.kanji.allChars() : (body.chars ?? []));
+  }
+
+  @Post("admin/kanji/mazii-sync/pause")
+  @ContentAdmin()
+  @HttpCode(HttpStatus.OK)
+  maziiSyncPause() {
+    return this.mazii.pause();
+  }
+
+  @Post("admin/kanji/mazii-sync/resume")
+  @ContentAdmin()
+  @HttpCode(HttpStatus.OK)
+  maziiSyncResume() {
+    return this.mazii.resume();
+  }
+
+  @Post("admin/kanji/mazii-sync/cancel")
+  @ContentAdmin()
+  @HttpCode(HttpStatus.OK)
+  maziiSyncCancel() {
+    return this.mazii.cancel();
+  }
+
+  @Delete("admin/kanji/mazii-sync")
+  @ContentAdmin()
+  @HttpCode(HttpStatus.NO_CONTENT)
+  maziiSyncDismiss() {
+    this.mazii.dismiss();
   }
 
   // Before `admin/kanji/:char` so "export" is not read as a character.
@@ -107,6 +153,20 @@ export class KanjiController {
   @ContentAdmin()
   generate(@Param("char") char: string) {
     return this.kanji.generateAi(char);
+  }
+
+  @Post("admin/kanji/:char/mazii-check")
+  @ContentAdmin()
+  @ApiOperation({ summary: "Check Hán Việt / onyomi / kunyomi against mazii.net (returns suggestion, does not save)" })
+  maziiCheck(@Param("char") char: string) {
+    return this.kanji.checkMazii(char);
+  }
+
+  @Post("admin/kanji/:char/mazii-sync")
+  @ContentAdmin()
+  @ApiOperation({ summary: "Check mazii.net and save Hán Việt / onyomi / kunyomi for this kanji" })
+  maziiSync(@Param("char") char: string) {
+    return this.kanji.syncFromMazii(char);
   }
 
   @Patch("admin/kanji/:char")

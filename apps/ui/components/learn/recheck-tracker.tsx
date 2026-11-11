@@ -121,7 +121,7 @@ export function RecheckTracker() {
                   />
                 </div>
                 <div className="mt-2 flex items-center justify-between text-xs text-[var(--muted-foreground)]">
-                  <span>{j.total > 0 ? `${j.done}/${j.total} thẻ` : "Đang chuẩn bị…"} · có thể sang trang khác</span>
+                  <span>{j.total > 0 ? `${j.done}/${j.total} thẻ` : "Đang chuẩn bị…"}</span>
                   <button type="button" onClick={() => cancel(j.deckId)} className="rounded-md border border-[var(--border)] px-2 py-0.5 font-medium text-[var(--foreground)] hover:bg-[var(--layer)]">
                     Hủy
                   </button>

@@ -1,4 +1,5 @@
 import {
+  BadGatewayException,
   BadRequestException,
   ConflictException,
   Injectable,
@@ -16,6 +17,7 @@ import { buildXlsx } from "./kanji-xlsx.js";
 import { FilterQuery, Model } from "mongoose";
 import { AiExampleService } from "../ai/ai-example.service.js";
 import { formatHanViet, hanVietNorm } from "./han-viet-norm.js";
+import { fetchMaziiKanji, type MaziiKanjiReadings } from "./mazii-kanji.js";
 import { Flashcard } from "../flashcards/schemas/card.schema.js";
 import { Vocabulary } from "./schemas/vocabulary.schema.js";
 import { Kanji, type KanjiDocument, type RelatedWord } from "./schemas/kanji.schema.js";
@@ -641,43 +643,57 @@ export class KanjiService implements OnModuleInit {
   }
 
   /**
-   * AI suggestion for a kanji (plan-kanji §5.2): suggests Hán Việt (multiple
-   * readings supported), Vietnamese meanings, mnemonic, and translates any
-   * untranslated related words. Does NOT auto-publish.
+   * AI suggestion for a kanji (plan-kanji §5.2): Vietnamese meanings and a
+   * mnemonic only. Hán Việt / on / kun come from the Mazii check. Does NOT
+   * auto-publish or save.
    */
-  async generateAi(char: string): Promise<{
-    hanViet: string;
-    meanings: string[];
-    mnemonic: string;
-    words: RelatedWord[];
-  }> {
+  async generateAi(char: string): Promise<{ meanings: string[]; mnemonic: string }> {
     const doc = await this.model.findOne({ char }).exec();
     if (!doc) throw new NotFoundException("Kanji not found");
-    await this.fillWordMeanings(doc);
-    const curated = loadCuratedHanViet()[char];
     const ai = await this.ai.suggestKanji({
       char: doc.char,
-      hanViet: doc.hanViet || curated || "",
+      hanViet: doc.hanViet || loadCuratedHanViet()[char] || "",
       onyomi: doc.onyomi,
       kunyomi: doc.kunyomi,
       meaningsEn: doc.meaningsEn,
     });
-    const combinedHv = formatHanViet(
-      [doc.hanViet, curated, ...(ai?.hanViet ?? [])].filter(Boolean).join("/"),
-    );
     const meanings =
       ai?.meanings && ai.meanings.length > 0
         ? ai.meanings
         : doc.meanings.length > 0
         ? doc.meanings
         : doc.meaningsEn;
-    const mnemonic = ai?.mnemonic || doc.mnemonic || "";
-    return {
-      hanViet: combinedHv || doc.hanViet,
-      meanings,
-      mnemonic,
-      words: doc.words,
-    };
+    return { meanings, mnemonic: ai?.mnemonic || doc.mnemonic || "" };
+  }
+
+  /** Look the kanji up on Mazii (javi) and return its Hán Việt / on / kun readings. Does not save. */
+  async checkMazii(char: string): Promise<MaziiKanjiReadings> {
+    let found: MaziiKanjiReadings | null;
+    try {
+      found = await fetchMaziiKanji(char);
+    } catch {
+      throw new BadGatewayException("Không kết nối được Mazii");
+    }
+    if (!found) throw new NotFoundException(`Mazii không có chữ ${char}`);
+    return found;
+  }
+
+  /** Every kanji character in the database, in learning order. */
+  async allChars(): Promise<string[]> {
+    const docs = await this.model.find({}, { char: 1 }).sort({ rank: 1, char: 1 }).lean().exec();
+    return docs.map((d) => d.char);
+  }
+
+  /** Check the kanji on Mazii and save its Hán Việt / on / kun (only the fields Mazii returned). */
+  async syncFromMazii(char: string): Promise<MaziiKanjiReadings> {
+    if (!(await this.model.exists({ char }).exec())) throw new NotFoundException("Kanji not found");
+    const m = await this.checkMazii(char);
+    const patch: KanjiUpdateDto = {};
+    if (m.hanViet) patch.hanViet = m.hanViet;
+    if (m.onyomi.length) patch.onyomi = m.onyomi;
+    if (m.kunyomi.length) patch.kunyomi = m.kunyomi;
+    if (Object.keys(patch).length) await this.update(char, patch);
+    return m;
   }
 
   async remove(char: string): Promise<void> {

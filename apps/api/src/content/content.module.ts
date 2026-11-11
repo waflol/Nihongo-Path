@@ -7,6 +7,7 @@ import { ContentService } from "./content.service.js";
 import { Flashcard, FlashcardSchema } from "../flashcards/schemas/card.schema.js";
 import { KanjiController } from "./kanji.controller.js";
 import { KanjiService } from "./kanji.service.js";
+import { MaziiSyncService } from "./mazii-sync.service.js";
 import { Kanji, KanjiSchema } from "./schemas/kanji.schema.js";
 import {
   GrammarPoint,
@@ -47,7 +48,7 @@ export function buildContentModule(): DynamicModule {
       ]),
     ],
     controllers: [ContentController, KanjiController],
-    providers: [ContentService, KanjiService],
+    providers: [ContentService, KanjiService, MaziiSyncService],
   };
 }
 

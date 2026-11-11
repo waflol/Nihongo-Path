@@ -4,6 +4,7 @@ import { Transform, Type } from "class-transformer";
 import {
   ArrayMaxSize,
   IsArray,
+  IsBoolean,
   IsIn,
   IsInt,
   IsOptional,
@@ -135,4 +136,18 @@ export class KanjiBulkDto {
   @IsOptional()
   @IsIn(["DRAFT", "PUBLISHED"])
   status?: "DRAFT" | "PUBLISHED";
+}
+
+export class MaziiSyncStartDto {
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(3000)
+  @IsString({ each: true })
+  @MaxLength(4, { each: true })
+  chars?: string[];
+
+  /** Sync every kanji in the database (ignores `chars`). */
+  @IsOptional()
+  @IsBoolean()
+  all?: boolean;
 }

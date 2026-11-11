@@ -12,6 +12,7 @@ import {
 import { StrokeOrder } from "@/components/learn/stroke-order";
 import { useConfirm } from "@/components/learn/use-confirm";
 import { hanVietReadings } from "@/lib/han-viet";
+import { MAZII_SYNC_PROGRESS_EVENT, MAZII_SYNC_STARTED_EVENT, useMaziiRunning } from "./mazii-sync-tracker";
 import { KanjiGroups } from "@/components/learn/kanji-groups";
 
 interface LevelSummary {
@@ -145,6 +146,10 @@ export function KanjiAdminConsole({
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [saving, setSaving] = useState(false);
   const [aiBusy, setAiBusy] = useState(false);
+  const [maziiBusy, setMaziiBusy] = useState(false);
+  /** A sync run is going: every button that talks to Mazii waits for it. */
+  const maziiRunning = useMaziiRunning();
+  const RUNNING_HINT = "Đang có một lượt cập nhật từ Mazii chạy — chờ nó xong hoặc hủy ở góc dưới bên phải";
 
   // Keep the view and level in the URL so a refresh (F5) or shared link restores them.
   useEffect(() => {
@@ -310,32 +315,50 @@ export function KanjiAdminConsole({
       setError("Không gọi được AI gợi ý (kiểm tra cấu hình dịch vụ AI hoặc lưu chữ Kanji trước).");
       return;
     }
-    const gen = (await res.json()) as {
-      hanViet?: string;
-      meanings?: string[];
-      mnemonic?: string;
-      words?: KanjiWord[];
-    };
+    const gen = (await res.json()) as { meanings?: string[]; mnemonic?: string };
     setEditing((prev) => {
       if (!prev) return prev;
-      const mergedHv = splitHanViet([prev.hanVietList.join("/"), gen.hanViet ?? ""].join("/"));
-      const uniqueHv: string[] = [];
-      for (const r of mergedHv) {
-        const low = r.toLocaleLowerCase("vi");
-        if (!uniqueHv.includes(low)) uniqueHv.push(low);
-      }
       return {
         ...prev,
-        hanVietList: uniqueHv.length > 0 ? uniqueHv : prev.hanVietList,
         meanings:
           prev.meanings.trim() || !gen.meanings?.length
             ? prev.meanings
             : gen.meanings.join(", "),
         mnemonic: gen.mnemonic || prev.mnemonic,
-        words: gen.words?.length ? gen.words : prev.words,
       };
     });
     setNotice(`Đã điền gợi ý AI cho chữ ${editing.char}. Kiểm tra lại rồi bấm Lưu.`);
+  }
+
+  async function handleMaziiCheck() {
+    if (!editing || !editing.char.trim()) return;
+    setMaziiBusy(true);
+    setError(null);
+    const res = await fetch(
+      `/api/admin/kanji/${encodeURIComponent(editing.isNew ? editing.char.trim() : editing.originalChar)}/mazii-check`,
+      { method: "POST" },
+    ).catch(() => null);
+    setMaziiBusy(false);
+    if (!res?.ok) {
+      setError(
+        res?.status === 404
+          ? `Mazii không có chữ ${editing.char}.`
+          : "Không kết nối được Mazii. Thử lại sau.",
+      );
+      return;
+    }
+    const m = (await res.json()) as { hanViet: string; onyomi: string[]; kunyomi: string[] };
+    setEditing((prev) =>
+      prev
+        ? {
+            ...prev,
+            hanVietList: m.hanViet ? splitHanViet(m.hanViet) : prev.hanVietList,
+            onyomi: m.onyomi.length ? m.onyomi.join(", ") : prev.onyomi,
+            kunyomi: m.kunyomi.length ? m.kunyomi.join(", ") : prev.kunyomi,
+          }
+        : prev,
+    );
+    setNotice(`Đã cập nhật Hán Việt, On, Kun của ${editing.char} từ Mazii. Kiểm tra lại rồi bấm Lưu.`);
   }
 
   async function handleSave(e: FormEvent) {
@@ -483,6 +506,51 @@ export function KanjiAdminConsole({
     await Promise.all([loadList(), loadSummaries()]);
   }
 
+  /** Start the server-side Mazii run for the selected kanji; progress, pause and cancel live in the floating tracker. */
+  async function handleMaziiSync(all = false) {
+    const chars = [...selected];
+    if (!all && chars.length === 0) return;
+    const count = all ? summaries.reduce((n, s) => n + s.total, 0) : chars.length;
+    const ok = await confirm({
+      title: all ? "Đồng bộ toàn bộ từ Mazii?" : "Cập nhật từ Mazii?",
+      message: `Ghi đè âm Hán Việt, On, Kun của ${all ? `toàn bộ${count ? ` ${count}` : ""} chữ Kanji` : `${count} chữ Kanji đã chọn`} bằng dữ liệu trên mazii.net. Chạy nền: bạn có thể sang trang khác, tạm dừng hoặc hủy bất cứ lúc nào.`,
+      confirmLabel: "Cập nhật",
+      tone: "primary",
+    });
+    if (!ok) return;
+    setError(null);
+    const res = await fetch("/api/admin/kanji/mazii-sync", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(all ? { all: true } : { chars }),
+    }).catch(() => null);
+    if (!res?.ok) {
+      setError(
+        res?.status === 409
+          ? "Đang có một lượt cập nhật Mazii chạy. Hủy hoặc chờ nó xong."
+          : "Không bắt đầu được lượt cập nhật Mazii.",
+      );
+      return;
+    }
+    setSelected(new Set());
+    setNotice(`Đã bắt đầu cập nhật ${all ? "toàn bộ" : chars.length} chữ Kanji từ Mazii (xem tiến độ ở góc dưới bên phải).`);
+    window.dispatchEvent(new Event(MAZII_SYNC_STARTED_EVENT));
+  }
+
+  // Reload the list while a Mazii run advances (the tracker fires this event).
+  useEffect(() => {
+    let t: ReturnType<typeof setTimeout> | null = null;
+    const onProgress = () => {
+      if (t) clearTimeout(t);
+      t = setTimeout(() => void Promise.all([loadList(), loadSummaries()]), 3000); // debounced: one reload per burst
+    };
+    window.addEventListener(MAZII_SYNC_PROGRESS_EVENT, onProgress);
+    return () => {
+      if (t) clearTimeout(t);
+      window.removeEventListener(MAZII_SYNC_PROGRESS_EVENT, onProgress);
+    };
+  }, [loadList, loadSummaries]);
+
   const csvInput = useRef<HTMLInputElement>(null);
   const [csvBusy, setCsvBusy] = useState(false);
 
@@ -594,6 +662,22 @@ export function KanjiAdminConsole({
           >
             Xuất Excel
           </a>
+          <button
+            type="button"
+            disabled={maziiRunning}
+            onClick={() => void handleMaziiSync(true)}
+            title={maziiRunning ? RUNNING_HINT : "Kiểm tra lại Hán Việt, On, Kun của toàn bộ chữ Kanji trên mazii.net (chạy nền)"}
+            className="rounded-xl border border-[var(--border)] bg-[var(--background-1)] px-3.5 py-2 text-xs font-semibold text-[var(--foreground)] transition-colors hover:bg-[var(--layer-hover)] disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            🔎 Đồng bộ toàn bộ từ Mazii
+          </button>
+          <Link
+            href="/admin/kanji/mazii-log"
+            title="Tiến độ và log chi tiết của lượt đồng bộ Mazii"
+            className="rounded-xl border border-[var(--border)] bg-[var(--background-1)] px-3.5 py-2 text-xs font-semibold text-[var(--foreground)] transition-colors hover:bg-[var(--layer-hover)]"
+          >
+            Log Mazii
+          </Link>
           <button
             type="button"
             disabled={csvBusy}
@@ -830,6 +914,17 @@ export function KanjiAdminConsole({
               </p>
             </div>
             <div className="flex items-center gap-2">
+              {editing.char.trim() && (
+                <button
+                  type="button"
+                  disabled={maziiBusy || maziiRunning}
+                  title={maziiRunning ? RUNNING_HINT : undefined}
+                  onClick={() => void handleMaziiCheck()}
+                  className="rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs font-semibold text-[var(--foreground)] hover:bg-[var(--layer-hover)] disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {maziiBusy ? "Đang kiểm tra…" : "🔎 Check Mazii (Hán Việt, On, Kun)"}
+                </button>
+              )}
               {!editing.isNew && (
                 <button
                   type="button"
@@ -837,7 +932,7 @@ export function KanjiAdminConsole({
                   onClick={() => void handleGenerateAi()}
                   className="rounded-lg border border-[var(--primary)] bg-[color-mix(in_srgb,var(--primary)_12%,transparent)] px-3 py-1.5 text-xs font-semibold text-[var(--primary)] hover:opacity-90 disabled:opacity-40"
                 >
-                  {aiBusy ? "Đang gọi AI…" : "✨ Gợi ý AI (Hán Việt, nghĩa & liên tưởng)"}
+                  {aiBusy ? "Đang gọi AI…" : "✨ Gợi ý AI (nghĩa & liên tưởng)"}
                 </button>
               )}
               <button
@@ -1218,6 +1313,15 @@ export function KanjiAdminConsole({
             className="rounded-lg border border-[var(--border)] bg-[var(--background-1)] px-3 py-1 font-medium text-[var(--foreground)] hover:bg-[var(--layer-hover)] disabled:opacity-40"
           >
             Chuyển về Nháp
+          </button>
+          <button
+            type="button"
+            disabled={maziiRunning}
+            title={maziiRunning ? RUNNING_HINT : undefined}
+            onClick={() => void handleMaziiSync()}
+            className="rounded-lg border border-[var(--border)] bg-[var(--background-1)] px-3 py-1 font-semibold text-[var(--foreground)] hover:bg-[var(--layer-hover)] disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            🔎 Cập nhật Hán Việt từ Mazii
           </button>
           <span className="ml-2 text-[var(--muted-foreground)]">Đổi cấp:</span>
           {KANJI_LEVELS.map((l) => (
