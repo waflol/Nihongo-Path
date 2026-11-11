@@ -930,7 +930,7 @@ export class AiExampleService {
       if (this.isTranslator(svc)) continue;
       try {
         await this.pace(svc);
-        const text = await this.call(svc, prompt, "vocab", items.map((i) => i.word));
+        const text = await this.call(svc, prompt, "verify", items.map((i) => i.word));
         await this.services.reportOk(svc.id);
         const json = /\{[\s\S]*\}/.exec(text)?.[0];
         const parsed = json ? (JSON.parse(json) as { items?: unknown }) : null;
@@ -976,7 +976,7 @@ export class AiExampleService {
       if (this.isTranslator(svc)) continue;
       try {
         await this.pace(svc);
-        const text = await this.call(svc, prompt, "vocab", items.map((i) => i.word));
+        const text = await this.call(svc, prompt, "verify", items.map((i) => i.word));
         await this.services.reportOk(svc.id);
         const json = /\{[\s\S]*\}/.exec(text)?.[0];
         const parsed = json ? (JSON.parse(json) as { items?: unknown }) : null;

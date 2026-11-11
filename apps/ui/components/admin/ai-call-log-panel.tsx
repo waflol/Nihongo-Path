@@ -5,7 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 
 interface LogRow {
   _id: string;
-  purpose: "example" | "test" | "vocab" | "ocr" | "translate" | "grammar" | "pronounce";
+  purpose: "example" | "test" | "vocab" | "ocr" | "translate" | "grammar" | "pronounce" | "verify";
   serviceId: string;
   serviceLabel: string;
   provider: string;
@@ -177,6 +177,7 @@ export function AiCallLogPanel() {
         <select value={purpose} onChange={filter(setPurpose)} className={field} aria-label="Mục đích">
           <option value="">Mọi mục đích</option>
           <option value="example">Tạo ví dụ</option>
+          <option value="verify">Kiểm tra từ vựng</option>
           <option value="ocr">Đọc từ vựng từ file PDF</option>
           <option value="translate">Dịch</option>
           <option value="grammar">Phân tích ngữ pháp</option>
@@ -206,7 +207,7 @@ export function AiCallLogPanel() {
               <th className="px-3 py-2 font-medium">Gửi tới</th>
               <th className="px-3 py-2 font-medium">Từ / câu</th>
               <th className="px-3 py-2 font-medium">Kết quả</th>
-              <th className="px-3 py-2 text-right font-medium">Thời gian xử lý</th>
+              <th className="px-3 py-2 text-right font-medium">Thời gian (giây)</th>
             </tr>
           </thead>
           <tbody>
@@ -277,6 +278,7 @@ function RowGroup({
             {r.purpose === "translate" ? " · dịch" : ""}
             {r.purpose === "grammar" ? " · phân tích ngữ pháp" : ""}
             {r.purpose === "pronounce" ? " · cách phát âm" : ""}
+            {r.purpose === "verify" ? " · kiểm tra từ vựng" : ""}
             {r.purpose === "test" ? " · kiểm tra" : ""}
             {r.purpose === "vocab" ? "tạo ví dụ cho từ vựng" : ""}
           </div>
@@ -288,15 +290,18 @@ function RowGroup({
         <td className="px-3 py-2">
           <span
             className={
-              "rounded-full px-2 py-0.5 text-xs font-medium " +
-              (r.ok ? "bg-[#f0fdf4] text-[#15803d]" : "bg-[#fef2f2] text-[#b91c1c]")
+              "inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-0.5 text-xs font-medium " +
+              (r.ok
+                ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                : "border-red-500/30 bg-red-500/10 text-red-600 dark:text-red-400")
             }
           >
+            <span aria-hidden className={"size-1.5 rounded-full " + (r.ok ? "bg-emerald-500" : "bg-red-500")} />
             {r.ok ? "Thành công" : `Lỗi${r.status ? ` ${r.status}` : ""}`}
           </span>
         </td>
-        <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-[var(--muted-foreground)]">
-          {(r.ms / 1000).toFixed(1)} s
+        <td className="whitespace-nowrap px-3 py-2 text-right text-sm font-medium tabular-nums text-[var(--foreground)]">
+          {(r.ms / 1000).toFixed(1)}
         </td>
       </tr>
       {isOpen && (
