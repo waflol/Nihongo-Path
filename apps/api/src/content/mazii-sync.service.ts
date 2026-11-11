@@ -1,4 +1,6 @@
-import { BadRequestException, ConflictException, Injectable, Logger } from "@nestjs/common";
+import { BadRequestException, ConflictException, Injectable, Logger, Optional, type OnModuleInit } from "@nestjs/common";
+import { InjectConnection } from "@nestjs/mongoose";
+import type { Connection } from "mongoose";
 import { KanjiService } from "./kanji.service.js";
 
 export type MaziiSyncStatus = "running" | "paused" | "done" | "cancelled";
@@ -17,10 +19,14 @@ export interface MaziiSyncJob {
   done: number;
   ok: number;
   failed: number;
+  /** Kanji left out because they were already synced. */
+  skipped?: number;
   current: string;
   startedAt: number;
   finishedAt?: number;
   log: MaziiSyncLog[];
+  /** The floating card was closed; the job and its log stay for the log page. */
+  dismissed?: boolean;
 }
 
 const DELAY_MS = 400;
@@ -33,18 +39,51 @@ const wait = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
  * can be paused, resumed or cancelled.
  */
 @Injectable()
-export class MaziiSyncService {
+export class MaziiSyncService implements OnModuleInit {
   private readonly logger = new Logger(MaziiSyncService.name);
   private job: MaziiSyncJob | null = null;
   private cancelFlag = false;
 
-  constructor(private readonly kanji: KanjiService) {}
+  constructor(
+    private readonly kanji: KanjiService,
+    @Optional() @InjectConnection() private readonly conn?: Connection,
+  ) {}
+
+  /** The last run is kept in Mongo (`mazii_sync_runs`), so a server restart does not wipe the log. */
+  private store() {
+    return this.conn?.db?.collection<{ _id: string; job: MaziiSyncJob }>("mazii_sync_runs");
+  }
+
+  private async save(job: MaziiSyncJob): Promise<void> {
+    try {
+      await this.store()?.replaceOne({ _id: "last" }, { job: { ...job } }, { upsert: true });
+    } catch (err) {
+      this.logger.warn(`Mazii log not saved: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  async onModuleInit(): Promise<void> {
+    try {
+      const doc = await this.store()?.findOne({ _id: "last" });
+      if (!doc?.job || this.job) return;
+      const job = doc.job;
+      if (job.status === "running" || job.status === "paused") {
+        // The server stopped mid-run: the run cannot continue, keep what it logged.
+        job.status = "cancelled";
+        job.current = "";
+        job.finishedAt ??= Date.now();
+      }
+      this.job = job;
+    } catch {
+      /* no stored run — start empty */
+    }
+  }
 
   current(): MaziiSyncJob | null {
     return this.job;
   }
 
-  start(chars: string[]): MaziiSyncJob {
+  start(chars: string[], skipped = 0): MaziiSyncJob {
     if (this.job && (this.job.status === "running" || this.job.status === "paused")) {
       throw new ConflictException("Đang có một lượt cập nhật Mazii chạy");
     }
@@ -57,12 +96,14 @@ export class MaziiSyncService {
       done: 0,
       ok: 0,
       failed: 0,
+      skipped,
       current: "",
       startedAt: Date.now(),
       log: [],
     };
     this.job = job;
     this.cancelFlag = false;
+    void this.save(job);
     void this.run(job, list);
     return job;
   }
@@ -85,9 +126,12 @@ export class MaziiSyncService {
     return job;
   }
 
-  /** Drop a finished job (its card on the UI). */
+  /** Close the floating card of a finished job; the log stays for the log page. */
   dismiss(): void {
-    if (this.job && this.job.status !== "running" && this.job.status !== "paused") this.job = null;
+    if (this.job && this.job.status !== "running" && this.job.status !== "paused") {
+      this.job.dismissed = true;
+      void this.save(this.job);
+    }
   }
 
   private active(): MaziiSyncJob {
@@ -122,6 +166,7 @@ export class MaziiSyncService {
           this.push(job, char, false, err instanceof Error ? err.message : "Lỗi không rõ");
         }
         job.done++;
+        if (job.done % 5 === 0) void this.save(job);
         await wait(DELAY_MS);
       }
     } catch (err) {
@@ -130,6 +175,7 @@ export class MaziiSyncService {
       job.status = this.cancelFlag ? "cancelled" : "done";
       job.current = "";
       job.finishedAt = Date.now();
+      await this.save(job);
     }
   }
 }

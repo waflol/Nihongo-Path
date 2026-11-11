@@ -10,9 +10,11 @@ export interface MaziiSyncJob {
   done: number;
   ok: number;
   failed: number;
+  skipped?: number;
   current: string;
   startedAt: number;
   finishedAt?: number;
+  dismissed?: boolean;
   log: { at: number; char: string; ok: boolean; message: string }[];
 }
 
@@ -98,7 +100,7 @@ export function MaziiSyncTracker() {
     setMaziiRunning(false);
   }
 
-  if (!job) return null;
+  if (!job || job.dismissed) return null;
   const active = job.status === "running" || job.status === "paused";
   const paused = job.status === "paused";
   const pct = job.total > 0 ? Math.min(100, Math.round((job.done / job.total) * 100)) : 0;

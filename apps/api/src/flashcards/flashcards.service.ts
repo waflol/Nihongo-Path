@@ -1,4 +1,4 @@
-import { checkHanViet, correctHanVietPartial, hanVietFits, harmonizeHanViet, norm as hvNorm, setKanjiHanViet, suggestHanViet } from "../import/han-viet-suggest.js";
+import { correctHanViet, correctHanVietPartial, hanVietFits, harmonizeHanViet, norm as hvNorm, setKanjiHanViet, suggestHanViet } from "../import/han-viet-suggest.js";
 import { readingFitsKanji } from "../import/kanji-reading.js";
 import { ensureKanjiTables } from "../import/kanji-table.js";
 import { ReadingService, readingVariants } from "./reading.service.js";
@@ -1088,16 +1088,23 @@ export class FlashcardsService implements OnModuleInit {
         if (askReading[n] && r?.reading && /^[\p{Script=Hiragana}ー]+$/u.test(r.reading) && !readingVariants(reading).includes(r.reading)) {
           out.push(`cách đọc “${reading}” có thể chưa đúng (AI gợi ý: ${r.reading})`);
         }
-        const hvIssue = wants("hanViet") && hanViet ? checkHanViet(c.front, hanViet) : null;
-        if (hvIssue) out.push(hvIssue);
+        // Hán Việt is looked up in the kanji admin data and replaced in place when it is wrong.
+        let fixedHv: string | null = null;
+        if (wants("hanViet")) {
+          // A blank cell is filled when the data knows every kanji of the word.
+          const right = hanViet ? (correctHanViet(c.front, hanViet) ?? correctHanVietPartial(c.front, hanViet)) : suggestHanViet(c.front);
+          if (right && right !== hanViet) fixedHv = right;
+        }
         if (wants("back") && r?.meaning && meaning && hvNorm(r.meaning) !== hvNorm(meaning)) {
           out.push(`nghĩa “${meaning}” có thể chưa sát (AI gợi ý: ${r.meaning})`);
         }
         const kept = (c.reviewIssues ?? []).filter((t) => !rejudged(t));
         const next = [...kept, ...out.filter((t) => !kept.some((k) => reviewFieldOf(k) === reviewFieldOf(t)))];
         if (out.length > 0) job.flagged++;
-        if (next.join("\n") !== (c.reviewIssues ?? []).join("\n")) {
-          await this.card.updateOne({ _id: c._id }, { $set: { reviewIssues: next } }).exec();
+        if (fixedHv !== null || next.join("\n") !== (c.reviewIssues ?? []).join("\n")) {
+          await this.card
+            .updateOne({ _id: c._id }, { $set: { reviewIssues: next, ...(fixedHv !== null ? { hanViet: fixedHv } : {}) } })
+            .exec();
         }
       }
       job.done = Math.min(i + 15, cards.length);

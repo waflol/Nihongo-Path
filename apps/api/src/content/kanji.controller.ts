@@ -81,7 +81,14 @@ export class KanjiController {
   @ContentAdmin()
   @ApiOperation({ summary: "Start a background Mazii update of Hán Việt / on / kun for the given kanji" })
   async maziiSyncStart(@Body() body: MaziiSyncStartDto) {
-    return this.mazii.start(body.all ? await this.kanji.allChars() : (body.chars ?? []));
+    let chars = body.all ? await this.kanji.allChars() : (body.chars ?? []);
+    if (body.skipSynced) {
+      const total = chars.length;
+      chars = await this.kanji.notSynced(chars);
+      if (chars.length === 0 && total > 0) throw new BadRequestException("Tất cả chữ Kanji đã được đồng bộ từ Mazii rồi");
+      return this.mazii.start(chars, total - chars.length);
+    }
+    return this.mazii.start(chars);
   }
 
   @Post("admin/kanji/mazii-sync/pause")

@@ -160,7 +160,7 @@ export function MaziiLogPanel() {
 
             <dl className="grid grid-cols-2 divide-x divide-y divide-[var(--border)] border-t border-[var(--border)] text-center sm:grid-cols-4 sm:divide-y-0">
               {[
-                { label: "Đã xử lý", value: `${job.done}/${job.total}`, color: "text-[var(--foreground)]" },
+                { label: job.skipped ? `Đã xử lý · bỏ qua ${job.skipped}` : "Đã xử lý", value: `${job.done}/${job.total}`, color: "text-[var(--foreground)]" },
                 { label: "Thành công", value: String(job.ok), color: "text-[#15803d] dark:text-[#86efac]" },
                 { label: "Lỗi", value: String(job.failed), color: job.failed > 0 ? "text-[#dc2626] dark:text-[#fca5a5]" : "text-[var(--foreground)]" },
                 { label: "Thời gian", value: duration, color: "text-[var(--foreground)]" },

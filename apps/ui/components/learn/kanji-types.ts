@@ -22,6 +22,8 @@ export interface KanjiItem {
   words: KanjiWord[];
   radicals?: string[];
   status?: "DRAFT" | "PUBLISHED";
+  /** ISO time of the last Mazii check; absent = never synced. */
+  maziiSyncedAt?: string;
 }
 
 export interface KanjiPage {

@@ -253,6 +253,10 @@ export class KanjiService implements OnModuleInit {
       and.push({ $or: [{ hanViet: "" }, { hanViet: { $exists: false } }] });
     } else if (query.missing === "meaning") {
       and.push({ "meanings.0": { $exists: false } });
+    } else if (query.missing === "maziiUnsynced") {
+      and.push({ $or: [{ maziiSyncedAt: { $exists: false } }, { maziiSyncedAt: null }] });
+    } else if (query.missing === "maziiSynced") {
+      and.push({ maziiSyncedAt: { $exists: true, $ne: null } });
     } else if (query.missing === "mnemonic") {
       and.push({ $or: [{ mnemonic: "" }, { mnemonic: { $exists: false } }] });
     }
@@ -684,6 +688,13 @@ export class KanjiService implements OnModuleInit {
     return docs.map((d) => d.char);
   }
 
+  /** The given kanji that were not yet checked against Mazii, in the given order. */
+  async notSynced(chars: string[]): Promise<string[]> {
+    const done = await this.model.find({ char: { $in: chars }, maziiSyncedAt: { $exists: true, $ne: null } }, { char: 1 }).lean().exec();
+    const skip = new Set(done.map((d) => d.char));
+    return chars.filter((c) => !skip.has(c));
+  }
+
   /** Check the kanji on Mazii and save its Hán Việt / on / kun (only the fields Mazii returned). */
   async syncFromMazii(char: string): Promise<MaziiKanjiReadings> {
     if (!(await this.model.exists({ char }).exec())) throw new NotFoundException("Kanji not found");
@@ -693,6 +704,7 @@ export class KanjiService implements OnModuleInit {
     if (m.onyomi.length) patch.onyomi = m.onyomi;
     if (m.kunyomi.length) patch.kunyomi = m.kunyomi;
     if (Object.keys(patch).length) await this.update(char, patch);
+    await this.model.updateOne({ char }, { $set: { maziiSyncedAt: new Date() } }).exec();
     return m;
   }
 

@@ -513,7 +513,7 @@ export function KanjiAdminConsole({
     const count = all ? summaries.reduce((n, s) => n + s.total, 0) : chars.length;
     const ok = await confirm({
       title: all ? "Đồng bộ toàn bộ từ Mazii?" : "Cập nhật từ Mazii?",
-      message: `Ghi đè âm Hán Việt, On, Kun của ${all ? `toàn bộ${count ? ` ${count}` : ""} chữ Kanji` : `${count} chữ Kanji đã chọn`} bằng dữ liệu trên mazii.net. Chạy nền: bạn có thể sang trang khác, tạm dừng hoặc hủy bất cứ lúc nào.`,
+      message: `Ghi đè âm Hán Việt, On, Kun của ${all ? `toàn bộ${count ? ` ${count}` : ""} chữ Kanji` : `${count} chữ Kanji đã chọn`} bằng dữ liệu trên mazii.net.${all ? " Chữ đã đồng bộ trước đó sẽ được bỏ qua." : ""} Chạy nền: bạn có thể sang trang khác, tạm dừng hoặc hủy bất cứ lúc nào.`,
       confirmLabel: "Cập nhật",
       tone: "primary",
     });
@@ -522,7 +522,7 @@ export function KanjiAdminConsole({
     const res = await fetch("/api/admin/kanji/mazii-sync", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(all ? { all: true } : { chars }),
+      body: JSON.stringify(all ? { all: true, skipSynced: true } : { chars }),
     }).catch(() => null);
     if (!res?.ok) {
       setError(
@@ -878,6 +878,8 @@ export function KanjiAdminConsole({
           <option value="hanViet">Thiếu âm Hán Việt</option>
           <option value="meaning">Thiếu nghĩa tiếng Việt</option>
           <option value="mnemonic">Thiếu liên tưởng</option>
+          <option value="maziiUnsynced">Chưa sync Mazii</option>
+          <option value="maziiSynced">Đã sync Mazii</option>
         </select>
       </div>
 
@@ -1434,6 +1436,14 @@ export function KanjiAdminConsole({
                     >
                       {k.char}
                     </button>
+                    {k.maziiSyncedAt && (
+                      <span
+                        className="mt-0.5 block text-center text-[10px] font-semibold leading-none text-[#15803d] dark:text-[#86efac]"
+                        title={`Đã đồng bộ Mazii ${new Date(k.maziiSyncedAt).toLocaleString("vi-VN")}`}
+                      >
+                        ✓ Mazii
+                      </span>
+                    )}
                   </td>
                   <td className="px-2 py-2.5">
                     {hvList.length > 0 ? (

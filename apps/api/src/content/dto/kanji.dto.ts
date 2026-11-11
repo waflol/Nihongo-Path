@@ -74,7 +74,7 @@ export class KanjiQuery {
   /** Admin filter: kanji missing Hán Việt, Vietnamese meaning, or mnemonic. */
   @ApiPropertyOptional()
   @IsOptional()
-  @IsIn(["hanViet", "meaning", "mnemonic"])
+  @IsIn(["hanViet", "meaning", "mnemonic", "maziiUnsynced", "maziiSynced"])
   missing?: string;
 }
 
@@ -150,4 +150,9 @@ export class MaziiSyncStartDto {
   @IsOptional()
   @IsBoolean()
   all?: boolean;
+
+  /** Leave out the kanji already checked against Mazii (faster re-runs). */
+  @IsOptional()
+  @IsBoolean()
+  skipSynced?: boolean;
 }

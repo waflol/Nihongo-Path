@@ -46,6 +46,10 @@ export class Kanji {
   @Prop({ type: [String], default: [] })
   kunyomi: string[];
 
+  /** When this kanji was last checked against Mazii (a whole-deck sync skips the ones already done). */
+  @Prop({ type: Date })
+  maziiSyncedAt?: Date;
+
   @Prop({ type: Number, default: 0 })
   strokeCount: number;
 
