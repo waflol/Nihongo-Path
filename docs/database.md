@@ -1,150 +1,242 @@
 # Database — Nihongo Path
 
-> Nhóm collection theo đặc tả §9.2. **Chỉ tạo collection khi sprint nào thực sự cần** —
-> không dựng sẵn toàn bộ (spec §9.2, yêu cầu bootstrap). Mỗi collection khi triển khai phải
-> kèm: owner, index, retention, quan hệ.
+> MongoDB (Mongoose 8). Đối chiếu với code ngày 11/11/2026.
+> Collection chỉ được tạo khi tính năng cần đến; nhóm chưa triển khai liệt kê ở [§8](#8-chưa-triển-khai).
 
 ## 1. Nguyên tắc
 
-- MongoDB; media binary **không** lưu trong Mongo (object storage — abstraction, chưa chọn).
-- Dữ liệu có khả năng đa ngôn ngữ: nội dung học tách theo `lang` khi cần, không hard-code tiếng Việt.
-- `Role` ≠ `Plan`: quyền quản trị tách khỏi quyền lợi thuê bao (spec §4.1, §6.2).
-- Không lưu secret/credential trong DB.
+- File lớn (media) **không** lưu trong Mongo — dành cho object storage (chưa chọn).
+- Nội dung học có trường `lang`, không hard-code tiếng Việt.
+- `Role` (quyền quản trị) tách khỏi `Plan` (quyền lợi thuê bao).
+- Không lưu secret dạng rõ trong DB. Khoá API của dịch vụ AI được mã hoá (xem `aiservices`).
+- Index đặt theo truy vấn thực tế; index unique dùng để bảo đảm idempotent.
 
-## 2. Nhóm collection (tên là gợi ý logic)
+### Tên collection
 
-### Identity
-| Collection | Trạng thái | Ghi chú |
-|---|---|---|
-| `users` | **Tạo Sprint 2 ✅** | `role` (USER/ADMIN/SUPER_ADMIN), `lang`, `timezone` (mặc định `Asia/Ho_Chi_Minh`), `newCardsPerDay` (mặc định 20, 1–500: số thẻ **mới** tối đa mỗi deck mỗi ngày — chia nhỏ deck lớn ra nhiều ngày; chỉnh qua `PATCH /srs/settings`), `status` (ACTIVE/SUSPENDED), `passwordHash` (scrypt `salt$hash`), `authAccounts[]`. Owner: admin. Index: `{email: 1}` sparse. |
-| `auth_accounts` | **Tạo Sprint 2 ✅** | Liện kết 1:1 giữa user và provider (google/email; `provider: "github"` đã có trong enum nhưng chưa bật). `providerAccountId` = Google `sub` / email. Index: `{provider: 1, providerAccountId: 1}` **unique**. |
-| `auth_sessions` | **Tạo Sprint 2 ✅** | Refresh token opaque (128-bit, unique) + `expiresAt` (TTL theo `JWT_REFRESH_EXPIRES_IN`), `revokedAt` khi rotation/logout. Index: `{token: 1}` unique, `{user: 1, expiresAt: 1}`, `{expiresAt: 1}` TTL (xoá session hết hạn). |
+Tên trong tài liệu này là **tên thật trong MongoDB**. Mongoose tự đặt tên từ tên model (viết thường, số nhiều: `FlashcardDeck` → `flashcarddecks`), trừ khi schema khai báo `collection` riêng.
 
-### Learning content
-| Collection | Trạng thái | Ghi chú |
-|---|---|---|
-| `textbooks` | **Tạo Sprint 2 ✅** | `title`, `level`, `status` (DRAFT/PUBLISHED), `lang`. Owner: admin (viết), công khai (đọc PUBLISHED). Index: `{status: 1, level: 1}`. |
-| `units` | **Tạo Sprint 2 ✅** | Tham chiếu `textbook`, `sortOrder` là thứ tự canon. Index: `{textbook: 1, sortOrder: 1}`. |
-| `vocabulary` | **Tạo Sprint 2 ✅** | `term`, `reading`, `meaning`, `pos`, `example`/`exampleTranslation`, `source`, `tags[]`, `textbooks[]`/`units[]` (liên kết N:1 denormalized), `status`, `lang`. Index: `{status: 1, term: 1}`, `{status: 1, textbooks: 1}`. |
-| `grammar_points` | **Tạo Sprint 2 ✅** | `label`, `meaning`, `structure`, `usage`, `examples[]` (sub-document `{sentence, translation, note}` — quan hệ 1 điểm ↔ N ví dụ, **không** collection riêng), `level`, `tags[]`, `sortOrder`, `status`, `lang`. Index: `{status: 1, label: 1}`. |
-| `flashcard_decks` | **Tạo Sprint 3 ✅** | `title`, `summary`, `user` (ObjectId, **null cho deck chia sẻ**), `shared` (bool — admin viết, mọi user đã auth đọc), `level`, `category` (nhãn phân nhóm tự do: Từ vựng, Kanji, Ngữ pháp…), `lang`, `status` (DRAFT/PUBLISHED — deck mới tạo từ wizard nhập mặc định ở DRAFT, admin tự công khai), `exampleTotal`/`exampleDone`/`examplePaused` (tiến độ tạo câu ví dụ nền; 0 = không xử lý), `publishWhenReady`. Index: `{user: 1, shared: 1, status: 1}`. |
-| `aiservices` | **Dịch vụ AI do admin quản lý ✅** | `provider` (preset: gemini/groq/openrouter/nvidia hoặc custom), `label`, `modelName`, `keyBox` (khoá API **mã hoá AES-256-GCM**, khoá giải mã từ `AI_KEY_SECRET` hoặc `JWT_ACCESS_SECRET`; không bao giờ trả về client), `keyHint` (4 ký tự cuối), `baseUrl`/`apiFormat` (cho endpoint custom), `rpm`, `enabled`, `priority` (nhỏ = thử trước, dự phòng chung), `taskPriority` (thứ tự riêng cho từng tác vụ `translate`/`write`/`grammar`/`pronounce`; thiếu thì dùng `priority`), `benchByTask` (benchmark mới nhất của từng tác vụ, chấm riêng), `benchHistory` (lịch sử chạy benchmark, tối đa 30 lần mỗi tác vụ), `bench` (benchmark gộp cũ, vẫn hiển thị cho translate/write), `status` (ok/cooldown/invalid/error), `lastError`, `lastOkAt`, `cooldownUntil`. Quản lý ở `/admin/ai`; thử lần lượt theo thứ tự ưu tiên của tác vụ, dịch vụ lỗi/hết hạn mức được nghỉ rồi tự chuyển sang dịch vụ kế. |
-| `tatoebasentences` | **Chỉ mục ví dụ cục bộ ✅** | `_id` (id câu Tatoeba), `ja` (câu tiếng Nhật ≤ 40 ký tự — toàn bộ ~244k câu), `vi` (bản dịch Việt của người, chỉ ~6k câu), `hasVi`, `tokens[]` (dạng từ điển của từ nội dung, bỏ trợ từ/trợ động từ/ký hiệu). Index `{tokens: 1, hasVi: -1}`. Nạp bằng `pnpm --filter @nihongo/api tatoeba:import -- --write` (~35 MB dữ liệu, ~80 MB cả chỉ mục); nguồn Tatoeba CC BY 2.0 FR. Tạo ví dụ cho thẻ: (1) cặp Nhật–Việt thật, (2) câu Nhật thật + AI dịch, (3) AI viết, kuromoji kiểm tra; ví dụ lưu `source` = `tatoeba` / `ai-translated` / `ai`. Nếu chỉ mục rỗng, gọi API Tatoeba như cũ. |
-| `aicalllogs` | **Nhật ký gọi AI ✅** | Mỗi lần gọi một dịch vụ AI: `purpose` (`example`/`test`/`vocab`/`verify`/`ocr`/`translate`/`grammar`/`pronounce` — `vocab` tính là tạo ví dụ, `verify` = kiểm tra từ vựng (cách đọc/Hán Việt/nghĩa), `ocr` = đọc trang PDF, `translate`/`grammar`/`pronounce` = sân thử admin `/admin/ai-playground`), `serviceId`/`serviceLabel`/`provider`/`modelName`, `endpoint`, `words[]`, `request`/`response` (đã cắt), `ok`, `status`, `ms`. **TTL 30 ngày** theo `createdAt`. Index: `{purpose}`, `{serviceId}`, `{ok}`, `{createdAt: -1}`. Xem/xoá ở `/admin/ai` (`GET/DELETE /flashcards/admin/ai/logs`). |
-| `airesultcache` | **Cache kết quả AI ✅** | `key` (**unique**; băm theo tác vụ, gồm cả danh sách dịch vụ đã bị bỏ qua), `ja`, `vi`, `matches`, `term`, `kind`, `serviceLabel`, `modelName`. Admin xem câu AI đã lưu nhưng chưa gắn vào thẻ qua `GET /flashcards/decks/:id/ai-unused`. Lưu bền kết quả dịch/ví dụ đã có để không gọi lại AI; Redis (nếu có `REDIS_URL`) là lớp cache nhanh dùng chung phía trước. |
-| `kanjis` | **Kanji Jōyō 2136 ✅** | `char` (**unique**), `level` (theo dải `rank`: N5 1–120, N4 121–320, N3 321–720, N2 721–1200, N1 1201–2136), `rank`, `hanViet`/`hanVietNorm` (chuẩn hoá bỏ dấu ở server để tra), `onyomi[]`, `kunyomi[]`, `strokeCount`, `strokes[]` (SVG path thứ tự nét), `meanings[]`/`meaningsEn[]`, `mnemonic`, `words[]` (từ liên quan `{term, reading, meaning, glossEn, chars, level}` — `meaning` tiếng Việt lấy từ `vocabulary`/`flashcards` có sẵn trước, phần thiếu dịch lười bằng AI khi mở chi tiết), `radicals[]`, `source`, `strokeCredit`, `lang`, `status`. Index: `{char}` unique, `{status, level, rank}`, `{status, hanVietNorm}`. Nạp bằng `pnpm --filter @nihongo/api kanji:import -- --write`; đọc công khai `GET /kanji`, `/kanji/levels`, `/kanji/readings?chars=…` (on/kun của tối đa 60 chữ, để UI tách furigana theo từng kanji), `/kanji/:char`; admin CRUD `/admin/kanji*`. **Giấy phép:** on/kun/số nét/nghĩa Anh từ KANJIDIC & từ vựng từ JMdict (EDRDG, CC BY-SA 4.0); `strokes` giữ nguyên vẹn chuỗi `d` từ KanjiVG © Ulrich Apel (CC BY-SA 3.0); Hán Việt từ `packages/shared/han-viet.json` + `hanviet-pinyin-words` (MIT) + Unihan; **cấm** dùng trường `wk_*` của WaniKani. Xem `docs/plans/plan-kanji.md`. |
-| `cardreports` | **Báo lỗi thẻ ✅** | Học viên báo lỗi/gợi ý sửa thẻ của deck chung: `card`, `deck`, `user`, `kind` (translation/hanviet/example/reading/other), `message`, `suggestion`, snapshot `cardFront`/`cardBack`/`cardHanViet`/`deckTitle`, `status` (OPEN/RESOLVED/REJECTED). Index: `{card}`, `{status}`, `{user, card, kind, status}`. Admin duyệt ở `/admin/reports` (`GET/PATCH /flashcards/admin/card-reports`). |
-| `exercise_questions` | **Câu luyện thi (問題) ✅** | Câu hỏi kiểu JLPT sinh cho deck/thẻ: `deck`, `card`, `kind` (`kanji-pick`/`reading-pick`/`meaning-pick`/`synonym-pick`/`sentence-pick`/`formation-pick`/`context-pick`), `prompt`, `sub`, `options[]`, `answer`, `explain`, `source` (local/ai), `verified`, `level`, `createdBy`, `dedupeKey`. Index: `{dedupeKey}` **unique**, `{level, kind}`, `{deck, card}`. Dùng ở `/learn/exercises`, `/learn/exam`. |
-| `pdfjobs`, `pdfjobpages` | **Job đọc PDF nền ✅** | `pdfjobs`: `user`, `deck`, `fileName`, `key` (hash file, cache OCR), `filePath`, `pageMap`, `kind` (pdf/table), `draft`, `columns`, `status` (running/done/error), `done`/`total`, `rows`, `error`, `finishedAt`, `pages`, `retry`, `importErrors` (dòng bị loại). Huỷ/xoá qua `DELETE /flashcards/import/jobs/:id`. `pdfjobpages`: kết quả từng trang (`job`, `n`, `rows`, `raw`), Index `{job, n}` **unique**. |
-| `reading_overrides` | **Từ điển cách đọc đã học ✅** | `_id` (từ tiếng Nhật), `reading` (hiragana), `updatedAt`. Ghi nhận khi người dùng bấm "Bỏ qua" cảnh báo cách đọc trên thẻ nhập (coi cách đọc trên thẻ là đúng); `ReadingService.analyze` ưu tiên bảng này trước kuromoji. Quản lý ở `/admin/reading-overrides` (`GET/DELETE /flashcards/admin/reading-overrides[/:word]`). |
-| `flashcards` | **Tạo Sprint 3 ✅** | `deck` (ref), `kind` (VOCABULARY/GRAMMAR/CUSTOM), `vocabulary`/`grammar` (ref, provenance khi wrap content — front/back được snapshot lên card để engine học tự chứa), `front`, `back` (không bắt buộc khi `origin: "import"` — cho phép nhập từ chưa có nghĩa), `reading` (hiragana), `image`, `imageCredit`, `partOfSpeech` (`verb`/`noun`/`adjective`/`phrase`), `hanViet` (âm Hán Việt; tự điền/sửa từ bảng `packages/shared/han-viet.json`), `reviewIssues[]` (cảnh báo cần xem xét lại trên thẻ nhập: nghĩa trống/do AI gợi ý/nghi sai chính tả, cách đọc hoặc Hán Việt nghi lệch; lọc qua `?review=1`, đóng từng trường qua `resolve` hoặc toàn bộ qua `reviewed: true`), `order` (STT trong file nhập, dùng để sắp xếp), `examples[]`, `tags[]`, `origin` (manual/import/saved), `dedupeKey` (sha256 của (front, back, reading) chuẩn hoá — reading rỗng thì trùng khoá cũ (front, back) — **máy tính server-side**; trùng = giống cả kanji, hiragana và nghĩa; lúc API khởi động các thẻ được tính lại khoá và tự sửa âm Hán Việt sai/trống). Index: `{deck: 1}`, `{deck: 1, dedupeKey: 1}` **unique** (idempotent save/import, trùng lặp preview). |
+Các tài liệu kế hoạch cũ dùng tên có gạch dưới. Bảng đối chiếu:
 
-### Progress
-| Collection | Ghi chú |
+| Tên trong kế hoạch | Tên thật |
 |---|---|
-| `user_card_progress` | **Tạo Sprint 3 ✅** — 1 doc duy nhất mỗi `(user, card)` (unique). `state` embed SRS payload **versioned** (`schemaVersion: 1, algorithm: "sm2"`, `ease`, `repetitions`, `intervalDays`, `lapses` — ADR-srs, Q-03 chốt SM-2 + dự phòng FSRS), `dueAt` (instant UTC), `dueDay` (`YYYY-MM-DD` theo tz user — P3-SRS-05), `seenCount`, `lastReviewedAtMs` (thứ tự ghi đa thiết bị: last-write-wins, T-P3-06). Index: `{user: 1, card: 1}` **unique**, `{user: 1, dueDay: 1}` (hàng đợi ôn). |
-| `study_sessions` | **Tạo Sprint 3 ✅** — phiên học append-only: `user`, `deck` (null = cross-deck), `day` (local tz), `timezone` (ghi nhận, không giả định), `device` (web/mobile/unknown), `cardsReviewed`, `grades` (histogram theo AGAIN/HARD/GOOD/EASY), `startedAtMs`/`endedAtMs`. Index: `{user: 1, day: -1}`. |
-| `exercise_attempts`, `exam_attempts` | Câu trả lời, điểm, thời gian, giải thích (Sprint 4) |
+| `auth_accounts` | `authaccounts` |
+| `auth_sessions` | `authsessions` |
+| `vocabulary` | `vocabularies` |
+| `grammar_points` | `grammarpoints` |
+| `flashcard_decks` | `flashcarddecks` |
+| `user_card_progress` | `usercardprogresses` |
+| `study_sessions` | `studysessions` |
 
-### Media
-| Collection | Ghi chú |
-|---|---|
-| `media_assets` | Chỉ metadata; file ở object storage; trạng thái UPLOADING→EXPIRED |
-| `transcripts`, `transcript_segments` | STT sau benchmark provider; timestamp |
-| `sentence_analyses` | Schema versioned, lưu tên analyzer/model |
-| `ai_jobs` | Quota đặt trước → quyết toán khi thành công, giải phóng khi fail/hủy |
+Hai collection có gạch dưới trong tên thật: `exercise_questions` và `reading_overrides`.
 
-### Billing & entitlements
-| Collection | Ghi chú |
-|---|---|
-| `subscription_plans` | Free/Pro/VIP cấu hình được (featureKey, limit, chu kỳ, tz reset) |
-| `user_subscriptions`, `payments` | Provider chưa chọn; không bật giao dịch thật |
-| webhook events | Chữ ký + idempotency |
-| feature config, quota reservations, usage records | Entitlements tách khỏi role |
+## 2. Tài khoản
 
-### Admin / quality
-| Collection | Ghi chú |
-|---|---|
-| `feedback` | Trạng thái xử lý + lịch sử |
-| `audit_logs` | AI thay đổi, thời điểm, giá trị — đã triển khai một phần: xem `auditlogs` ở §3.3 (thao tác của admin) |
+### `users`
+- `email`, `passwordHash` (scrypt, dạng `salt$hash`), `authAccounts[]`.
+- `role`: USER / ADMIN / SUPER_ADMIN. `status`: ACTIVE / SUSPENDED.
+- `lang`, `timezone` (mặc định `Asia/Ho_Chi_Minh`).
+- `newCardsPerDay` (mặc định 20, khoảng 1–500): số thẻ **mới** tối đa mỗi deck mỗi ngày. Đổi qua `PATCH /srs/settings`.
+- Index: `{email: 1}` sparse (tài khoản chỉ dùng OAuth có thể không có email).
 
-### Ads
-| Ghi chú |
-|---|
-| Cấu hình placement/feature flag (cờ bật/tắt, vị trí, theo gói) — **chỉ lưu cấu hình, không dữ liệu nhạy cảm**. Mặc định tắt. |
+### `authaccounts`
+- Liên kết user với một provider: `provider` (`google` / `email`; `github` có trong enum nhưng chưa bật), `providerAccountId` (Google `sub` hoặc email).
+- Index: `{provider: 1, providerAccountId: 1}` **unique** — một danh tính ngoài không liên kết hai lần.
 
-## 3. Indexes (chỉ tạo khi có collection)
+### `authsessions`
+- Refresh token opaque (128-bit), `expiresAt` (theo `JWT_REFRESH_EXPIRES_IN`), `revokedAt` (khi xoay vòng hoặc đăng xuất).
+- Index: `{token: 1}` **unique**; `{user: 1, expiresAt: 1}`; `{expiresAt: 1}` TTL — Mongo tự xoá session hết hạn.
 
-Nguyên tắc: index theo truy vấn thực (userId, deckId, dueDate, status). Ghi rõ index
-bắt buộc + unique (vd `user_subscriptions(userId, status)` unique một gói đang hiệu lực).
+Tài khoản admin đầu tiên không được tạo ngầm: xem [development.md §6](./development.md#6-tạo-tài-khoản-admin).
 
-### 3.1. Đã tạo (Sprint 2 / P2)
+## 3. Nội dung học
 
-| Collection | Index | Loại | Mục đích |
+Các collection ở mục này có `status` (DRAFT / PUBLISHED) và `lang`. Admin viết; người dùng chỉ đọc bản PUBLISHED.
+
+### `textbooks`
+- `title`, `level`. Index: `{status: 1, level: 1}`.
+
+### `units`
+- Thuộc một `textbook`; `sortOrder` là thứ tự chuẩn. Index: `{textbook: 1, sortOrder: 1}`.
+
+### `vocabularies`
+- `term`, `reading`, `meaning`, `pos`, `example` / `exampleTranslation`, `source`, `tags[]`.
+- `textbooks[]`, `units[]`: liên kết tới giáo trình / bài (lưu ngay trên từ).
+- Index: `{status: 1, term: 1}`, `{status: 1, textbooks: 1}`.
+
+### `grammarpoints`
+- `label`, `meaning`, `structure`, `usage`, `level`, `tags[]`, `sortOrder`.
+- `examples[]`: sub-document `{sentence, translation, note}` (không có collection ví dụ riêng).
+- Index: `{status: 1, label: 1}`.
+
+### `kanjis` — Kanji Jōyō (2136 chữ)
+- `char` (**unique**), `rank` (thứ tự học), `level` suy từ `rank`:
+
+  | Cấp | N5 | N4 | N3 | N2 | N1 |
+  |---|---|---|---|---|---|
+  | `rank` | 1–120 | 121–320 | 321–720 | 721–1200 | 1201–2136 |
+
+- `hanViet`, `hanVietNorm` (bản bỏ dấu, server tự tính, dùng để tra cứu).
+- `onyomi[]`, `kunyomi[]`, `strokeCount`, `strokes[]` (SVG path theo thứ tự nét), `radicals[]`.
+- `meanings[]` (tiếng Việt), `meaningsEn[]`, `mnemonic`.
+- `words[]`: từ liên quan `{term, reading, meaning, glossEn, chars, level}`. `meaning` tiếng Việt lấy từ `vocabularies` / `flashcards` có sẵn; phần thiếu được AI dịch khi mở trang chi tiết.
+- `source`, `strokeCredit`.
+- Index: `{char: 1}` **unique**; `{status: 1, level: 1, rank: 1}`; `{status: 1, hanVietNorm: 1}`.
+- Nạp dữ liệu: `pnpm --filter @nihongo/api kanji:import -- --write`. Kế hoạch và nguồn: [plans/plan-kanji.md](./plans/plan-kanji.md).
+- Bảng này là **nguồn chuẩn** để đánh giá Hán Việt và cách đọc của thẻ ([architecture.md §4.2](./architecture.md#42-nguồn-hán-việt-và-cách-đọc)).
+
+**Giấy phép dữ liệu kanji:**
+- On / kun / số nét / nghĩa tiếng Anh: KANJIDIC; từ vựng: JMdict (EDRDG, CC BY-SA 4.0).
+- `strokes`: giữ nguyên chuỗi `d` từ KanjiVG © Ulrich Apel (CC BY-SA 3.0).
+- Hán Việt: `packages/shared/han-viet.json` + `hanviet-pinyin-words` (MIT) + Unihan.
+- **Cấm** dùng các trường `wk_*` của WaniKani.
+
+## 4. Flashcard và học tập
+
+### `flashcarddecks`
+- `title`, `summary`, `level`, `category` (nhãn tự do: Từ vựng, Kanji, Ngữ pháp…), `lang`.
+- `user`: chủ deck; **null với deck chia sẻ**. `shared`: true = admin viết, mọi user đã đăng nhập đọc.
+- `status`: DRAFT / PUBLISHED. Deck tạo từ wizard nhập luôn ở DRAFT; admin tự công khai.
+- `exampleTotal`, `exampleDone`, `examplePaused`: tiến độ job tạo ví dụ nền (`exampleTotal = 0` nghĩa là không có job).
+- Document cũ có thể còn trường `publishWhenReady` (đã gỡ khỏi code, không còn được đọc).
+- Index: `{user: 1, shared: 1, status: 1}`, `{shared: 1, status: 1}`.
+
+### `flashcards`
+- `deck`, `kind` (VOCABULARY / GRAMMAR / CUSTOM), `origin` (manual / import / saved).
+- `vocabulary` / `grammar`: tham chiếu nguồn khi thẻ được lưu từ nội dung học; `front` / `back` được chép sang thẻ để phần học không phụ thuộc nội dung gốc.
+- `front`, `back` (được để trống khi `origin: "import"` — cho phép nhập từ chưa có nghĩa), `reading` (hiragana), `hanViet`.
+- `partOfSpeech`: `verb` / `noun` / `adjective` / `phrase`.
+- `image`, `imageCredit`, `examples[]` (mỗi ví dụ có `source`: `tatoeba` / `ai-translated` / `ai`), `tags[]`.
+- `order`: STT trong file nhập, dùng để sắp xếp.
+- `readingChecked`, `backChecked`: dấu (hash của từ + cách đọc / từ + nghĩa) lần kiểm tra cả deck gần nhất; trùng thì lần sau bỏ qua, trừ khi chọn kiểm tra lại tất cả (`?force=1`).
+- `reviewIssues[]`: cảnh báo cần xem xét (nghĩa trống / do AI gợi ý / nghi sai chính tả; cách đọc hoặc Hán Việt nghi lệch). Lọc bằng `?review=1`; đóng từng trường bằng `resolve` hoặc tất cả bằng `reviewed: true`.
+- `dedupeKey`: sha256 của `(front, back, reading)` đã chuẩn hoá, **server tự tính**. Hai thẻ trùng khi giống cả kanji, hiragana và nghĩa. Thẻ không có `reading` dùng khoá kiểu cũ `(front, back)`. Khi API khởi động, thẻ có `reading` mà khoá chưa đúng dạng mới được tính lại.
+- Index: `{deck: 1}`; `{deck: 1, order: 1, _id: 1}` (liệt kê thẻ theo thứ tự); `{deck: 1, dedupeKey: 1}` **unique** (lưu / nhập idempotent, phát hiện trùng).
+
+### `usercardprogresses`
+- Một document cho mỗi `(user, card)`.
+- `state`: payload SRS có phiên bản — `schemaVersion: 1`, `algorithm: "sm2"`, `ease`, `repetitions`, `intervalDays`, `lapses` ([ADR-srs](./adr/ADR-srs.md)).
+- `dueAt` (thời điểm UTC), `dueDay` (`YYYY-MM-DD` theo múi giờ user), `seenCount`.
+- `lastReviewedAtMs`: dùng cho ghi đa thiết bị — bản ghi mới nhất thắng.
+- Index: `{user: 1, card: 1}` **unique**; `{user: 1, dueDay: 1}` (hàng đợi ôn); `{user: 1, createdAt: 1}` (tra "đã học hôm nay": hạn mức thẻ mới, ưu tiên luyện tập).
+
+### `studysessions`
+- Phiên học, chỉ ghi thêm: `user`, `deck` (null = ôn chéo deck), `day` (theo múi giờ user), `timezone`, `device` (web / mobile / unknown), `cardsReviewed`, `grades` (số lần AGAIN / HARD / GOOD / EASY), `startedAtMs`, `endedAtMs`.
+- Index: `{user: 1, day: -1}`.
+
+### `exercise_questions` — câu luyện thi (問題)
+- Câu hỏi kiểu JLPT sinh cho deck / thẻ: `deck`, `card`, `prompt`, `sub`, `options[]`, `answer`, `explain`, `level`, `createdBy`.
+- `kind`: `kanji-pick` / `reading-pick` / `meaning-pick` / `synonym-pick` / `sentence-pick` / `formation-pick` / `context-pick`.
+- `source` (local / ai), `verified`, `dedupeKey`.
+- Index: `{dedupeKey: 1}` **unique**; `{level: 1, kind: 1}`; `{deck: 1, card: 1}`.
+- Dùng ở `/learn/exercises`, `/learn/exam`.
+
+### `cardreports` — báo lỗi thẻ
+- Học viên báo lỗi / gợi ý sửa thẻ của deck chung: `card`, `deck`, `user`, `message`, `suggestion`.
+- `kind`: translation / hanviet / example / reading / other. `status`: OPEN / RESOLVED / REJECTED.
+- Bản chụp lúc báo: `cardFront`, `cardBack`, `cardHanViet`, `deckTitle`.
+- Index: `{card: 1}`, `{status: 1}`, `{user: 1, card: 1, kind: 1, status: 1}`.
+- Admin duyệt ở `/admin/reports` (`GET/PATCH /flashcards/admin/card-reports`).
+
+### `reading_overrides` — từ điển cách đọc đã học
+- `word` (từ tiếng Nhật, khoá tra cứu), `readings[]` (hiragana; một từ giữ được nhiều cách đọc), `updatedAt`.
+- `readingMeanings[]` (`{reading, meaning}`, tuỳ chọn): nghĩa của thẻ lúc bấm "Bỏ qua", gắn với cách đọc đó; dùng khi kiểm tra cả deck để báo cách đọc hợp lệ nhưng thuộc nghĩa khác (人気: にんき / ひとけ).
+- `reading`: trường cũ, luôn bằng `readings[0]`, giữ để đọc được dữ liệu trước khi có `readings[]`.
+- Ghi khi người dùng bấm "Bỏ qua" cảnh báo cách đọc: cách đọc trên thẻ được **thêm** vào danh sách, không thay cách đọc cũ. `ReadingService.analyze` ưu tiên bảng này trước kuromoji.
+- Collection thô (không có Mongoose schema, không có index riêng).
+- Quản lý ở `/admin/reading-overrides`: `GET/DELETE /flashcards/admin/reading-overrides[/:word]`; `DELETE …/:word?reading=` chỉ quên một cách đọc.
+
+### `hanvietchecklogs` — log kiểm tra Hán Việt cả deck
+- Mỗi deck một document (`deck` **unique**), ghi đè mỗi lần chạy.
+- `deckTitle`, `startedAt`, `finishedAt`, `total`, `finished`, `changes[]` (`{stt, word, oldHanViet, newHanViet}`).
+- Xem ở `/learn/decks/:id/log`, `/admin/decks/:id/log` (`GET /flashcards/decks/:id/han-viet-log`).
+
+### `pdfjobs`, `pdfjobpages` — job đọc PDF nền
+- `pdfjobs`: `user`, `deck`, `fileName`, `filePath`, `key` (hash file, dùng làm khoá cache OCR), `kind` (pdf / table), `status` (running / done / error), `done` / `total`, `rows`, `columns`, `pageMap`, `pages`, `draft`, `retry`, `error`, `finishedAt`, `importErrors` (dòng bị loại).
+- `pdfjobpages`: kết quả từng trang — `job`, `n`, `rows`, `raw`. Index `{job: 1, n: 1}` **unique**.
+- File PDF gốc nằm trên đĩa (`IMPORT_JOB_DIR`), không nằm trong Mongo.
+- Huỷ / xoá: `DELETE /flashcards/import/jobs/:id`.
+
+### `tatoebasentences` — chỉ mục ví dụ cục bộ
+- `_id` (id câu Tatoeba), `ja` (câu tiếng Nhật ≤ 40 ký tự, khoảng 244k câu), `vi` (bản dịch của người, khoảng 6k câu), `hasVi`.
+- `tokens[]`: dạng từ điển của các từ nội dung (bỏ trợ từ, trợ động từ, ký hiệu).
+- Index: `{tokens: 1, hasVi: -1}`.
+- Nạp: `pnpm --filter @nihongo/api tatoeba:import -- --write` (khoảng 35 MB dữ liệu, 80 MB kể cả index). Nguồn Tatoeba, CC BY 2.0 FR.
+- Chỉ mục rỗng → hệ thống gọi API tatoeba.org.
+
+## 5. AI
+
+### `aiservices` — dịch vụ AI do admin quản lý
+- `provider` (gemini / groq / openrouter / nvidia / antigravity hoặc custom), `label`, `modelName`, `rpm`, `enabled`.
+- `baseUrl`, `apiFormat`: cho endpoint custom.
+- `keyBox`: khoá API **mã hoá AES-256-GCM**; khoá giải mã lấy từ `AI_KEY_SECRET`, không đặt thì dùng `JWT_ACCESS_SECRET`. Không bao giờ trả về client. `keyHint`: 4 ký tự cuối để nhận diện.
+- Thứ tự gọi: `taskPriority` (riêng cho từng tác vụ `translate` / `write` / `grammar` / `pronounce`); tác vụ chưa đặt thì dùng `priority` chung. Số nhỏ thử trước.
+- Benchmark: `benchByTask` (kết quả mới nhất mỗi tác vụ), `benchHistory` (tối đa 30 lần mỗi tác vụ), `bench` (dạng gộp cũ, còn hiển thị cho translate / write).
+- Trạng thái: `status` (ok / cooldown / invalid / error), `lastError`, `lastOkAt`, `cooldownUntil`.
+
+### `aicalllogs` — nhật ký gọi AI
+- Mỗi lần gọi một dịch vụ: `serviceId`, `serviceLabel`, `provider`, `modelName`, `endpoint`, `words[]`, `request` / `response` (đã cắt ngắn), `ok`, `status`, `ms`.
+- `purpose`:
+
+  | Giá trị | Nghĩa |
+  |---|---|
+  | `example`, `vocab` | Tạo câu ví dụ |
+  | `verify` | Kiểm tra từ vựng (cách đọc / Hán Việt / nghĩa) |
+  | `ocr` | Đọc trang PDF |
+  | `translate`, `grammar`, `pronounce` | Sân thử `/admin/ai-playground` |
+  | `test` | Thử và benchmark dịch vụ |
+
+- Index: `{createdAt: -1}`, `{purpose: 1}`, `{serviceId: 1}`, `{ok: 1}`; **TTL 30 ngày** theo `createdAt`.
+- Xem / xoá ở `/admin/ai` (`GET/DELETE /flashcards/admin/ai/logs`).
+
+### `airesultcache` — cache kết quả AI (bền)
+- `key` (**unique**; băm theo tác vụ, gồm cả danh sách dịch vụ đã bị bỏ qua), `ja`, `vi`, `matches`, `term`, `kind`, `serviceLabel`, `modelName`.
+- Giữ kết quả dịch / ví dụ để không gọi lại AI. Redis, nếu có, là lớp cache nhanh đứng trước.
+- Admin xem câu AI đã lưu nhưng chưa gắn vào thẻ: `GET /flashcards/decks/:id/ai-unused`.
+
+## 6. Nhật ký và chặn IP
+
+Chỉ hoạt động khi có `MONGODB_URL`. Truy vấn qua `GET /admin/logs*` (ADMIN / SUPER_ADMIN), giao diện ở `/admin/logs`.
+
+| Collection | Nội dung | Index | Tự xoá |
 |---|---|---|---|
-| `users` | `{ email: 1 }` | sparse | Tra cứu tài khoản email (OAuth-only có email null) |
-| `auth_accounts` | `{ provider: 1, providerAccountId: 1 }` | **unique** | Một external identity không link 2 lần |
-| `auth_sessions` | `{ token: 1 }` | **unique** | Tra cứu + revocation theo token |
-| `auth_sessions` | `{ user: 1, expiresAt: 1 }` | — | Liệt kê session theo user (debug/audit) |
-| `auth_sessions` | `{ expiresAt: 1 }` | TTL (`expireAfterSeconds: 0`) | MongoDB tự xoá session hết hạn |
-| `textbooks` | `{ status: 1, level: 1 }` | — | Lọc công khai + theo cấp độ |
-| `units` | `{ textbook: 1, sortOrder: 1 }` | — | TOC của giáo trình theo thứ tự |
-| `vocabulary` | `{ status: 1, term: 1 }` | — | Lọc công khai + hiển thị theo từ |
-| `vocabulary` | `{ status: 1, textbooks: 1 }` | — | Lọc theo giáo trình |
-| `grammar_points` | `{ status: 1, label: 1 }` | — | Lọc công khai + hiển thị theo nhãn |
+| `requestlogs` | Mỗi request HTTP đã kết thúc | `{createdAt: -1}`, `{status: 1, createdAt: -1}`, `{ip: 1, createdAt: -1}` | 30 ngày |
+| `applogs` | Dòng log Nest (`log` / `warn` / `error`) và exception | `{createdAt: -1}`, `{level: 1, createdAt: -1}` | 30 ngày |
+| `auditlogs` | Thao tác ghi (không phải GET) trên route có `@Roles` | `{createdAt: -1}`, `{actor: 1}` | 365 ngày |
+| `blockedips` | IP bị chặn, thủ công hoặc tự động | `{ip: 1}` **unique** | theo `expiresAt`; không có = vĩnh viễn |
+| `allowedips` | IP không bao giờ bị chặn | `{ip: 1}` **unique** | — |
 
-> Ghi chú: tên collection thực là do mongoose **tự pluralise** model name
-> (ví dụ model `FlashcardDeck` → collection `flashcarddecks`). Tên ở §2 là
-> "gợi ý logic" theo quy ước; khi viết query/đọc code, dùng tên pluralised.
+Chi tiết từng loại:
 
-### 3.2. Đã tạo (Sprint 3 / P3)
+- **`requestlogs`:** method, `path` (không kèm query), `query`, status, ms, user, IP, `error`; `reqHeaders` / `reqBody` / `resHeaders` / `resBody` đã lọc secret và giới hạn kích thước. `ipv4` do client tự báo — chỉ để hiển thị, có thể giả. `::1` hiển thị là `127.0.0.1`.
+- **`applogs`:** stack, request, user, IP, `details` (khoá nhạy cảm thay bằng `[redacted]`). 5xx ghi mức `error`; 4xx ghi mức `warn`, trừ 401 / 403 / 404 / 429 (bật hết bằng `LOG_4XX_ALL=true`).
+- **`auditlogs`:** ai, khi nào, path, body đã lọc, thành công / thất bại.
 
-| Collection (actual) | Model | Index | Loại | Mục đích |
-|---|---|---|---|---|
-| `flashcarddecks` | `FlashcardDeck` | `{ user: 1, shared: 1, status: 1 }`, `{ shared: 1, status: 1 }` | — | Liệt kê deck cá nhân (user) + deck chung (shared, PUBLISHED) |
-| `flashcards` | `Flashcard` | `{ deck: 1 }`, `{ deck: 1, order: 1, _id: 1 }` | — | Liệt kê card trong 1 deck, luôn theo (order, _id) (P3-CARD-02) |
-| `flashcards` | `Flashcard` | `{ deck: 1, dedupeKey: 1 }` | **unique** | Idempotent save/import + phát hiện trùng (T-P3-01/03) |
-| `usercardprogresses` | `UserCardProgress` | `{ user: 1, card: 1 }` | **unique** | 1 progress record mỗi (user, card) — last-write-wins đa thiết bị (T-P3-06) |
-| `usercardprogresses` | `UserCardProgress` | `{ user: 1, dueDay: 1 }` | — | Hàng đợi ôn theo ngày (P3-SRS-02 / T-P3-05) |
-| `usercardprogresses` | `UserCardProgress` | `{ user: 1, createdAt: 1 }` | — | Tra "đã học hôm nay" (hạn mức thẻ mới, ưu tiên luyện tập) |
-| `studysessions` | `StudySession` | `{ user: 1, day: -1 }` | — | Thống kê phiên học theo ngày (P3-UI-03) |
-
-### 3.3. Đã tạo (nhật ký & chặn IP — `apps/api/src/logs/`)
-
-| Collection (actual) | Model | Index | Loại | Mục đích |
-|---|---|---|---|---|
-| `requestlogs` | `RequestLog` | (+ `ipv4` do client báo — chỉ hiển thị, có thể giả; `query`, `reqHeaders`/`reqBody`/`resHeaders`/`resBody` đã lọc secret + giới hạn kích thước, xem chi tiết/copy cURL ở `/admin/logs`; `::1` hiện là `127.0.0.1`) `{ createdAt: -1 }`, `{ status: 1, createdAt: -1 }`, `{ ip: 1, createdAt: -1 }` | — | Mỗi request HTTP đã kết thúc (method, path **không query/body**, status, ms, user, IP, `error`) |
-| `requestlogs` | `RequestLog` | `{ createdAt: 1 }` | **TTL 30 ngày** | Tự xoá log cũ |
-| `applogs` | `AppLog` | `{ createdAt: -1 }`, `{ level: 1, createdAt: -1 }` | TTL 30 ngày | Dòng log Nest (`log`/`warn`/`error`) + exception: stack, request, user, IP, `details` (đã `[redacted]` khoá nhạy cảm). 5xx = `error`; 4xx = `warn` (trừ 401/403/404/429, bật hết bằng `LOG_4XX_ALL=true`) |
-| `auditlogs` | `AuditLog` | `{ createdAt: -1 }`, `{ actor: 1 }` | TTL 365 ngày | Thao tác ghi (non-GET) trên route có `@Roles`: ai, khi nào, path, body đã lọc, thành công/thất bại |
-| `blockedips` | `BlockedIp` | `{ ip: 1 }` | **unique** | IP bị chặn (thủ công hoặc tự động) |
-| `blockedips` | `BlockedIp` | `{ expiresAt: 1 }` | TTL theo `expiresAt` | Hết hạn chặn → tự gỡ (không có `expiresAt` = vĩnh viễn) |
-| `allowedips` | `AllowedIp` | `{ ip: 1 }` | **unique** | IP không bao giờ bị chặn (allowlist) |
-
-### 3.4. Đã tạo (AI — `apps/api/src/ai/`)
-
-| Collection (actual) | Model | Index | Loại | Mục đích |
-|---|---|---|---|---|
-| `aicalllogs` | `AiCallLog` | `{ createdAt: -1 }`, `{ purpose: 1 }`, `{ serviceId: 1 }`, `{ ok: 1 }` | — | Lọc nhật ký gọi AI |
-| `aicalllogs` | `AiCallLog` | `{ createdAt: 1 }` | **TTL 30 ngày** | Tự xoá log cũ |
-| `airesultcache` | `AiResultCache` | `{ key: 1 }` | **unique** | Tra cứu cache theo khoá |
-
-### 3.5. Redis (tuỳ chọn — `REDIS_URL`)
+## 7. Redis (tuỳ chọn)
 
 Không phải collection. Mọi khoá của app nằm dưới tiền tố `np:`:
-`np:ai:task:*` (request AI đang chạy), `np:ai:queue` (thẻ đang đợi),
-`np:ai:res:*` (kết quả đã lưu). Quản lý/xem/xoá ở `/admin/redis`
-(`/admin/redis/*`, chỉ ADMIN). Thiếu `REDIS_URL` → bỏ qua, chỉ dùng Mongo.
 
-Các module log chỉ có khi có `MONGODB_URL`. Truy vấn qua `GET /admin/logs*`
-(ADMIN / SUPER_ADMIN), UI ở `/admin/logs`.
+| Khoá | Nội dung |
+|---|---|
+| `np:ai:task:*` | Request AI đang chạy |
+| `np:ai:queue` | Thẻ đang đợi |
+| `np:ai:res:*` | Kết quả đã lưu |
 
-Tài khoản admin đầu tiên: **không auto-seed** (spec §4.1) — chạy
-`node apps/api/scripts/bootstrap-admin.mjs <email> [password]` (P2-USER-02).
+Xem / xoá ở `/admin/redis`. Thiếu `REDIS_URL` → bỏ qua, chỉ dùng Mongo.
 
-## 4. Điều chưa quyết định (owner: Tôi/Cả hai)
+## 8. Chưa triển khai
 
-- Provider thanh toán, tiền tệ, chính sách refund (spec §6.1).
-- Giới hạn media (500MB/60min/1080p/30 ngày là **giá trị thử nghiệm**, chưa chốt).
-- RPO/RTO (gợi ý 24h/8h, chưa cam kết).
-- ~~Thuật toán SRS~~ → **Đã chốt SM-2 + state versioned (03/11/2026, ADR-srs, Q-03).**
+Dự kiến theo đặc tả; tên và cấu trúc sẽ chốt khi làm.
+
+| Nhóm | Collection dự kiến | Ghi chú |
+|---|---|---|
+| Bài tập / đề thi | `exercise_attempts`, `exam_attempts` | Câu trả lời, điểm, thời gian, giải thích |
+| Media | `media_assets`, `transcripts`, `transcript_segments`, `sentence_analyses`, `ai_jobs` | Chỉ lưu metadata; file ở object storage; quota đặt trước rồi quyết toán |
+| Thuê bao | `subscription_plans`, `user_subscriptions`, `payments`, webhook events, usage records | Chưa chọn nhà cung cấp thanh toán; quyền lợi gói tách khỏi role |
+| Phản hồi | `feedback` | Trạng thái xử lý + lịch sử |
+| Quảng cáo | cấu hình placement / cờ bật tắt | Chỉ lưu cấu hình; mặc định tắt |
+
+Chưa quyết định (thuộc chủ sản phẩm, xem [OPEN_QUESTIONS.md](./OPEN_QUESTIONS.md)):
+
+- Nhà cung cấp thanh toán, tiền tệ, chính sách hoàn tiền.
+- Giới hạn media (500 MB / 60 phút / 1080p / 30 ngày chỉ là giá trị thử nghiệm).
+- RPO / RTO (gợi ý 24h / 8h, chưa cam kết).

@@ -26,6 +26,7 @@ Cấu hình env, MongoDB, tài khoản admin, AI/Redis: xem [docs/development.md
 ## Tài liệu
 
 - [Kiến trúc](docs/architecture.md) · [Database](docs/database.md) · [Hướng dẫn dev](docs/development.md) · [Luồng nhập thẻ](docs/import-flow.md)
-- [ADR SRS](docs/adr/ADR-srs.md) · [ADR Auth](docs/adr/ADR-auth-provider.md) · [Kế hoạch Kanji](docs/plans/plan-kanji.md) · [Kế hoạch Mobile iOS/Android](docs/plans/plan-mobile.md)
+- Quyết định: [ADR SRS](docs/adr/ADR-srs.md) · [ADR Auth](docs/adr/ADR-auth-provider.md)
+- Kế hoạch tính năng: [Kanji](docs/plans/plan-kanji.md) · [Mobile iOS/Android](docs/plans/plan-mobile.md) · [Antigravity CLI (Google AI Pro)](docs/plans/plan-antigravity-cli.md) · [Tăng tốc kiểm tra cách đọc](docs/plans/plan-reading-check.md)
 - [Pháp lý Việt Nam & Điều khoản Sử dụng](docs/legal-vietnam-and-terms.md)
-- [Kế hoạch](docs/IMPLEMENTATION_PLAN.md) · [Checklist](docs/IMPLEMENTATION_CHECKLIST.md) · [Câu hỏi mở](docs/OPEN_QUESTIONS.md)
+- Lộ trình tổng: [Kế hoạch](docs/IMPLEMENTATION_PLAN.md) · [Checklist](docs/IMPLEMENTATION_CHECKLIST.md) · [Câu hỏi mở](docs/OPEN_QUESTIONS.md) · [Đặc tả gốc](docs/claude_japanese_learning_platform_spec_preline.md)
