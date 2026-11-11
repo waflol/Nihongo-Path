@@ -143,7 +143,11 @@ export class MaziiSyncService implements OnModuleInit {
 
   private push(job: MaziiSyncJob, char: string, ok: boolean, message: string) {
     job.log.push({ at: Date.now(), char, ok, message });
-    if (job.log.length > MAX_LOG) job.log.splice(0, job.log.length - MAX_LOG);
+    // Over the cap the oldest successes go first, so every error stays in the log (the "Lỗi" count matches it).
+    while (job.log.length > MAX_LOG) {
+      const i = job.log.findIndex((l) => l.ok);
+      job.log.splice(i === -1 ? 0 : i, 1);
+    }
   }
 
   private async run(job: MaziiSyncJob, chars: string[]): Promise<void> {

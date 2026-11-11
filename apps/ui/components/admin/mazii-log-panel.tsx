@@ -95,7 +95,7 @@ export function MaziiLogPanel() {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight text-[var(--foreground)]">Log đồng bộ Mazii</h1>
           <p className="mt-0.5 max-w-3xl text-sm text-[var(--muted-foreground)]">
-            Lượt cập nhật Hán Việt, On, Kun từ mazii.net gần nhất. Log chỉ lưu trong bộ nhớ server (tối đa 1000 dòng), mất khi server khởi động lại.
+            Lượt cập nhật Hán Việt, On, Kun từ mazii.net gần nhất. Log lưu tối đa 1000 dòng (khi vượt, các dòng thành công cũ nhất bị bỏ trước, dòng lỗi luôn được giữ).
           </p>
         </div>
       </div>
