@@ -408,11 +408,31 @@ export class FlashcardsController {
     return this.flashcards.startRecheck(caller, id, (items) => this.ai.verifyCards(items), query.field ?? "all");
   }
 
+  @Get("decks/:id/han-viet-log")
+  @ApiOperation({ summary: "What the latest Hán Việt check of the deck changed (STT, word, old → new)" })
+  hanVietLog(@CurrentUser() caller: AuthUser, @Param("id") id: string) {
+    return this.flashcards.hanVietLog(caller, id);
+  }
+
   @Delete("recheck-jobs/:id")
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: "Cancel a running whole-deck re-check" })
   cancelRecheck(@CurrentUser() caller: AuthUser, @Param("id") id: string) {
     this.flashcards.cancelRecheck(caller, id);
+  }
+
+  @Post("recheck-jobs/:id/pause")
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: "Pause a running whole-deck re-check" })
+  pauseRecheck(@CurrentUser() caller: AuthUser, @Param("id") id: string) {
+    this.flashcards.pauseRecheck(caller, id, true);
+  }
+
+  @Post("recheck-jobs/:id/resume")
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: "Resume a paused whole-deck re-check" })
+  resumeRecheck(@CurrentUser() caller: AuthUser, @Param("id") id: string) {
+    this.flashcards.pauseRecheck(caller, id, false);
   }
 
   @Get("recheck-jobs")

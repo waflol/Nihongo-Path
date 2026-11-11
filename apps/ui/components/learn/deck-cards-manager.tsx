@@ -725,6 +725,11 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
                 {rechecking === field ? "Đang bắt đầu…" : `↻ ${checkLabel}`}
               </button>
             ))}
+          {canWrite && (
+            <Link href={`${mode === "admin" ? "/admin/decks" : "/learn/decks"}/${deckId}/log`} className={btn} title="Xem những từ Hán Việt đã được cập nhật ở lần kiểm tra gần nhất">
+              📋 Log Hán tự
+            </Link>
+          )}
           {canWrite && data && data.missingExamples > 0 && (
             <RetryExamplesButton deckId={deckId} className={btn} onChanged={reload} />
           )}

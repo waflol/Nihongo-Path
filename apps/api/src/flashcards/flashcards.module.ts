@@ -23,6 +23,7 @@ import { ReadingOverridesController } from "./reading-overrides.controller.js";
 import { ExampleSuggestService } from "./example-suggest.service.js";
 import { ExerciseQuestion, ExerciseQuestionSchema } from "./schemas/exercise-question.schema.js";
 import { ExerciseQuestionsService } from "./exercise-questions.service.js";
+import { HanVietCheckLog, HanVietCheckLogSchema } from "./schemas/han-viet-check-log.schema.js";
 import { CardReport, CardReportSchema } from "./schemas/card-report.schema.js";
 import { CardReportsService } from "./card-reports.service.js";
 
@@ -57,6 +58,7 @@ export function buildFlashcardsModule(): DynamicModule {
         { name: "TatoebaSentence", schema: TatoebaSentenceSchema },
         { name: ExerciseQuestion.name, schema: ExerciseQuestionSchema },
         { name: CardReport.name, schema: CardReportSchema },
+        { name: HanVietCheckLog.name, schema: HanVietCheckLogSchema },
       ]),
     ],
     controllers: [FlashcardsController, ReadingOverridesController],

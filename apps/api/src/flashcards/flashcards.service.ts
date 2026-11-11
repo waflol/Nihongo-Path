@@ -12,6 +12,7 @@ import {
   type OnModuleInit,
 } from "@nestjs/common";
 import { InjectModel } from "@nestjs/mongoose";
+import type { HanVietCheckLogDocument } from "./schemas/han-viet-check-log.schema.js";
 import { Model, Types } from "mongoose";
 import {
   FlashcardDeck,
@@ -146,6 +147,7 @@ export class FlashcardsService implements OnModuleInit {
     @Optional() private readonly aiCache?: AiResultCacheService,
     @Optional() private readonly morph?: ReadingService,
     @Optional() @InjectModel("Kanji") private readonly kanji?: Model<KanjiDocument>,
+    @Optional() @InjectModel("HanVietCheckLog") private readonly hvLog?: Model<HanVietCheckLogDocument>,
   ) {}
 
   /**
@@ -977,22 +979,40 @@ export class FlashcardsService implements OnModuleInit {
   /** Background "re-check the whole deck" runs, by deck id (in memory; progress for the floating tracker). */
   private readonly rechecks = new Map<
     string,
-    { deckId: string; owner: string; title: string; field: ReviewFilter; status: "running" | "done" | "error"; done: number; total: number; flagged: number; error?: string; cancelled?: boolean }
+    { deckId: string; owner: string; title: string; field: ReviewFilter; status: "running" | "paused" | "done" | "error"; done: number; total: number; flagged: number; changed: number; recent: { stt: number; word: string; oldHanViet: string; newHanViet: string }[]; error?: string; cancelled?: boolean }
   >();
+
+  /** The latest Hán Việt check of a deck: what it changed (STT, word, old → new Hán Việt). */
+  async hanVietLog(caller: AuthUser, deckId: string) {
+    const deck = await this.getDeck(caller, deckId);
+    const doc = await this.hvLog?.findOne({ deck: deck._id }).lean().exec();
+    if (!doc) return { deckId: String(deck._id), title: deck.title, ran: false, finished: false, total: 0, startedAt: 0, changes: [] };
+    return { deckId: String(deck._id), title: deck.title, ran: true, finished: doc.finished, total: doc.total, startedAt: doc.startedAt, finishedAt: doc.finishedAt, changes: doc.changes };
+  }
 
   /** The caller's re-check runs (running or recently finished). */
   listRechecks(caller: AuthUser) {
     return [...this.rechecks.values()].filter((r) => r.owner === caller.sub).map(({ owner: _o, ...r }) => r);
   }
 
-  /** Stop the caller's running re-check of a deck (cards already checked keep their result). */
+  /** Pause / resume the caller's re-check of a deck. */
+  pauseRecheck(caller: AuthUser, deckId: string, pause: boolean): void {
+    const j = this.rechecks.get(deckId);
+    if (!j || j.owner !== caller.sub) return;
+    if (pause && j.status === "running") j.status = "paused";
+    else if (!pause && j.status === "paused") j.status = "running";
+  }
+
+  /** Stop the caller's running re-check of a deck (cards already checked keep their result); on a finished run, dismiss it. */
   cancelRecheck(caller: AuthUser, deckId: string): void {
     const j = this.rechecks.get(deckId);
     if (!j || j.owner !== caller.sub) return;
-    if (j.status === "running") {
+    if (j.status === "running" || j.status === "paused") {
       j.cancelled = true;
       j.status = "error";
       j.error = "Đã hủy";
+    } else {
+      this.rechecks.delete(deckId); // a finished run is dismissed from the progress list
     }
   }
 
@@ -1009,8 +1029,8 @@ export class FlashcardsService implements OnModuleInit {
     if (deck.shared && !this.isAdmin(caller)) throw new ForbiddenException("Shared decks are admin-managed");
     const key = String(deck._id);
     const running = this.rechecks.get(key);
-    if (running?.status === "running") return { deckId: key, status: running.status, done: running.done, total: running.total, flagged: running.flagged, title: running.title, field: running.field };
-    const job = { deckId: key, owner: caller.sub, title: deck.title, field, status: "running" as "running" | "done" | "error", done: 0, total: 0, flagged: 0, error: undefined as string | undefined };
+    if (running && (running.status === "running" || running.status === "paused")) return { deckId: key, status: running.status, done: running.done, total: running.total, flagged: running.flagged, title: running.title, field: running.field };
+    const job = { deckId: key, owner: caller.sub, title: deck.title, field, status: "running" as "running" | "paused" | "done" | "error", done: 0, total: 0, flagged: 0, changed: 0, recent: [] as { stt: number; word: string; oldHanViet: string; newHanViet: string }[], error: undefined as string | undefined };
     this.rechecks.set(key, job);
     void this.runRecheck(job, deck._id, verify, field).catch((e: unknown) => {
       job.status = "error";
@@ -1028,7 +1048,7 @@ export class FlashcardsService implements OnModuleInit {
    * field's warnings, are kept.
    */
   private async runRecheck(
-    job: { status: "running" | "done" | "error"; done: number; total: number; flagged: number; error?: string; cancelled?: boolean },
+    job: { status: "running" | "paused" | "done" | "error"; done: number; total: number; flagged: number; changed: number; recent: { stt: number; word: string; oldHanViet: string; newHanViet: string }[]; error?: string; cancelled?: boolean },
     deckOid: Types.ObjectId,
     verify: (
       items: { id: number; word: string; reading: string; hanViet: string; meaning: string }[],
@@ -1039,12 +1059,27 @@ export class FlashcardsService implements OnModuleInit {
     const wants = (f: ReviewField) => only === "all" || only === f;
     const cards = await this.card.find({ deck: deckOid }).sort({ order: 1, _id: 1 }).limit(3000).exec();
     job.total = cards.length;
+    const changes: { stt: number; word: string; oldHanViet: string; newHanViet: string }[] = [];
+    const startedAt = Date.now();
+    const saveLog = async (finished: boolean) => {
+      if (!wants("hanViet") || !this.hvLog) return;
+      await this.hvLog
+        .updateOne(
+          { deck: deckOid },
+          { $set: { startedAt, total: cards.length, finished, finishedAt: finished ? Date.now() : undefined, changes } },
+          { upsert: true },
+        )
+        .exec()
+        .catch(() => null);
+    };
+    await saveLog(false);
     // The warnings this run re-judges (an import warning about a meaning is not one of them).
     const rejudged = (t: string) => {
       const f = reviewFieldOf(t);
       return wants(f) && (f !== "back" || /\(AI gợi ý: /.test(t));
     };
     for (let i = 0; i < cards.length; i += 15) {
+      while (job.status === "paused" && !job.cancelled) await new Promise((r) => setTimeout(r, 500));
       if (job.cancelled) return;
       const batch = cards.slice(i, i + 15);
       // What the AI is still asked: a meaning always; a reading only when the kanji data and the analyser cannot settle it.
@@ -1101,6 +1136,12 @@ export class FlashcardsService implements OnModuleInit {
         const kept = (c.reviewIssues ?? []).filter((t) => !rejudged(t));
         const next = [...kept, ...out.filter((t) => !kept.some((k) => reviewFieldOf(k) === reviewFieldOf(t)))];
         if (out.length > 0) job.flagged++;
+        if (fixedHv !== null) {
+          const ch = { stt: c.order ?? cards.indexOf(c) + 1, word: c.front.replace(/[（(][^）)]*[）)]/g, "").trim(), oldHanViet: hanViet, newHanViet: fixedHv };
+          changes.push(ch);
+          job.changed = changes.length;
+          job.recent = [...job.recent.slice(-29), ch];
+        }
         if (fixedHv !== null || next.join("\n") !== (c.reviewIssues ?? []).join("\n")) {
           await this.card
             .updateOne({ _id: c._id }, { $set: { reviewIssues: next, ...(fixedHv !== null ? { hanViet: fixedHv } : {}) } })
@@ -1108,7 +1149,9 @@ export class FlashcardsService implements OnModuleInit {
         }
       }
       job.done = Math.min(i + 15, cards.length);
+      if (changes.length > 0) await saveLog(false);
     }
+    await saveLog(true);
     job.status = "done";
   }
 
