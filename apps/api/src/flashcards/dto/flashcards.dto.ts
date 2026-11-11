@@ -255,6 +255,11 @@ export class UpdateCardDto {
   @IsIn(["hanViet", "reading", "back"])
   resolve?: "hanViet" | "reading" | "back";
 
+  @ApiPropertyOptional({ description: "true = every reading on the card is confirmed (kept with the card's meaning), so later checks accept them" })
+  @IsOptional()
+  @IsBoolean()
+  learnReading?: boolean;
+
   @ApiPropertyOptional({ enum: PARTS_OF_SPEECH })
   @IsOptional()
   @IsIn([...PARTS_OF_SPEECH, ""])

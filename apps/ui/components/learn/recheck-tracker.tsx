@@ -12,6 +12,7 @@ interface RecheckJob {
   flagged: number;
   changed?: number;
   recent?: { stt: number; word: string; oldHanViet: string; newHanViet: string }[];
+  recentFlags?: { stt: number; word: string; field: "reading" | "back"; issue: string }[];
   field?: "all" | "hanViet" | "reading" | "back";
   error?: string;
 }
@@ -105,12 +106,14 @@ export function RecheckTracker() {
         const pct = j.total > 0 ? Math.min(100, Math.round((j.done / j.total) * 100)) : 0;
         const root = window.location.pathname.startsWith("/admin") ? "/admin/decks" : "/learn/decks";
         const href = `${root}/${j.deckId}`;
-        const logHref = `${href}/log`;
+        const logHref = `${href}/log${j.field === "reading" || j.field === "back" ? `?field=${j.field}` : ""}`;
         const info = FIELD_INFO[j.field ?? "all"];
         const active = j.status === "running" || j.status === "paused";
         const paused = j.status === "paused";
         const failed = j.status === "error";
-        const hasLog = j.field === "hanViet";
+        const hasLog = j.field === "hanViet" || j.field === "reading" || j.field === "back";
+        const flagLog = j.field === "reading" || j.field === "back";
+        const logCount = flagLog ? j.flagged : (j.changed ?? 0);
         const showLog = openLog.includes(j.deckId);
         const badge = failed
           ? "bg-[#ef4444]/15 text-[#dc2626] dark:text-[#fca5a5]"
@@ -126,6 +129,7 @@ export function RecheckTracker() {
           void fetch(`/api/flashcards/recheck-jobs/${j.deckId}`, { method: "DELETE" }).catch(() => null); // gone for good, also after F5
         };
         const recent = [...(j.recent ?? [])].reverse();
+        const recentFlags = [...(j.recentFlags ?? [])].filter((f) => f.field === j.field).reverse();
         return (
           <div key={j.deckId} className="overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--background-1)] shadow-xl">
             <div className="flex items-center gap-3 p-3">
@@ -161,7 +165,7 @@ export function RecheckTracker() {
               </div>
               <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-[var(--muted-foreground)]">
                 <span className="tabular-nums">{j.total > 0 ? `${j.done}/${j.total} thẻ` : "Đang chuẩn bị…"}</span>
-                {hasLog && <span className="rounded-full bg-[#22c55e]/15 px-2 py-0.5 font-semibold text-[#15803d] dark:text-[#86efac]">{j.changed ?? 0} đã sửa</span>}
+                {j.field === "hanViet" && <span className="rounded-full bg-[#22c55e]/15 px-2 py-0.5 font-semibold text-[#15803d] dark:text-[#86efac]">{j.changed ?? 0} đã sửa</span>}
                 {j.flagged > 0 && <span className="rounded-full bg-[#f59e0b]/20 px-2 py-0.5 font-semibold text-[#b45309] dark:text-[#fbbf24]">{j.flagged} cần xem xét</span>}
               </div>
 
@@ -190,7 +194,7 @@ export function RecheckTracker() {
                       type="button"
                       className={`${tone.log} ${showLog ? "ring-2 ring-[#3b82f6]/40" : ""}`}
                       onClick={() => setOpenLog((v) => (showLog ? v.filter((x) => x !== j.deckId) : [...v, j.deckId]))}
-                      title={showLog ? "Ẩn log" : `Xem log (${j.changed ?? 0})`}
+                      title={showLog ? "Ẩn log" : `Xem log (${logCount})`}
                       aria-label={showLog ? "Ẩn log" : "Xem log"}
                       aria-pressed={showLog}
                     >
@@ -204,14 +208,22 @@ export function RecheckTracker() {
               </div>
               {hasLog && showLog && (
                 <ul className="mt-2 max-h-56 space-y-1 overflow-y-auto rounded-lg bg-[var(--layer)] p-2 text-xs">
-                  {recent.length === 0 && <li className="text-[var(--muted-foreground)]">Chưa có từ nào được sửa.</li>}
-                  {recent.map((c, i) => (
-                    <li key={`${c.stt}-${i}`} className="text-[var(--foreground)]">
-                      <span className="mr-1 text-[var(--muted-foreground)]">#{c.stt}</span>
-                      <span className="mr-1 font-semibold">{c.word}</span>
-                      <span className="text-[#dc2626] dark:text-[#fca5a5]">{c.oldHanViet || "(trống)"}</span> → <span className="text-[#15803d] dark:text-[#86efac]">{c.newHanViet}</span>
-                    </li>
-                  ))}
+                  {(flagLog ? recentFlags.length : recent.length) === 0 && <li className="text-[var(--muted-foreground)]">{flagLog ? "Chưa có từ nào cần xem xét." : "Chưa có từ nào được sửa."}</li>}
+                  {flagLog
+                    ? recentFlags.map((f, i) => (
+                        <li key={`${f.stt}-${i}`} className="text-[var(--foreground)]">
+                          <span className="mr-1 text-[var(--muted-foreground)]">#{f.stt}</span>
+                          <span className="mr-1 font-semibold">{f.word}</span>
+                          <span className="text-[#b45309] dark:text-[#fbbf24]">{f.issue}</span>
+                        </li>
+                      ))
+                    : recent.map((c, i) => (
+                        <li key={`${c.stt}-${i}`} className="text-[var(--foreground)]">
+                          <span className="mr-1 text-[var(--muted-foreground)]">#{c.stt}</span>
+                          <span className="mr-1 font-semibold">{c.word}</span>
+                          <span className="text-[#dc2626] dark:text-[#fca5a5]">{c.oldHanViet || "(trống)"}</span> → <span className="text-[#15803d] dark:text-[#86efac]">{c.newHanViet}</span>
+                        </li>
+                      ))}
                 </ul>
               )}
             </div>

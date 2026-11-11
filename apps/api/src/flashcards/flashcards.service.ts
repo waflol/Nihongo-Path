@@ -1,4 +1,5 @@
 import { correctHanViet, correctHanVietPartial, hanVietFits, harmonizeHanViet, norm as hvNorm, setKanjiHanViet, suggestHanViet } from "../import/han-viet-suggest.js";
+import { createHash } from "node:crypto";
 import { readingFitsKanji } from "../import/kanji-reading.js";
 import { ensureKanjiTables } from "../import/kanji-table.js";
 import { ReadingService, readingVariants } from "./reading.service.js";
@@ -106,7 +107,6 @@ export interface DeckView {
   /** Set while example sentences are being generated after an import. */
   examples: { total: number; done: number; paused: boolean } | null;
   /** The deck stays a draft until the examples are ready, then publishes. */
-  publishWhenReady: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -847,7 +847,6 @@ export class FlashcardsService implements OnModuleInit {
         (doc.exampleTotal ?? 0) > 0
           ? { total: doc.exampleTotal ?? 0, done: doc.exampleDone ?? 0, paused: doc.examplePaused ?? false }
           : null,
-      publishWhenReady: doc.publishWhenReady ?? false,
       createdAt: doc.createdAt?.toISOString() ?? "",
       updatedAt: doc.updatedAt?.toISOString() ?? "",
     };
@@ -904,6 +903,8 @@ export class FlashcardsService implements OnModuleInit {
       hanViet?: string;
       /** Close the warnings about one field (applied or dismissed). */
       resolve?: ReviewField;
+      /** Confirm every reading now on the card (with the card's meaning) so later checks accept them all. */
+      learnReading?: boolean;
     },
   ): Promise<FlashcardDocument> {
     let cardDoc: FlashcardDocument | null;
@@ -952,7 +953,10 @@ export class FlashcardsService implements OnModuleInit {
     if (input.reviewed || (input.back !== undefined && back !== "")) cardDoc.reviewIssues = [];
     // "Bỏ qua" on a reading warning keeps the card's reading: the analyser learns it.
     if (input.resolve === "reading" && input.reading === undefined && cardDoc.reading) {
-      void this.morph?.learn(cardDoc.front, cardDoc.reading);
+      void this.morph?.learn(cardDoc.front, cardDoc.reading, cardDoc.back);
+    }
+    if (input.learnReading && cardDoc.reading) {
+      for (const v of readingVariants(cardDoc.reading)) void this.morph?.learn(cardDoc.front, v, cardDoc.back);
     }
     if (input.resolve) {
       const of = (t: string): ReviewField => (/^Hán Việt/.test(t) ? "hanViet" : /^cách đọc/.test(t) ? "reading" : "back");
@@ -1047,15 +1051,20 @@ export class FlashcardsService implements OnModuleInit {
   /** Background "re-check the whole deck" runs, by deck id (in memory; progress for the floating tracker). */
   private readonly rechecks = new Map<
     string,
-    { deckId: string; owner: string; title: string; field: ReviewFilter; status: "running" | "paused" | "done" | "error"; done: number; total: number; flagged: number; changed: number; recent: { stt: number; word: string; oldHanViet: string; newHanViet: string }[]; error?: string; cancelled?: boolean }
+    { deckId: string; owner: string; title: string; field: ReviewFilter; status: "running" | "paused" | "done" | "error"; done: number; total: number; flagged: number; changed: number; recent: { stt: number; word: string; oldHanViet: string; newHanViet: string }[]; recentFlags: { stt: number; word: string; field: "reading" | "back"; issue: string }[]; error?: string; cancelled?: boolean }
   >();
 
   /** The latest Hán Việt check of a deck: what it changed (STT, word, old → new Hán Việt). */
   async hanVietLog(caller: AuthUser, deckId: string) {
     const deck = await this.getDeck(caller, deckId);
     const doc = await this.hvLog?.findOne({ deck: deck._id }).lean().exec();
-    if (!doc) return { deckId: String(deck._id), title: deck.title, ran: false, finished: false, total: 0, startedAt: 0, changes: [] };
-    return { deckId: String(deck._id), title: deck.title, ran: true, finished: doc.finished, total: doc.total, startedAt: doc.startedAt, finishedAt: doc.finishedAt, changes: doc.changes };
+    const sub = (k: "reading" | "back") => {
+      const d = (doc as unknown as Record<string, { startedAt: number; finishedAt?: number; total: number; finished: boolean; flags: unknown[] } | undefined> | null)?.[k];
+      return d ? { ran: true, ...d } : { ran: false, finished: false, total: 0, startedAt: 0, flags: [] };
+    };
+    const base = { deckId: String(deck._id), title: deck.title, reading: sub("reading"), back: sub("back") };
+    if (!doc) return { ...base, ran: false, finished: false, total: 0, startedAt: 0, changes: [] };
+    return { ...base, ran: !!doc.startedAt, finished: doc.finished, total: doc.total, startedAt: doc.startedAt, finishedAt: doc.finishedAt, changes: doc.changes };
   }
 
   /** The caller's re-check runs (running or recently finished). */
@@ -1089,18 +1098,22 @@ export class FlashcardsService implements OnModuleInit {
     caller: AuthUser,
     deckId: string,
     verify: (
-      items: { id: number; word: string; reading: string; hanViet: string; meaning: string }[],
+      items: { id: number; word: string; reading: string; hanViet: string; meaning: string; context?: string }[],
     ) => Promise<Map<number, { reading?: string; hanViet?: string; meaning?: string }> | null>,
     field: ReviewFilter = "all",
+    force = false,
   ) {
     const deck = await this.getDeck(caller, deckId);
     if (deck.shared && !this.isAdmin(caller)) throw new ForbiddenException("Shared decks are admin-managed");
     const key = String(deck._id);
     const running = this.rechecks.get(key);
     if (running && (running.status === "running" || running.status === "paused")) return { deckId: key, status: running.status, done: running.done, total: running.total, flagged: running.flagged, title: running.title, field: running.field };
-    const job = { deckId: key, owner: caller.sub, title: deck.title, field, status: "running" as "running" | "paused" | "done" | "error", done: 0, total: 0, flagged: 0, changed: 0, recent: [] as { stt: number; word: string; oldHanViet: string; newHanViet: string }[], error: undefined as string | undefined };
+    // One re-check at a time on the whole server: a small machine and one AI quota are shared.
+    const other = [...this.rechecks.values()].find((r) => r.deckId !== key && (r.status === "running" || r.status === "paused"));
+    if (other) throw new ConflictException("Đang có một lần kiểm tra khác chạy trên máy chủ — thử lại khi nó xong");
+    const job = { deckId: key, owner: caller.sub, title: deck.title, field, status: "running" as "running" | "paused" | "done" | "error", done: 0, total: 0, flagged: 0, changed: 0, recent: [] as { stt: number; word: string; oldHanViet: string; newHanViet: string }[], recentFlags: [] as { stt: number; word: string; field: "reading" | "back"; issue: string }[], error: undefined as string | undefined };
     this.rechecks.set(key, job);
-    void this.runRecheck(job, deck._id, verify, field).catch((e: unknown) => {
+    void this.runRecheck(job, deck._id, verify, field, force).catch((e: unknown) => {
       job.status = "error";
       job.error = e instanceof Error ? e.message : "Kiểm tra thất bại";
     });
@@ -1116,111 +1129,219 @@ export class FlashcardsService implements OnModuleInit {
    * field's warnings, are kept.
    */
   private async runRecheck(
-    job: { status: "running" | "paused" | "done" | "error"; done: number; total: number; flagged: number; changed: number; recent: { stt: number; word: string; oldHanViet: string; newHanViet: string }[]; error?: string; cancelled?: boolean },
+    job: { status: "running" | "paused" | "done" | "error"; done: number; total: number; flagged: number; changed: number; recent: { stt: number; word: string; oldHanViet: string; newHanViet: string }[]; recentFlags: { stt: number; word: string; field: "reading" | "back"; issue: string }[]; error?: string; cancelled?: boolean },
     deckOid: Types.ObjectId,
     verify: (
-      items: { id: number; word: string; reading: string; hanViet: string; meaning: string }[],
+      items: { id: number; word: string; reading: string; hanViet: string; meaning: string; context?: string }[],
     ) => Promise<Map<number, { reading?: string; hanViet?: string; meaning?: string }> | null>,
     only: ReviewFilter,
+    force = false,
   ): Promise<void> {
     await this.ensureKanjiTable();
     const wants = (f: ReviewField) => only === "all" || only === f;
-    const cards = await this.card.find({ deck: deckOid }).sort({ order: 1, _id: 1 }).limit(3000).exec();
+    // Only what the re-check needs: the heavy fields (examples, image) stay in the database.
+    const cards = await this.card
+      .find({ deck: deckOid })
+      .select("front reading back hanViet reviewIssues order readingChecked backChecked")
+      .sort({ order: 1, _id: 1 })
+      .limit(3000)
+      .exec();
     job.total = cards.length;
     const changes: { stt: number; word: string; oldHanViet: string; newHanViet: string }[] = [];
     const startedAt = Date.now();
+    const flags: { reading: { stt: number; word: string; issue: string }[]; back: { stt: number; word: string; issue: string }[] } = { reading: [], back: [] };
     const saveLog = async (finished: boolean) => {
-      if (!wants("hanViet") || !this.hvLog) return;
-      await this.hvLog
-        .updateOne(
-          { deck: deckOid },
-          { $set: { startedAt, total: cards.length, finished, finishedAt: finished ? Date.now() : undefined, changes } },
-          { upsert: true },
-        )
-        .exec()
-        .catch(() => null);
+      if (!this.hvLog) return;
+      const set: Record<string, unknown> = {};
+      if (wants("hanViet")) Object.assign(set, { startedAt, total: cards.length, finished, finishedAt: finished ? Date.now() : undefined, changes: [...changes].sort((x, y) => x.stt - y.stt) });
+      for (const f of ["reading", "back"] as const) {
+        if (wants(f)) set[f] = { startedAt, total: cards.length, finished, finishedAt: finished ? Date.now() : undefined, flags: [...flags[f]].sort((x, y) => x.stt - y.stt) };
+      }
+      await this.hvLog.updateOne({ deck: deckOid }, { $set: set }, { upsert: true }).exec().catch(() => null);
     };
     await saveLog(false);
-    // The warnings this run re-judges (an import warning about a meaning is not one of them).
-    const rejudged = (t: string) => {
-      const f = reviewFieldOf(t);
-      return wants(f) && (f !== "back" || /\(AI gợi ý: /.test(t));
-    };
-    for (let i = 0; i < cards.length; i += 15) {
+
+    const clean = (t: string) => t.replace(/[（(][^）)]*[）)]/g, "").trim();
+    const fingerprint = (a: string, b: string) => createHash("sha1").update(`${a}|${b}`).digest("base64url").slice(0, 12);
+    const tick = () => new Promise<void>((r) => setImmediate(r)); // let the API serve requests between chunks
+    const gate = async () => {
       while (job.status === "paused" && !job.cancelled) await new Promise((r) => setTimeout(r, 500));
-      if (job.cancelled) return;
-      const batch = cards.slice(i, i + 15);
-      // What the AI is still asked: a meaning always; a reading only when the kanji data and the analyser cannot settle it.
-      const askReading: boolean[] = [];
-      for (const c of batch) {
-        const reading = c.reading ?? "";
-        let ask = wants("reading") && !!reading;
-        if (ask && readingVariants(reading).some((r) => readingFitsKanji(c.front, r))) ask = false;
-        if (ask && this.morph) {
-          try {
-            const known = (await this.morph.analyze(c.front.replace(/[（(][^）)]*[）)]/g, ""))).readings;
-            if (readingVariants(reading).some((r) => known.includes(r))) ask = false;
-          } catch {
-            /* analyser unavailable — ask the AI */
-          }
-        }
-        askReading.push(ask);
+      return !job.cancelled;
+    };
+
+    // Analyser readings per word, asked once per run (a word repeats in a deck).
+    const analysed = new Map<string, Promise<string[]>>();
+    const analyserReadings = (word: string) => {
+      let hit = analysed.get(word);
+      if (!hit) {
+        hit = (this.morph ? this.morph.analyze(word).then((a) => a.readings) : Promise.resolve([])).catch(() => []);
+        analysed.set(word, hit);
       }
-      const items = batch
-        .map((c, n) => ({
-          id: n + 1,
-          word: c.front.replace(/[（(][^）)]*[）)]/g, "").trim(),
-          reading: askReading[n] ? (c.reading ?? "") : "",
-          hanViet: "",
-          meaning: wants("back") ? (c.back ?? "") : "",
-        }))
-        .filter((it) => it.reading || it.meaning);
-      const got = items.length === 0 ? new Map<number, { reading?: string; hanViet?: string; meaning?: string }>() : await verify(items).catch(() => null);
-      if (job.cancelled) return;
-      if (!got) {
-        job.status = "error";
-        job.error = "AI không phản hồi — thử lại sau";
-        return;
+      return hit;
+    };
+
+    type Plan = {
+      c: (typeof cards)[number];
+      judgeReading: boolean;
+      judgeBack: boolean;
+      rHash: string;
+      bHash: string;
+      /** Reading parts neither the kanji data nor the analyser could confirm: what the AI is still asked. */
+      askReading: string[];
+      /** A reading valid for the word but tied to another meaning (from what people confirmed). */
+      readingClash?: string;
+    };
+
+    // Stage 1 (local, no AI): decide per card what is judged, skipping what a past run already judged unchanged.
+    const plans: Plan[] = [];
+    for (const c of cards) {
+      if (plans.length % 50 === 49) {
+        await tick();
+        if (!(await gate())) return;
       }
-      for (const [n, c] of batch.entries()) {
-        const r = got.get(n + 1);
-        const out: string[] = [];
-        const reading = c.reading ?? "";
-        const hanViet = c.hanViet ?? "";
-        const meaning = c.back ?? "";
-        if (askReading[n] && r?.reading && /^[\p{Script=Hiragana}ー]+$/u.test(r.reading) && !readingVariants(reading).includes(r.reading)) {
-          out.push(`cách đọc “${reading}” có thể chưa đúng (AI gợi ý: ${r.reading})`);
+      const reading = c.reading ?? "";
+      const word = clean(c.front);
+      const rHash = fingerprint(word, reading);
+      const bHash = fingerprint(word, c.back ?? "");
+      const p: Plan = {
+        c,
+        rHash,
+        bHash,
+        judgeReading: wants("reading") && (force || c.readingChecked !== rHash),
+        judgeBack: wants("back") && (force || c.backChecked !== bHash),
+        askReading: [],
+      };
+      if (p.judgeReading && reading) {
+        const variants = readingVariants(reading);
+        // Every reading on the card is checked on its own: one valid one does not vouch for the rest.
+        let invalid = variants.filter((v) => !readingFitsKanji(c.front, v));
+        if (invalid.length > 0 && this.morph) {
+          const known = await analyserReadings(word);
+          invalid = invalid.filter((v) => !known.includes(v));
         }
-        // Hán Việt is looked up in the kanji admin data and replaced in place when it is wrong.
-        let fixedHv: string | null = null;
-        if (wants("hanViet")) {
-          // A blank cell is filled when the data knows every kanji of the word.
-          const right = hanViet ? (correctHanViet(c.front, hanViet) ?? correctHanVietPartial(c.front, hanViet)) : suggestHanViet(c.front);
-          if (right && right !== hanViet) fixedHv = right;
-        }
-        if (wants("back") && r?.meaning && meaning && hvNorm(r.meaning) !== hvNorm(meaning)) {
-          out.push(`nghĩa “${meaning}” có thể chưa sát (AI gợi ý: ${r.meaning})`);
-        }
-        const kept = (c.reviewIssues ?? []).filter((t) => !rejudged(t));
-        const next = [...kept, ...out.filter((t) => !kept.some((k) => reviewFieldOf(k) === reviewFieldOf(t)))];
-        if (out.length > 0) job.flagged++;
-        if (fixedHv !== null) {
-          const ch = { stt: c.order ?? cards.indexOf(c) + 1, word: c.front.replace(/[（(][^）)]*[）)]/g, "").trim(), oldHanViet: hanViet, newHanViet: fixedHv };
-          changes.push(ch);
-          job.changed = changes.length;
-          job.recent = [...job.recent.slice(-29), ch];
-        }
-        if (fixedHv !== null || next.join("\n") !== (c.reviewIssues ?? []).join("\n")) {
-          await this.card
-            .updateOne({ _id: c._id }, { $set: { reviewIssues: next, ...(fixedHv !== null ? { hanViet: fixedHv } : {}) } })
-            .exec();
+        p.askReading = invalid;
+        // A word with a reading per meaning: the card's reading must go with the card's meaning.
+        const rm = (await this.morph?.readingMeanings(word)) ?? [];
+        const mine = hvNorm(c.back ?? "");
+        const [only1] = variants;
+        if (mine && variants.length === 1 && only1 && new Set(rm.map((x) => x.reading)).size >= 2) {
+          const owner = rm.find((x) => hvNorm(x.meaning) === mine);
+          if (owner && owner.reading !== only1 && !rm.some((x) => x.reading === only1 && hvNorm(x.meaning) === mine)) p.readingClash = `cách đọc “${only1}” đúng với từ nhưng có vẻ thuộc nghĩa khác (gợi ý: ${owner.reading})`;
         }
       }
-      job.done = Math.min(i + 15, cards.length);
-      if (changes.length > 0) await saveLog(false);
+      plans.push(p);
     }
+
+    /** Stage 3: turn a card's local + AI verdicts into the warnings and fixes to store. */
+    const apply = (p: Plan, r: { reading?: string; hanViet?: string; meaning?: string } | undefined) => {
+      const c = p.c;
+      const out: string[] = [];
+      const reading = c.reading ?? "";
+      const hanViet = c.hanViet ?? "";
+      const meaning = c.back ?? "";
+      if (p.readingClash) out.push(p.readingClash);
+      if (p.askReading.length > 0 && r?.reading && /^[\p{Script=Hiragana}ー]+$/u.test(r.reading) && !p.askReading.includes(r.reading)) {
+        out.push(`cách đọc “${p.askReading.join(" / ")}” có thể chưa đúng (AI gợi ý: ${r.reading})`);
+      }
+      // Hán Việt is looked up in the kanji admin data and replaced in place when it is wrong.
+      let fixedHv: string | null = null;
+      if (wants("hanViet")) {
+        // A blank cell is filled when the data knows every kanji of the word.
+        const right = hanViet ? (correctHanViet(c.front, hanViet) ?? correctHanVietPartial(c.front, hanViet)) : suggestHanViet(c.front);
+        if (right && right !== hanViet) fixedHv = right;
+      }
+      if (p.judgeBack && r?.meaning && meaning && hvNorm(r.meaning) !== hvNorm(meaning)) {
+        out.push(`nghĩa “${meaning}” có thể chưa sát (AI gợi ý: ${r.meaning})`);
+      }
+      // The warnings this run re-judges for this card (an import warning about a meaning is not one of them).
+      const rejudged = (t: string) => {
+        const f = reviewFieldOf(t);
+        return f === "hanViet" ? wants("hanViet") : f === "reading" ? p.judgeReading : p.judgeBack && /\(AI gợi ý: /.test(t);
+      };
+      const kept = (c.reviewIssues ?? []).filter((t) => !rejudged(t));
+      const next = [...kept, ...out.filter((t) => !kept.some((k) => reviewFieldOf(k) === reviewFieldOf(t)))];
+      if (out.length > 0) job.flagged++;
+      for (const t of out) {
+        const f = reviewFieldOf(t);
+        if (f !== "reading" && f !== "back") continue;
+        const entry = { stt: c.order ?? cards.indexOf(c) + 1, word: clean(c.front), issue: t };
+        flags[f].push(entry);
+        job.recentFlags = [...job.recentFlags.slice(-29), { ...entry, field: f }];
+      }
+      if (fixedHv !== null) {
+        const ch = { stt: c.order ?? cards.indexOf(c) + 1, word: clean(c.front), oldHanViet: hanViet, newHanViet: fixedHv };
+        changes.push(ch);
+        job.changed = changes.length;
+        job.recent = [...job.recent.slice(-29), ch];
+      }
+      const set: Record<string, unknown> = {};
+      if (next.join("\n") !== (c.reviewIssues ?? []).join("\n")) set.reviewIssues = next;
+      if (fixedHv !== null) set.hanViet = fixedHv;
+      if (p.judgeReading && c.readingChecked !== p.rHash) set.readingChecked = p.rHash;
+      if (p.judgeBack && c.backChecked !== p.bHash) set.backChecked = p.bHash;
+      return Object.keys(set).length > 0 ? { updateOne: { filter: { _id: c._id }, update: { $set: set } } } : null;
+    };
+
+    const flush = async (batch: Plan[], got?: Map<number, { reading?: string; hanViet?: string; meaning?: string }>) => {
+      const ops = batch.map((p, n) => apply(p, got?.get(n + 1))).filter((o) => o !== null);
+      if (ops.length > 0) await this.card.bulkWrite(ops);
+      job.done += batch.length;
+      if (changes.length > 0 || flags.reading.length > 0 || flags.back.length > 0) await saveLog(false);
+    };
+
+    // Stage 2a: cards the AI is not needed for are finished at once, in bulk.
+    const needsAi = (p: Plan) => p.askReading.length > 0 || (p.judgeBack && !!p.c.back);
+    const local = plans.filter((p) => !needsAi(p));
+    for (let i = 0; i < local.length; i += 100) {
+      if (!(await gate())) return;
+      await flush(local.slice(i, i + 100));
+      await tick();
+    }
+
+    // Stage 2b: the rest go to the AI in batches of 15, a few batches at a time.
+    const aiPlans = plans.filter(needsAi);
+    const batches: Plan[][] = [];
+    for (let i = 0; i < aiPlans.length; i += 15) batches.push(aiPlans.slice(i, i + 15));
+    let next = 0;
+    let failed = false;
+    const worker = async () => {
+      while (!failed) {
+        if (!(await gate()) || failed) return;
+        const batch = batches[next++];
+        if (!batch) return;
+        const items = batch
+          .map((p, n) => ({
+            id: n + 1,
+            word: clean(p.c.front),
+            reading: p.askReading.join(" / "),
+            hanViet: "",
+            meaning: p.judgeBack ? (p.c.back ?? "") : "",
+            // The meaning only helps the AI pick the reading of a word that has several.
+            ...(p.askReading.length > 0 && !p.judgeBack && p.c.back ? { context: p.c.back } : {}),
+          }))
+          .filter((it) => it.reading || it.meaning);
+        const got = await verify(items).catch(() => null);
+        if (job.cancelled) return;
+        if (!got) {
+          failed = true;
+          job.status = "error";
+          job.error = "AI không phản hồi — thử lại sau";
+          return;
+        }
+        await flush(batch, got);
+      }
+    };
+    const width = Math.min(FlashcardsService.recheckConcurrency(), Math.max(1, batches.length));
+    await Promise.all(Array.from({ length: width }, () => worker()));
+    if (failed || job.cancelled) return;
     await saveLog(true);
     job.status = "done";
+  }
+
+  /** How many AI batches a re-check keeps in flight (env RECHECK_CONCURRENCY, 1–4, default 2). */
+  private static recheckConcurrency(): number {
+    const n = Math.floor(Number(process.env.RECHECK_CONCURRENCY));
+    return Number.isFinite(n) && n > 0 ? Math.min(4, n) : 2;
   }
 
   // ── internals ───────────────────────────────────────────────────────

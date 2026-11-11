@@ -16,6 +16,8 @@ export interface ReadingResult {
    * にんき and ひとけ) plus the analyser's own guess. Empty for kana-only text.
    */
   readings: string[];
+  /** Meanings a person tied to a reading when confirming it (人気: にんき → 人気, ひとけ → 人の気配). */
+  readingMeanings?: { reading: string; meaning: string }[];
   /** Best-guess part of speech (verb / noun / adjective / phrase) or `null`. */
   partOfSpeech: PartOfSpeech | null;
 }
@@ -73,6 +75,8 @@ export class ReadingService {
 
   /** Readings a person confirmed against the analyser (word → hiragana list, oldest first), loaded on first use. */
   private overrides: Promise<Map<string, string[]>> | null = null;
+  /** The meaning a person tied to each confirmed reading (word → [{ reading, meaning }]). */
+  private readonly meanings = new Map<string, { reading: string; meaning: string }[]>();
 
   private loadOverrides(): Promise<Map<string, string[]>> {
     this.overrides ??= (async () => {
@@ -82,6 +86,12 @@ export class ReadingService {
         for (const r of rows ?? []) {
           const list: string[] = Array.isArray(r.readings) ? r.readings.map(String) : r.reading ? [String(r.reading)] : [];
           if (r.word && list.length > 0) m.set(String(r.word), [...new Set(list)]);
+          if (r.word && Array.isArray(r.readingMeanings)) {
+            const rm = (r.readingMeanings as { reading?: unknown; meaning?: unknown }[])
+              .filter((x) => typeof x?.reading === "string" && typeof x?.meaning === "string" && x.meaning)
+              .map((x) => ({ reading: String(x.reading), meaning: String(x.meaning) }));
+            if (rm.length > 0) this.meanings.set(String(r.word), rm);
+          }
         }
       } catch (e) {
         this.logger.warn(`reading overrides not loaded: ${(e as Error).message}`);
@@ -110,10 +120,14 @@ export class ReadingService {
     const left = reading ? (m.get(word) ?? []).filter((r) => r !== toHiragana(reading.trim())) : [];
     if (left.length > 0) {
       m.set(word, left);
-      const res = await this.conn?.collection("reading_overrides").updateOne({ word }, { $set: { reading: left[0], readings: left, updatedAt: new Date() } });
+      const rm = (this.meanings.get(word) ?? []).filter((x) => left.includes(x.reading));
+      if (rm.length > 0) this.meanings.set(word, rm);
+      else this.meanings.delete(word);
+      const res = await this.conn?.collection("reading_overrides").updateOne({ word }, { $set: { reading: left[0], readings: left, readingMeanings: rm, updatedAt: new Date() } });
       return (res?.matchedCount ?? 0) > 0;
     }
     m.delete(word);
+    this.meanings.delete(word);
     const res = await this.conn?.collection("reading_overrides").deleteOne({ word });
     return (res?.deletedCount ?? 0) > 0;
   }
@@ -123,15 +137,22 @@ export class ReadingService {
    * the card's reading ("Bỏ qua" on the warning): remember it. A word keeps ALL the readings
    * confirmed for it (人気 = にんき and ひとけ), so confirming one never overwrites another.
    */
-  async learn(rawWord: string, reading: string): Promise<void> {
+  async learn(rawWord: string, reading: string, meaning?: string): Promise<void> {
     const word = rawWord.replace(/[（(][^）)]*[）)]/g, "").trim();
     const r = toHiragana(reading.trim());
     if (!word || !r || !KANJI_RE.test(word)) return;
     const m = await this.loadOverrides();
     const list = [...new Set([...(m.get(word) ?? []), r])];
     m.set(word, list);
+    // Remember which meaning this reading goes with (a word with several readings may have a meaning for each).
+    const mean = (meaning ?? "").trim().slice(0, 200);
+    const rm = this.meanings.get(word) ?? [];
+    if (mean && !rm.some((x) => x.reading === r && x.meaning === mean)) {
+      rm.push({ reading: r, meaning: mean });
+      this.meanings.set(word, rm);
+    }
     try {
-      await this.conn?.collection("reading_overrides").updateOne({ word }, { $set: { word, reading: list[0], readings: list, updatedAt: new Date() } }, { upsert: true });
+      await this.conn?.collection("reading_overrides").updateOne({ word }, { $set: { word, reading: list[0], readings: list, readingMeanings: rm, updatedAt: new Date() } }, { upsert: true });
     } catch (e) {
       this.logger.warn(`reading override not saved: ${(e as Error).message}`);
     }
@@ -165,6 +186,7 @@ export class ReadingService {
     // Drop an existing "(ねこ)" annotation — the reading is derived, not typed.
     const text = rawText.replace(/[（(][^）)]*[）)]/g, "").trim();
     if (text === "") return { reading: "", readings: [], partOfSpeech: null };
+    await this.loadOverrides();
 
     const tk = await this.getTokenizer();
     const tokens = tk.tokenize(text);
@@ -189,7 +211,13 @@ export class ReadingService {
       })
       .join("");
     const known = (await this.loadOverrides()).get(text) ?? [];
-    return { reading: known[0] ?? reading, readings: [...new Set([...known, reading])], partOfSpeech };
+    return { reading: known[0] ?? reading, readings: [...new Set([...known, reading])], readingMeanings: this.meanings.get(text) ?? [], partOfSpeech };
+  }
+
+  /** Meanings people tied to each confirmed reading of a word (from the overrides only; no analysis). */
+  async readingMeanings(rawWord: string): Promise<{ reading: string; meaning: string }[]> {
+    await this.loadOverrides();
+    return this.meanings.get(rawWord.replace(/[（(][^）)]*[）)]/g, "").trim()) ?? [];
   }
 
   /** Does the card's own reading text hold a reading this word is known to have? */

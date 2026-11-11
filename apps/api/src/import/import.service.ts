@@ -907,10 +907,6 @@ export class ImportService implements OnApplicationBootstrap {
         exampleDone: 0,
         examplePaused: false,
       };
-      if (deck.publishWhenReady) {
-        set.status = "PUBLISHED";
-        set.publishWhenReady = false;
-      }
       await this.deck.updateOne({ _id: deck._id }, { $set: set }).exec();
       return { deckId, action, remaining: 0 };
     }
@@ -948,15 +944,11 @@ export class ImportService implements OnApplicationBootstrap {
     return { deckId, action, remaining: cards.length };
   }
 
-  /** Clear the progress and, for a new import deck, publish it. */
+  /** Clear the example-generation progress of a deck. */
   private async finishDeckExamples(deckId: Types.ObjectId): Promise<void> {
     const d = await this.deck.findById(deckId).exec();
     if (!d) return;
     const set: Record<string, unknown> = { exampleTotal: 0, exampleDone: 0, examplePaused: false };
-    if (d.publishWhenReady) {
-      set.status = "PUBLISHED";
-      set.publishWhenReady = false;
-    }
     await this.deck.updateOne({ _id: deckId }, { $set: set }).exec();
   }
 

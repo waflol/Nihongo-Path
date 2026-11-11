@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { redirectIfAuthenticated } from "@/lib/auth-redirect";
+import { RedirectIfAuthenticated } from "@/components/auth/redirect-if-authenticated";
 import { AuthForm } from "@/components/auth/auth-form";
 import { GoogleSignIn } from "@/components/auth/google-sign-in";
 import { siteConfig } from "../site";
@@ -12,14 +12,14 @@ export const metadata: Metadata = {
 };
 
 /** Register page (P2-UI-02) — email/password self-service signup. */
-export default async function RegisterPage({
+export default function RegisterPage({
   searchParams,
 }: {
   searchParams: Promise<{ from?: string | string[] }>;
 }) {
-  await redirectIfAuthenticated(searchParams);
   return (
     <div className="mx-auto w-full max-w-md px-4 py-16 sm:px-6">
+      <RedirectIfAuthenticated searchParams={searchParams} />
       <h1 className="text-2xl font-semibold tracking-tight text-[var(--foreground)]">
         Tạo tài khoản
       </h1>

@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { redirectIfAuthenticated } from "@/lib/auth-redirect";
+import { RedirectIfAuthenticated } from "@/components/auth/redirect-if-authenticated";
 import { AdminAuthForm } from "@/components/admin/admin-auth-form";
 import { GoogleSignIn } from "@/components/auth/google-sign-in";
 
@@ -19,14 +19,14 @@ export const metadata: Metadata = {
  * gates the admin area (API-side `@ContentAdmin` + the UI gate, T-P2-04);
  * registering here is just a convenience path, not a role grant.
  */
-export default async function AdminLoginPage({
+export default function AdminLoginPage({
   searchParams,
 }: {
   searchParams: Promise<{ from?: string | string[] }>;
 }) {
-  await redirectIfAuthenticated(searchParams, { admin: true });
   return (
     <div className="mx-auto w-full max-w-md px-4 py-16 sm:px-6">
+      <RedirectIfAuthenticated searchParams={searchParams} admin />
       <p className="text-xs font-semibold uppercase tracking-wide text-[var(--primary)]">
         Khu quản trị
       </p>

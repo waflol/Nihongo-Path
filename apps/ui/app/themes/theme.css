@@ -1,8 +1,8 @@
 /*
- * Nihongo Path — Preline design tokens (raw CSS variables).
+ * Nihongo Path — design tokens (raw CSS variables).
  *
- * Preline's theme.css (node_modules/preline/theme.css) maps these raw vars to
- * Tailwind utilities via `@theme inline`. This file is the single place to
+ * The `@theme inline` block in app/globals.css maps these raw vars to
+ * Tailwind utilities. This file is the single place to
  * swap the brand palette: change the hex values below, not the utilities.
  *
  * NOTE: palette is a PLACEHOLDER (spec §17.2 — colors are a proposal, not
@@ -163,7 +163,7 @@
   --surface-focus: #f3f4f6;
   --surface-active: #e5e7eb;
 
-  /* Navbar presets 1/2 + sidebar (mirror of base preset, used by Preline layout blocks) */
+  /* Navbar presets 1/2 + sidebar (mirror of base preset) */
   --navbar-1: #f9fafb;
   --navbar-1-line: #e5e7eb;
   --navbar-1-divider: #e5e7eb;
@@ -349,7 +349,7 @@
   --sidebar-2-nav-list-divider: #3a4150;
 }
 
-/* Base element defaults (kept in line with Preline theme base layer). */
+/* Base element defaults. */
 body {
   background: var(--background);
   color: var(--foreground);

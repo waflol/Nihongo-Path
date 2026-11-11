@@ -3,10 +3,8 @@ import { ImportJobTracker } from "@/components/admin/import-job-tracker";
 import { MaziiSyncTracker } from "@/components/admin/mazii-sync-tracker";
 import { ExampleJobTracker } from "@/components/learn/example-job-tracker";
 import type { Metadata } from "next";
-import { Suspense } from "react";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
-import { Preline } from "@/components/preline";
 import { ClientIpv4Reporter } from "@/components/client-ipv4-reporter";
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
@@ -70,10 +68,6 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           <ExampleJobTracker />
         </div>
         <SiteFooter />
-        {/* Preline JS init (client, idempotent, re-runs on route change). */}
-        <Suspense fallback={null}>
-          <Preline />
-        </Suspense>
       </body>
     </html>
   );

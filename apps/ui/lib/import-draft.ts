@@ -14,7 +14,6 @@ export interface ImportDraft {
   deckId: string;
   mapping: Record<string, string>;
   previewed: boolean;
-  dupPolicy?: "skip" | "overwrite";
 }
 
 function open(): Promise<IDBDatabase> {

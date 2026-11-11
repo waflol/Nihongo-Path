@@ -25,4 +25,24 @@ describe("ReadingService: several readings per word", () => {
   it("returns no readings for kana-only text", async () => {
     expect((await new ReadingService().analyze("ありがとう")).readings).toEqual([]);
   });
+
+  it("ties a meaning to each confirmed reading and forgets it with the reading", async () => {
+    const svc = new ReadingService();
+    await svc.learn("人気", "にんき", "nổi tiếng");
+    await svc.learn("人気", "ひとけ", "có người qua lại");
+    expect(await svc.readingMeanings("人気")).toEqual([
+      { reading: "にんき", meaning: "nổi tiếng" },
+      { reading: "ひとけ", meaning: "có người qua lại" },
+    ]);
+    expect((await svc.analyze("人気")).readingMeanings).toHaveLength(2);
+    await svc.forget("人気", "ひとけ");
+    expect(await svc.readingMeanings("人気")).toEqual([{ reading: "にんき", meaning: "nổi tiếng" }]);
+  });
+
+  it("learning a reading twice does not duplicate its meaning", async () => {
+    const svc = new ReadingService();
+    await svc.learn("人気", "にんき", "nổi tiếng");
+    await svc.learn("人気", "にんき", "nổi tiếng");
+    expect(await svc.readingMeanings("人気")).toHaveLength(1);
+  });
 });

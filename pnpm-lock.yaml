@@ -319,9 +319,6 @@ importers:
       next:
         specifier: 16.4.3
         version: 16.4.3(@babel/core@7.29.7(supports-color@7.2.0))(@types/node@20.19.43)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
-      preline:
-        specifier: 5.0.0
-        version: 5.0.0
       react:
         specifier: 19.3.0
         version: 19.3.0
@@ -529,15 +526,6 @@ packages:
   '@eslint/plugin-kit@0.4.1':
     resolution: {integrity: sha512-43/qtrDUokr7LJqoF2c3+RInu/t4zfrpYdoSDfYyhg52rwLV6TnOvdG4fXm7IkSB3wErkcmJS9iEhjVtOSEjjA==}
     engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
-
-  '@floating-ui/core@1.8.0':
-    resolution: {integrity: sha512-0CIZ5itps/8x7BG8dEIhs53BvCUH2PCoogtakwRTut+Arm58sJooJ0AuZhLw2HJYIR5cMLNPBSS728sPho2khQ==}
-
-  '@floating-ui/dom@1.8.0':
-    resolution: {integrity: sha512-yXSrzeHZBTZadLOlfyhCkJHNeLJnHRnRInwdZ40L7ZiaAtrBwoYlsDrX3v5zB1Utk7CLfzcOVnVVWoXEky7Ceg==}
-
-  '@floating-ui/utils@0.2.12':
-    resolution: {integrity: sha512-HpCo8tmWzLVad5s2d19EhAz5zqrrQ6s69qd6moPMQvkOuSwDT1YgRfWSVuc4ennqrgv3OHppiOGMQ7oC13yIww==}
 
   '@humanfs/core@0.19.2':
     resolution: {integrity: sha512-UhXNm+CFMWcbChXywFwkmhqjs3PRCmcSa/hfBgLIb7oQ5HNb1wS0icWsGtSAUNgefHeI+eBrA8I1fxmbHsGdvA==}
@@ -1477,30 +1465,6 @@ packages:
   '@standard-schema/spec@1.1.0':
     resolution: {integrity: sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w==}
 
-  '@svgdotjs/svg.draggable.js@3.0.7':
-    resolution: {integrity: sha512-yL2BZ2TSMNm2e8GXteXPjgd65bg0k0zJYyzRgeqcIRrpJd9GkesUFXqoLvtv9PLFH0AkTLfMXWUMUkUbTKFlVQ==}
-    peerDependencies:
-      '@svgdotjs/svg.js': ^3.0.0
-
-  '@svgdotjs/svg.filter.js@3.0.10':
-    resolution: {integrity: sha512-ynuqRmTRiQgy0XDV/aVV63+RMAAGxRa3qRxb0rowTFRfEJ7qJZ/CbMSuH87/TP1j1zauQhE48DFWQcxrxBv5aQ==}
-    peerDependencies:
-      '@svgdotjs/svg.js': ^3.1.0
-
-  '@svgdotjs/svg.js@3.2.8':
-    resolution: {integrity: sha512-NUdbI/7FDdqGpzKmqr09IQoy9MUcrAC/3bC8gLgXi6OfJuyri450zMLvJekFUhuq3iN5gpdPjoSoStNl9Eijfg==}
-
-  '@svgdotjs/svg.resize.js@2.0.7':
-    resolution: {integrity: sha512-6zTGBB6WXA2AO+b27U5++smxqN0DCsJD86gQV3ae8dC3E0twBdMcFa1HxBoq/f03F1xWus1ErF9BelhENnw9Lw==}
-    peerDependencies:
-      '@svgdotjs/svg.js': ^3.1.0
-      '@svgdotjs/svg.select.js': ^4.0.1
-
-  '@svgdotjs/svg.select.js@4.0.5':
-    resolution: {integrity: sha512-Bw/7uu3zx7GjP0RV2PpbL+sLOesuHvBKXNRLvoVlZcIBrPEKxtqNm8Qt9/Nl8hZCHYCGzS3z7USlPinXBg3nJw==}
-    peerDependencies:
-      '@svgdotjs/svg.js': ^3.1.0
-
   '@swc/helpers@0.5.23':
     resolution: {integrity: sha512-5lSsMOTXURePglDfvuAQUqkGek9Hg2kksOYay2m0+XR++b2NWYL/4sWyuvVBIs8oKnJaxkdi9whaL/sqN13afw==}
 
@@ -1617,9 +1581,6 @@ packages:
 
   '@types/cookiejar@2.1.5':
     resolution: {integrity: sha512-he+DHOWReW0nghN24E1WUqM0efK4kI9oTqDm6XmK8ZPe2djZ90BSNdGnIyCLzCPw7/pogPlGbzI2wHGGmi4O/Q==}
-
-  '@types/culori@4.0.1':
-    resolution: {integrity: sha512-43M51r/22CjhbOXyGT361GZ9vncSVQ39u62x5eJdBQFviI8zWp2X5jzqg7k4M6PVgDQAClpy2bUe2dtwEgEDVQ==}
 
   '@types/deep-eql@4.0.2':
     resolution: {integrity: sha512-c9h9dVVMigMPc4bwTvC5dxqtqJZwQPePsWjPlpSOnojbor6pGqdk541lfA7AqFQr5pB1BRdq0juY9db81BwyFw==}
@@ -1917,9 +1878,6 @@ packages:
   '@vitest/utils@4.1.12':
     resolution: {integrity: sha512-Q3awXrwOfEV+qc3WmO5ONyE0yO7Q1gQ9/oyHxGLZ/pl7N3NO/ZztqQwKLuwMkV+CA1JYSIeO3gkHnRDIo4AVaA==}
 
-  '@yr/monotone-cubic-spline@1.0.3':
-    resolution: {integrity: sha512-FQXkOta0XBSUPHndIKON2Y9JeQz5ZeMqLYZVVK93FliNBFm7LNMIZmY6FrMEB9XPcDbE2bekMbZD6kzDkxwYjA==}
-
   accepts@2.0.0:
     resolution: {integrity: sha512-5cvg6CtKwfgdmVqY1WIiXKc3Q1bkRqGLi+2W/6ao+6Y7gu/RCwRuAhGEzh5B4KlszSuTLgZYuqFqo5bImjNKng==}
     engines: {node: '>= 0.6'}
@@ -1969,9 +1927,6 @@ packages:
 
   anynum@1.0.1:
     resolution: {integrity: sha512-N6//FLET/tXYNM/F6ABca1oH6fWB+KlTt909Le28WMDBk8oaT4vY17DCrwg2MvmuqUKt3Ni4N5dGJ/EoBgcO6A==}
-
-  apexcharts@4.7.0:
-    resolution: {integrity: sha512-iZSrrBGvVlL+nt2B1NpqfDuBZ9jX61X9I2+XV0hlYXHtTwhwLTHDKGXjNXAgFBDLuvSYCB/rq2nPWVPRv2DrGA==}
 
   append-field@1.0.0:
     resolution: {integrity: sha512-klpgFSWLW1ZEs8svjfb7g4qWY0YS5imI82dTg+QahUvJ8YqAY0P10Uk8tTyh9ZGuYEZEMaeJYCF5BFuX552hsw==}
@@ -2281,10 +2236,6 @@ packages:
   csv-parse@7.0.3:
     resolution: {integrity: sha512-YFd3QM/yo17vH91L1IOZuvl09zM0zEEtdfTcOCKWcMdM++MNaQSyp09slXyFCLaPXvHstQFx/xC8myiFHSMUvw==}
 
-  culori@4.0.2:
-    resolution: {integrity: sha512-1+BhOB8ahCn4O0cep0Sh2l9KCOfOdY+BXJnKMHFFzDEouSr/el18QwXEMRlOj9UY5nCeA8UN3a/82rUWRBeyBw==}
-    engines: {node: ^12.20.0 || ^14.13.1 || >=16.0.0}
-
   damerau-levenshtein@1.0.8:
     resolution: {integrity: sha512-sdQSFB7+llfUcQHUQO3+B8ERRj0Oa4w9POWMI/puGtuf7gFywGmkaLCElnudfTiKZV+NvHqL0ifzdrI8Ro7ESA==}
 
@@ -2303,12 +2254,6 @@ packages:
   data-view-byte-offset@1.0.1:
     resolution: {integrity: sha512-BS8PfmtDGnrgYdOonGZQdLZslWIeCGFP9tpan0hi1Co2Zr2NKADsvGYA8XxuG/4UWgJ6Cjtv+YJnB6MM69QGlQ==}
     engines: {node: '>= 0.4'}
-
-  datatables.net-dt@2.3.8:
-    resolution: {integrity: sha512-GD4on0YvNlUS/l+mrXeA1OC2JDzF2/GGbehVv4AacwtiFaoTwqxZseiR0cED6w59u/lgpVrZRC2RwuubUX996Q==}
-
-  datatables.net@2.3.8:
-    resolution: {integrity: sha512-uhViowhlDlheAuo5a8TrkQqADsjrtGeOyvrigvr4t0+K3MyAWqClORXWAYIcN9VLX6iIX0C8O9gwJNd01hITRg==}
 
   debug@3.2.7:
     resolution: {integrity: sha512-CFjzYYAi4ThfiQvizrFQevTTXHtnCqWfe7x1AhgEscTz6ZbLbfoLRLPugTQyBth6f8ZERVUSyWHFD/7Wu4t1XQ==}
@@ -2396,10 +2341,6 @@ packages:
 
   doublearray@0.0.2:
     resolution: {integrity: sha512-aw55FtZzT6AmiamEj2kvmR6BuFqvYgKZUkfQ7teqVRNqD5UE0rw8IeW/3gieHNKQ5sPuDKlljWEn4bzv5+1bHw==}
-
-  dropzone@6.3.5:
-    resolution: {integrity: sha512-voAoyVj3ZyFwoUVkKMmtfCrp7gbjqKJv3gNCsz0lW1lApcmKILBCbCgBU64hJF4LC4+cs6+peXhsn122fPQqsw==}
-    engines: {node: '>=20.19.0'}
 
   dunder-proto@1.0.1:
     resolution: {integrity: sha512-KIN/nDJBQRcXw0MLVhZE9iQHmG68qAVIBg9CqmUYjmQIhgij9U5MFvrqkUL5FbtyyzZuOeOt0zdeRe4UY7ct+A==}
@@ -3118,9 +3059,6 @@ packages:
     resolution: {integrity: sha512-AC/7JofJvZGrrneWNaEnJeOLUx+JlGt7tNa0wZiRPT4MY1wmfKjt2+6O2p2uz2+skll8OZZmJMNqeke7kKbNgQ==}
     hasBin: true
 
-  jquery@4.0.0:
-    resolution: {integrity: sha512-TXCHVR3Lb6TZdtw1l3RTLf8RBWVGexdxL6AC8/e0xZKEpBflBsjh9/8LXw+dkNFuOyW9B7iB3O1sP7hS0Kiacg==}
-
   js-tokens@10.0.0:
     resolution: {integrity: sha512-lM/UBzQmfJRo9ABXbPWemivdCW8V2G8FHaHdypQaIy523snUjog0W71ayWXTjiR+ixeMyVHN2XcpnTd/liPg/Q==}
 
@@ -3600,9 +3538,6 @@ packages:
     resolution: {integrity: sha512-OmO8+GM1JUZqXET720VrJCwkjUCXmCMQm0Z3UDDRbfNLHS4NEAvY60j5jiFv0tkKw2PNNlqOLhahVmwJIOLDIQ==}
     engines: {node: '>=18'}
 
-  nouislider@15.8.1:
-    resolution: {integrity: sha512-93TweAi8kqntHJSPiSWQ1o/uZ29VWOmal9YKb6KKGGlCkugaNfAupT7o1qTHqdJvNQ7S0su5rO6qRFCjP8fxtw==}
-
   object-assign@4.1.1:
     resolution: {integrity: sha512-rJgTQnkUnH1sFw8yT6VSU3zD3sWmu6sZhIseY8VX+GRu3P6F7Fu+JNDoXfklElbLJSnc3FUQHVe4cU5hj+BcUg==}
     engines: {node: '>=0.10.0'}
@@ -3758,11 +3693,6 @@ packages:
   postcss@8.5.32:
     resolution: {integrity: sha512-LJlKCCAUFKOuZxipUdYw1NzIITEsPcgyOG9LkvRJvuKj/bRzbuRY0ARXvL0pWGpsZvn8jku+LMep2eU0seHp8g==}
     engines: {node: ^10 || ^12 || >=14}
-
-  preline@5.0.0:
-    resolution: {integrity: sha512-c1ayJoroSzIUcfsBLHrEbYV1NCjCNvjd8l1e/H5EPNQWzZiK1I36eUBgpR+J9scfrf1+1OnXt8Y+EBYUG640cQ==}
-    engines: {node: 22.22.2, npm: '>=10'}
-    hasBin: true
 
   prelude-ls@1.2.1:
     resolution: {integrity: sha512-vkcDPrRZo1QZLbn5RLGPpg/WmIQ65qoWWhcGKf/b5eplkkarX0m9z8ppCat4mlOqUsWpyNuYgO3VRyrYHSzX5g==}
@@ -4293,9 +4223,6 @@ packages:
     resolution: {integrity: sha512-TQ5pAGhd5whStmqWvYF4OjQROlmv9SMFVt37qoCBdqRffuuklWYQlCNnEs2ZaIBD1kZRNnikiZOS1eqgkar0iw==}
     engines: {node: '>= 0.10'}
 
-  vanilla-calendar-pro@3.4.0:
-    resolution: {integrity: sha512-HLWjzHOWvMIrjI77tXK5bYzp0s5TeBSrZC247STjcTAdWI7kqEwWT6Xvu20vqdwzF498H1Da8l4WpdgVIGtc1Q==}
-
   vary@1.1.2:
     resolution: {integrity: sha512-BNGbWLfd0eUPabhkXUVm0j8uuvREyTh5ovRa/dyow/BqAbZJyC+5fU+IzQOzmAKzYqYRAISoRhdQr3eIZ/PXqg==}
     engines: {node: '>= 0.8'}
@@ -4696,17 +4623,6 @@ snapshots:
     dependencies:
       '@eslint/core': 0.17.0
       levn: 0.4.1
-
-  '@floating-ui/core@1.8.0':
-    dependencies:
-      '@floating-ui/utils': 0.2.12
-
-  '@floating-ui/dom@1.8.0':
-    dependencies:
-      '@floating-ui/core': 1.8.0
-      '@floating-ui/utils': 0.2.12
-
-  '@floating-ui/utils@0.2.12': {}
 
   '@humanfs/core@0.19.2':
     dependencies:
@@ -5373,25 +5289,6 @@ snapshots:
 
   '@standard-schema/spec@1.1.0': {}
 
-  '@svgdotjs/svg.draggable.js@3.0.7(@svgdotjs/svg.js@3.2.8)':
-    dependencies:
-      '@svgdotjs/svg.js': 3.2.8
-
-  '@svgdotjs/svg.filter.js@3.0.10(@svgdotjs/svg.js@3.2.8)':
-    dependencies:
-      '@svgdotjs/svg.js': 3.2.8
-
-  '@svgdotjs/svg.js@3.2.8': {}
-
-  '@svgdotjs/svg.resize.js@2.0.7(@svgdotjs/svg.js@3.2.8)(@svgdotjs/svg.select.js@4.0.5(@svgdotjs/svg.js@3.2.8))':
-    dependencies:
-      '@svgdotjs/svg.js': 3.2.8
-      '@svgdotjs/svg.select.js': 4.0.5(@svgdotjs/svg.js@3.2.8)
-
-  '@svgdotjs/svg.select.js@4.0.5(@svgdotjs/svg.js@3.2.8)':
-    dependencies:
-      '@svgdotjs/svg.js': 3.2.8
-
   '@swc/helpers@0.5.23':
     dependencies:
       tslib: 2.8.1
@@ -5494,8 +5391,6 @@ snapshots:
       '@types/node': 20.19.43
 
   '@types/cookiejar@2.1.5': {}
-
-  '@types/culori@4.0.1': {}
 
   '@types/deep-eql@4.0.2': {}
 
@@ -5801,8 +5696,6 @@ snapshots:
       convert-source-map: 2.0.0
       tinyrainbow: 3.2.0
 
-  '@yr/monotone-cubic-spline@1.0.3': {}
-
   accepts@2.0.0:
     dependencies:
       mime-types: 3.0.2
@@ -5849,15 +5742,6 @@ snapshots:
   ansis@4.4.0: {}
 
   anynum@1.0.1: {}
-
-  apexcharts@4.7.0:
-    dependencies:
-      '@svgdotjs/svg.draggable.js': 3.0.7(@svgdotjs/svg.js@3.2.8)
-      '@svgdotjs/svg.filter.js': 3.0.10(@svgdotjs/svg.js@3.2.8)
-      '@svgdotjs/svg.js': 3.2.8
-      '@svgdotjs/svg.resize.js': 2.0.7(@svgdotjs/svg.js@3.2.8)(@svgdotjs/svg.select.js@4.0.5(@svgdotjs/svg.js@3.2.8))
-      '@svgdotjs/svg.select.js': 4.0.5(@svgdotjs/svg.js@3.2.8)
-      '@yr/monotone-cubic-spline': 1.0.3
 
   append-field@1.0.0: {}
 
@@ -6164,8 +6048,6 @@ snapshots:
 
   csv-parse@7.0.3: {}
 
-  culori@4.0.2: {}
-
   damerau-levenshtein@1.0.8: {}
 
   data-uri-to-buffer@4.0.1: {}
@@ -6187,15 +6069,6 @@ snapshots:
       call-bound: 1.0.4
       es-errors: 1.3.0
       is-data-view: 1.0.2
-
-  datatables.net-dt@2.3.8:
-    dependencies:
-      datatables.net: 2.3.8
-      jquery: 4.0.0
-
-  datatables.net@2.3.8:
-    dependencies:
-      jquery: 4.0.0
 
   debug@3.2.7(supports-color@7.2.0):
     dependencies:
@@ -6268,8 +6141,6 @@ snapshots:
   dotenv@18.0.9: {}
 
   doublearray@0.0.2: {}
-
-  dropzone@6.3.5: {}
 
   dunder-proto@1.0.1:
     dependencies:
@@ -7205,8 +7076,6 @@ snapshots:
 
   jiti@2.7.0: {}
 
-  jquery@4.0.0: {}
-
   js-tokens@10.0.0: {}
 
   js-tokens@4.0.0: {}
@@ -7605,8 +7474,6 @@ snapshots:
 
   node-releases@2.0.60: {}
 
-  nouislider@15.8.1: {}
-
   object-assign@4.1.1: {}
 
   object-inspect@1.13.4: {}
@@ -7791,18 +7658,6 @@ snapshots:
       nanoid: 3.3.20
       picocolors: 1.1.1
       source-map-js: 1.2.2
-
-  preline@5.0.0:
-    dependencies:
-      '@floating-ui/dom': 1.8.0
-      '@types/culori': 4.0.1
-      apexcharts: 4.7.0
-      culori: 4.0.2
-      datatables.net: 2.3.8
-      datatables.net-dt: 2.3.8
-      dropzone: 6.3.5
-      nouislider: 15.8.1
-      vanilla-calendar-pro: 3.4.0
 
   prelude-ls@1.2.1: {}
 
@@ -8456,8 +8311,6 @@ snapshots:
   util-deprecate@1.0.2: {}
 
   validator@13.15.35: {}
-
-  vanilla-calendar-pro@3.4.0: {}
 
   vary@1.1.2: {}
 

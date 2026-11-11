@@ -23,6 +23,10 @@ export class HanVietCheckLog {
   @Prop({ type: Boolean, default: false }) finished: boolean;
   @Prop({ type: [{ stt: Number, word: String, oldHanViet: String, newHanViet: String, _id: false }], default: [] })
   changes: HanVietChange[];
+
+  /** Latest phát âm / nghĩa checks: the cards flagged "cần xem xét" with the warning text. */
+  @Prop({ type: Object }) reading?: Record<string, unknown>;
+  @Prop({ type: Object }) back?: Record<string, unknown>;
 }
 
 export type HanVietCheckLogDocument = HydratedDocument<HanVietCheckLog>;

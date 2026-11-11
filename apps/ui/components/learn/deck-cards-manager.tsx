@@ -151,14 +151,17 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
   const canWrite = mode === "admin" || (deck !== null && !deck.shared);
   const [rechecking, setRechecking] = useState<ReviewField | null>(null);
   const [recheckMsg, setRecheckMsg] = useState<string | null>(null);
+  // Off: cards unchanged since their last check are skipped (fast). On: judge every card again.
+  const [recheckForce, setRecheckForce] = useState(false);
   const reload = useCallback(() => setVersion((v) => v + 1), []);
   /** Re-check one field (Hán Việt / reading / meaning) of every card → refreshes that kind of "Cần xem xét" warning. */
   async function recheckAll(field: ReviewField) {
     setRechecking(field);
     setRecheckMsg(null);
     try {
-      const res = await fetch(`/api/flashcards/decks/${deckId}/recheck?field=${field}`, { method: "POST" });
-      if (!res.ok) setRecheckMsg("Không bắt đầu kiểm tra lại được. Thử lại sau.");
+      const res = await fetch(`/api/flashcards/decks/${deckId}/recheck?field=${field}${recheckForce ? "&force=1" : ""}`, { method: "POST" });
+      if (res.status === 409) setRecheckMsg("Đang có một lần kiểm tra khác chạy — đợi nó xong rồi thử lại.");
+      else if (!res.ok) setRecheckMsg("Không bắt đầu kiểm tra lại được. Thử lại sau.");
       else window.dispatchEvent(new Event(RECHECK_STARTED_EVENT)); // progress shows bottom-right, on any page
     } catch {
       setRecheckMsg("Không bắt đầu kiểm tra lại được. Thử lại sau.");
@@ -292,6 +295,48 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
     setAllMatching(false);
   }
 
+  /** A reading warning being turned into a second card: which card, and the meaning typed for the new reading. */
+  const [split, setSplit] = useState<{ cardId: string; meaning: string; busy: boolean } | null>(null);
+
+  /** Same meaning, several readings: keep the suggested reading beside the current one (きのう / さくじつ). */
+  async function addAltReading(card: PageCard, fix: string) {
+    const merged = [card.reading ?? "", fix].filter(Boolean).join(" / ");
+    const res = await fetch(`/api/flashcards/cards/${card._id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reading: merged, resolve: "reading", learnReading: true }),
+    }).catch(() => null);
+    if (!res?.ok) {
+      setError("Không thêm được cách đọc phụ");
+      return;
+    }
+    reload();
+  }
+
+  /** A different meaning per reading: a new card with the same word, the suggested reading and its own meaning. */
+  async function splitCard(card: PageCard, fix: string, meaning: string) {
+    const back = meaning.trim();
+    if (!back) return;
+    setSplit((s) => (s ? { ...s, busy: true } : s));
+    const created = await fetch("/api/flashcards/cards", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ deckId, front: card.front, back, reading: fix, tags: card.tags ?? [], ...(card.partOfSpeech ? { partOfSpeech: card.partOfSpeech } : {}) }),
+    }).catch(() => null);
+    if (!created?.ok) {
+      setSplit(null);
+      setError(created?.status === 409 ? "Đã có thẻ giống hệt trong bộ này" : "Không tách được thẻ mới");
+      return;
+    }
+    const fresh = (await created.json().catch(() => null)) as { _id?: string } | null;
+    // Both readings are now confirmed, each with its own meaning (the new card also gets the word's Hán Việt).
+    const settle = (id: string, extra: object) =>
+      fetch(`/api/flashcards/cards/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ resolve: "reading", ...extra }) }).catch(() => null);
+    await Promise.all([settle(card._id, {}), fresh?._id ? settle(fresh._id, card.hanViet ? { hanViet: card.hanViet } : {}) : null]);
+    setSplit(null);
+    reload();
+  }
+
   /** Apply the suggested fix of one import warning, or just dismiss it (Bỏ qua). */
   async function resolveIssue(cardId: string, item: { field: "hanViet" | "reading" | "back"; fix?: string }, apply: boolean) {
     const res = await fetch(`/api/flashcards/cards/${cardId}`, {
@@ -392,7 +437,27 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
                   )}
                 </div>
                 {canWrite && (
-                  <div className="flex shrink-0 gap-2">
+                  <div className="flex shrink-0 flex-wrap gap-2">
+                    {it.field === "reading" && it.fix && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => void addAltReading(card, it.fix!)}
+                          title="Cùng nghĩa, nhiều cách đọc: ghi cả hai cách đọc trên thẻ này"
+                          className="inline-flex items-center rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-1.5 text-xs font-medium hover:bg-[var(--layer-hover)]"
+                        >
+                          ＋ Cách đọc phụ
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setSplit({ cardId: card._id, meaning: "", busy: false })}
+                          title="Mỗi cách đọc một nghĩa: tạo thẻ mới với cách đọc gợi ý"
+                          className="inline-flex items-center rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-1.5 text-xs font-medium hover:bg-[var(--layer-hover)]"
+                        >
+                          ⎘ Tách thẻ mới
+                        </button>
+                      </>
+                    )}
                     {it.fix && (
                       <button
                         type="button"
@@ -410,6 +475,32 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
                       Bỏ qua
                     </button>
                   </div>
+                )}
+                {canWrite && it.field === "reading" && it.fix && split?.cardId === card._id && (
+                  <form
+                    className="flex w-full flex-wrap items-center gap-2 text-sm"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      void splitCard(card, it.fix!, split.meaning);
+                    }}
+                  >
+                    <span className="text-xs text-[var(--muted-foreground)]">
+                      Thẻ mới: <b>{card.front}</b> 【{it.fix}】 — nghĩa:
+                    </span>
+                    <input
+                      autoFocus
+                      value={split.meaning}
+                      onChange={(e) => setSplit({ ...split, meaning: e.target.value })}
+                      placeholder="Nghĩa của cách đọc này"
+                      className="min-w-[12rem] flex-1 rounded-lg border border-[var(--border)] bg-[var(--background)] px-2 py-1 text-sm"
+                    />
+                    <button type="submit" disabled={split.busy || !split.meaning.trim()} className="rounded-lg bg-[#16a34a] px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50">
+                      {split.busy ? "Đang tạo…" : "Tạo thẻ"}
+                    </button>
+                    <button type="button" onClick={() => setSplit(null)} className="rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs text-[var(--muted-foreground)]">
+                      Hủy
+                    </button>
+                  </form>
                 )}
               </li>
             );
@@ -773,6 +864,12 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
                 {rechecking === field ? "Đang bắt đầu…" : `↻ ${checkLabel}`}
               </button>
             ))}
+          {canWrite && (
+            <label className="flex items-center gap-1.5 text-xs text-[var(--muted-foreground)]" title="Bỏ chọn: chỉ kiểm tra thẻ mới hoặc thẻ đã sửa từ lần kiểm tra trước (nhanh hơn)">
+              <input type="checkbox" checked={recheckForce} onChange={(e) => setRecheckForce(e.target.checked)} />
+              Kiểm tra lại cả thẻ đã kiểm tra
+            </label>
+          )}
           {canWrite && (
             <Link href={`${mode === "admin" ? "/admin/decks" : "/learn/decks"}/${deckId}/log`} className={btn} title="Xem những từ Hán Việt đã được cập nhật ở lần kiểm tra gần nhất">
               📋 Log Hán tự

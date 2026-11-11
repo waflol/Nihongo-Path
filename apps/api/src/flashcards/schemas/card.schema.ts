@@ -103,6 +103,13 @@ export class Flashcard {
   @Prop({ type: [String], default: [] })
   reviewIssues?: string[];
 
+  /** Fingerprints of what a whole-deck re-check last judged (front|reading, front|back); same again = skip next time. */
+  @Prop({ type: String, default: "" })
+  readingChecked?: string;
+
+  @Prop({ type: String, default: "" })
+  backChecked?: string;
+
   /** Position in the source list (STT) — keeps an imported file's order. */
   @Prop({ type: Number })
   order?: number;

@@ -61,10 +61,6 @@ export class FlashcardDeck {
   @Prop({ type: Boolean, default: false })
   examplePaused?: boolean;
 
-  /** Publish the deck once its examples are generated (new deck from an import). */
-  @Prop({ type: Boolean, default: false })
-  publishWhenReady?: boolean;
-
   // Managed by `@Schema({ timestamps: true })` — type-only, see user.schema.ts.
   createdAt: Date;
   updatedAt: Date;

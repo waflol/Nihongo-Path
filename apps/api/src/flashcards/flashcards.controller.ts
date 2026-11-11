@@ -64,6 +64,8 @@ class PageCardsQuery {
 /** Which kind of warning a whole-deck re-check judges (all three when omitted). */
 class RecheckQuery {
   @IsOptional() @IsIn(["hanViet", "reading", "back"]) field?: "hanViet" | "reading" | "back";
+  /** "1" / "true": judge every card again, even those whose word, reading and meaning are unchanged since the last check. */
+  @IsOptional() @IsIn(["1", "true", "0", "false"]) force?: string;
 }
 
 class CardFilterDto {
@@ -412,7 +414,7 @@ export class FlashcardsController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: "Re-check Hán Việt, reading or meaning (`field`, all when omitted) over the whole deck → “Cần xem xét” warnings" })
   recheck(@CurrentUser() caller: AuthUser, @Param("id") id: string, @Query() query: RecheckQuery) {
-    return this.flashcards.startRecheck(caller, id, (items) => this.ai.verifyCards(items), query.field ?? "all");
+    return this.flashcards.startRecheck(caller, id, (items) => this.ai.verifyCards(items), query.field ?? "all", query.force === "1" || query.force === "true");
   }
 
   @Get("decks/:id/han-viet-log")

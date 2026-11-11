@@ -144,7 +144,6 @@ export function ImportWizard({ learner = false }: { learner?: boolean }) {
     const [result, setResult] = useState<ConfirmResult | null>(null);
   // true once the row-by-row preview is on screen (step 3); false = still mapping columns (step 2).
   const [reviewed, setReviewed] = useState(false);
-  const [dupPolicy, setDupPolicy] = useState<"skip" | "overwrite">("skip");
 
   const [error, setError] = useState<string | null>(null);
   const [running, setRunning] = useState<
@@ -255,7 +254,6 @@ export function ImportWizard({ learner = false }: { learner?: boolean }) {
         setFile(d.file);
         setDeckId(d.deckId);
         setMapping(d.mapping);
-        setDupPolicy(d.dupPolicy ?? "skip");
         if (d.previewed || wantedTask) restoreNow.current = { mapping: d.mapping };
       }
       draftReady.current = true;
@@ -272,9 +270,9 @@ export function ImportWizard({ learner = false }: { learner?: boolean }) {
   useEffect(() => {
     if (!draftReady.current) return;
     if (file && !file.name.toLowerCase().endsWith(".pdf") && !result) {
-      void saveImportDraft({ file, deckId, mapping, previewed: reviewed, dupPolicy });
+      void saveImportDraft({ file, deckId, mapping, previewed: reviewed });
     }
-  }, [file, deckId, mapping, reviewed, dupPolicy, result]);
+  }, [file, deckId, mapping, reviewed, result]);
 
   useEffect(() => {
     if (!jobId || job?.status !== "running") return;
@@ -539,7 +537,6 @@ export function ImportWizard({ learner = false }: { learner?: boolean }) {
       "mapping",
       JSON.stringify(mappingPayload(mapping)),
     );
-    form.append("duplicatePolicy", dupPolicy);
     if (createdDeckIds.current.has(deckId)) form.append("newDeck", "true");
 
     const res = await fetch("/api/import?action=confirm", {
@@ -592,7 +589,6 @@ export function ImportWizard({ learner = false }: { learner?: boolean }) {
   function resetForm() {
     setPreview(null);
     setReviewed(false);
-    setDupPolicy("skip");
     setFile(null);
     setMapping({});
     setJobId(null);
@@ -921,26 +917,9 @@ export function ImportWizard({ learner = false }: { learner?: boolean }) {
               </span>
               , {preview.duplicateRows} trùng, {preview.errorRows} lỗi
             </h2>
-            <fieldset className="flex flex-wrap items-center gap-3 text-xs text-[var(--muted-foreground)]">
-              <legend className="sr-only">Khi thẻ trùng</legend>
-              <span>Thẻ trùng:</span>
-              {(
-                [
-                  ["skip", "Bỏ qua (giữ thẻ cũ)"],
-                  ["overwrite", "Ghi đè thẻ cũ"],
-                ] as const
-              ).map(([v, l]) => (
-                <label key={v} className="flex items-center gap-1">
-                  <input
-                    type="radio"
-                    name="dup-policy"
-                    checked={dupPolicy === v}
-                    onChange={() => setDupPolicy(v)}
-                  />
-                  {l}
-                </label>
-              ))}
-            </fieldset>
+            <p className="text-xs text-[var(--muted-foreground)]">
+              Thẻ trùng được bỏ qua, thẻ cũ giữ nguyên.
+            </p>
           </div>
 
           <div className="mt-3 overflow-hidden rounded-xl border border-[var(--border)]">
