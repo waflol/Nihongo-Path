@@ -2,8 +2,9 @@
 
 import { useConfirm } from "@/components/learn/use-confirm";
 import Link from "next/link";
+import { logHref } from "@/components/learn/log-tabs";
 import { isJlptLevel } from "@/components/learn/level-select";
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { Fragment, useCallback, useEffect, useState, type FormEvent } from "react";
 import { CardTile, HanVietToggle } from "@/components/learn/card-tile";
 import { CardEditForm } from "@/components/learn/card-edit-form";
 import { ExampleFields, cleanExampleInputs, type ExampleInput } from "@/components/learn/example-fields";
@@ -15,7 +16,7 @@ import { LevelSelect } from "@/components/learn/level-select";
 import { CategoryChip } from "@/components/learn/category-filter";
 import { useHanVietPref } from "@/lib/use-han-viet-pref";
 import { AiUnusedExamples } from "@/components/learn/ai-unused-examples";
-import { RetryExamplesButton } from "@/components/learn/deck-processing";
+import { startExamples } from "@/components/learn/deck-processing";
 
 /**
  * Full-page card manager for one deck: search, filter by tag / "no example",
@@ -153,13 +154,47 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
   const [recheckMsg, setRecheckMsg] = useState<string | null>(null);
   // Off: cards unchanged since their last check are skipped (fast). On: judge every card again.
   const [recheckForce, setRecheckForce] = useState(false);
-  const reload = useCallback(() => setVersion((v) => v + 1), []);
+  // The user's own pick for AI runs (meaning / reading checks, examples): one model, and cards per request.
+  const [aiServices, setAiServices] = useState<{ id: string; label: string; model: string }[]>([]);
+  const [aiService, setAiService] = useState("");
+  const [aiBatch, setAiBatch] = useState("");
+  const [examplesBusy, setExamplesBusy] = useState(false);
+  useEffect(() => {
+    if (!canWrite) return;
+    let live = true;
+    // Admin-only list: for other users it simply fails and the picker stays hidden (automatic model).
+    fetch("/api/flashcards/admin/ai/services", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : []))
+      .then((list: { id: string; label: string; model: string; enabled: boolean; translationOnly?: boolean; authorized?: boolean; cli?: boolean }[]) => {
+        if (live && Array.isArray(list)) setAiServices(list.filter((x) => x.enabled && !x.translationOnly && (!x.cli || x.authorized)));
+      })
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [canWrite]);
+  const aiQuery = () => {
+    const q = new URLSearchParams();
+    if (aiService) q.set("serviceId", aiService);
+    const n = Math.floor(Number(aiBatch));
+    if (n > 0) q.set("batch", String(Math.min(50, n)));
+    return q.toString();
+  };
+  async function generateExamples() {
+    setExamplesBusy(true);
+    setRecheckMsg(null);
+    const remaining = await startExamples(deckId, aiQuery());
+    setExamplesBusy(false);
+    setRecheckMsg(remaining === null ? "Không tạo được ví dụ — thử lại sau." : remaining === 0 ? "Mọi thẻ đều đã có ví dụ." : null);
+    if (remaining !== null) reload();
+  }
   /** Re-check one field (Hán Việt / reading / meaning) of every card → refreshes that kind of "Cần xem xét" warning. */
   async function recheckAll(field: ReviewField) {
     setRechecking(field);
     setRecheckMsg(null);
+    const ai = aiQuery();
     try {
-      const res = await fetch(`/api/flashcards/decks/${deckId}/recheck?field=${field}${recheckForce ? "&force=1" : ""}`, { method: "POST" });
+      const res = await fetch(`/api/flashcards/decks/${deckId}/recheck?field=${field}${recheckForce ? "&force=1" : ""}${ai ? `&${ai}` : ""}`, { method: "POST" });
       if (res.status === 409) setRecheckMsg("Đang có một lần kiểm tra khác chạy — đợi nó xong rồi thử lại.");
       else if (!res.ok) setRecheckMsg("Không bắt đầu kiểm tra lại được. Thử lại sau.");
       else window.dispatchEvent(new Event(RECHECK_STARTED_EVENT)); // progress shows bottom-right, on any page
@@ -401,21 +436,29 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
 
   const FIELD_LABEL = { hanViet: "Hán Việt", reading: "Cách đọc", back: "Nghĩa" } as const;
 
-  const reviewNote = (card: PageCard) => {
+  const reviewNote = (card: PageCard, compact = false) => {
     const all = card.reviewItems ?? (card.reviewIssues ?? []).map((text) => ({ text, field: "back" as const, fix: undefined }));
     // Filtering on one kind of warning (Hán Việt / cách đọc / nghĩa) shows only that kind's lines.
     const items = review ? all.filter((it) => it.field === review) : all;
     if (items.length === 0) return null;
     return (
-      <div className="mx-4 mb-4 mt-1 overflow-hidden rounded-xl border border-[#f59e0b]/40 bg-[#f59e0b]/10">
-        <div className="flex items-center gap-2 border-b border-[#f59e0b]/25 px-3 py-1.5 text-xs font-semibold text-[#b45309] dark:text-[#fbbf24]">
-          <span aria-hidden="true">⚠</span> Cần xem xét
-        </div>
-        <ul className="divide-y divide-[#f59e0b]/20">
+      <div
+        className={
+          compact
+            ? "mb-2 overflow-hidden rounded-lg border-l-[3px] border-[#f59e0b] bg-[#f59e0b]/[0.07]"
+            : "mx-4 mb-4 mt-1 overflow-hidden rounded-xl border border-[#f59e0b]/40 bg-[#f59e0b]/10"
+        }
+      >
+        {!compact && (
+          <div className="flex items-center gap-2 border-b border-[#f59e0b]/25 px-3 py-1.5 text-xs font-semibold text-[#b45309] dark:text-[#fbbf24]">
+            <span aria-hidden="true">⚠</span> Cần xem xét
+          </div>
+        )}
+        <ul className="divide-y divide-[#f59e0b]/15">
           {items.map((it) => {
             const current = it.field === "hanViet" ? card.hanViet : it.field === "reading" ? card.reading : card.back;
             return (
-              <li key={it.text} className="flex flex-wrap items-center gap-x-4 gap-y-2 px-3 py-2.5">
+              <li key={it.text} className={"flex flex-wrap items-center gap-x-4 gap-y-2 px-3 " + (compact ? "py-2" : "py-2.5")}>
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="rounded-md bg-[#f59e0b]/20 px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-[#b45309] dark:text-[#fbbf24]">
@@ -437,7 +480,7 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
                   )}
                 </div>
                 {canWrite && (
-                  <div className="flex shrink-0 flex-wrap gap-2">
+                  <div className="ml-auto flex shrink-0 flex-wrap justify-end gap-2">
                     {it.field === "reading" && it.fix && (
                       <>
                         <button
@@ -817,14 +860,15 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
 
       {/* Filters */}
       <div className="mt-5 space-y-3 rounded-2xl border border-[var(--border)] bg-[var(--background-1)] p-4">
+        <input
+          type="search"
+          value={qInput}
+          onChange={(e) => setQInput(e.target.value)}
+          placeholder="Tìm theo từ, nghĩa, cách đọc, Hán Việt…"
+          className={`${inputClass} w-full`}
+        />
         <div className="flex flex-wrap items-center gap-2">
-          <input
-            type="search"
-            value={qInput}
-            onChange={(e) => setQInput(e.target.value)}
-            placeholder="Tìm theo từ, nghĩa, cách đọc, Hán Việt…"
-            className={`${inputClass} min-w-56 flex-1`}
-          />
+          <span className="mr-1 text-xs font-medium text-[var(--muted-foreground)]">Lọc:</span>
           <button
             type="button"
             aria-pressed={missing}
@@ -851,8 +895,12 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
               </button>
             );
           })}
-          {canWrite &&
-            CHECKS.map(({ field, checkLabel, hint }) => (
+        </div>
+        {canWrite && (
+        <div className="space-y-2 border-t border-[var(--border)] pt-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="mr-1 text-xs font-medium text-[var(--muted-foreground)]">Công cụ:</span>
+          {CHECKS.map(({ field, checkLabel, hint }) => (
               <button
                 key={`check-${field}`}
                 type="button"
@@ -864,21 +912,55 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
                 {rechecking === field ? "Đang bắt đầu…" : `↻ ${checkLabel}`}
               </button>
             ))}
-          {canWrite && (
-            <label className="flex items-center gap-1.5 text-xs text-[var(--muted-foreground)]" title="Bỏ chọn: chỉ kiểm tra thẻ mới hoặc thẻ đã sửa từ lần kiểm tra trước (nhanh hơn)">
-              <input type="checkbox" checked={recheckForce} onChange={(e) => setRecheckForce(e.target.checked)} />
-              Kiểm tra lại cả thẻ đã kiểm tra
-            </label>
-          )}
-          {canWrite && (
-            <Link href={`${mode === "admin" ? "/admin/decks" : "/learn/decks"}/${deckId}/log`} className={btn} title="Xem những từ Hán Việt đã được cập nhật ở lần kiểm tra gần nhất">
-              📋 Log Hán tự
-            </Link>
-          )}
-          {canWrite && data && data.missingExamples > 0 && (
-            <RetryExamplesButton deckId={deckId} className={btn} onChanged={reload} />
+          <label className="flex items-center gap-1.5 text-xs text-[var(--muted-foreground)]" title="Bỏ chọn: chỉ kiểm tra thẻ mới hoặc thẻ đã sửa từ lần kiểm tra trước (nhanh hơn)">
+            <input type="checkbox" checked={recheckForce} onChange={(e) => setRecheckForce(e.target.checked)} />
+            Kiểm tra lại cả thẻ đã kiểm tra
+          </label>
+          {data && data.missingExamples > 0 && (
+            <button type="button" className={btn} disabled={examplesBusy} onClick={() => void generateExamples()} title="Tạo ví dụ cho những thẻ chưa có (Tatoeba; không có thì nhờ AI)">
+              {examplesBusy ? "Đang chạy…" : "✨ Tạo ví dụ"}
+            </button>
           )}
         </div>
+        <div className="flex flex-wrap items-center gap-2 text-xs text-[var(--muted-foreground)]">
+          <span className="mr-1 font-medium">AI cho nghĩa, phát âm, ví dụ:</span>
+          {aiServices.length > 0 && (
+            <label className="flex items-center gap-1.5">
+              Model
+              <select value={aiService} onChange={(e) => setAiService(e.target.value)} className={`${inputClass} !w-auto max-w-56 py-1`}>
+                <option value="">Tự động (theo ưu tiên)</option>
+                {aiServices.map((x) => (
+                  <option key={x.id} value={x.id}>
+                    {x.label || x.model}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          <label className="flex items-center gap-1.5" title="Số thẻ gửi cho AI trong mỗi lần gọi (1–50). Để trống: 10 thẻ.">
+            Số thẻ mỗi lần
+            <input
+              type="number"
+              min={1}
+              max={50}
+              inputMode="numeric"
+              value={aiBatch}
+              onChange={(e) => setAiBatch(e.target.value)}
+              placeholder="10"
+              className={`${inputClass} !w-24 py-1`}
+            />
+          </label>
+          <span className="ml-auto flex flex-wrap items-center gap-x-2">
+            <span className="font-medium">Log:</span>
+            {(["hanViet", "reading", "back", "examples"] as const).map((f) => (
+              <Link key={f} href={logHref(mode === "admin" ? "/admin/decks" : "/learn/decks", deckId, f)} className="text-[var(--primary)] hover:underline">
+                {{ hanViet: "Hán tự", reading: "Phát âm", back: "Nghĩa", examples: "Ví dụ" }[f]}
+              </Link>
+            ))}
+          </span>
+        </div>
+        </div>
+        )}
         {recheckMsg && <p role="status" className="text-sm text-[var(--muted-foreground)]">{recheckMsg}</p>}
         {canWrite && review && total > 0 && (
           <div className="flex flex-wrap items-center gap-2 rounded-xl border border-[#f59e0b]/40 bg-[#f59e0b]/10 px-3 py-2 text-sm">
@@ -1015,8 +1097,9 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
                 </tr>
               </thead>
               <tbody>
-                {items.map((card, i) =>
-                  editingId === card._id ? (
+                {items.map((card, i) => {
+                  const note = editingId === card._id ? null : reviewNote(card, true);
+                  return editingId === card._id ? (
                     <tr key={card._id} className="border-t border-[var(--border)]">
                       <td colSpan={20} className="bg-[var(--background)] p-4">
                         <CardEditForm
@@ -1032,7 +1115,8 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
                       </td>
                     </tr>
                   ) : (
-                    <tr key={card._id} className="border-t border-[var(--border)] align-top hover:bg-[var(--layer-hover)]">
+                    <Fragment key={card._id}>
+                    <tr className={"border-t border-[var(--border)] align-top hover:bg-[var(--layer-hover)]" + (note ? " bg-[#f59e0b]/5" : "")}>
                       {canWrite && (
                         <td className="px-3 py-2">
                           <input
@@ -1056,7 +1140,7 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
                       <td className="px-3 py-2 text-xs text-[var(--muted-foreground)]">{(page - 1) * PAGE_SIZE + i + 1}</td>
                       <td className="px-3 py-2 text-base font-semibold text-[var(--foreground)]">
                         {card.front}
-                        {reviewNote(card)}
+                        {note && <span className="ml-2 align-middle text-xs text-[#b45309] dark:text-[#fbbf24]" title="Có cảnh báo cần xem xét">⚠</span>}
                       </td>
                       <td className="px-3 py-2 text-[var(--foreground)]">{card.reading ?? ""}</td>
                       {showHanViet && <td className="px-3 py-2 text-[var(--foreground)]">{card.hanViet ?? ""}</td>}
@@ -1105,8 +1189,16 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
                         </td>
                       )}
                     </tr>
-                  ),
-                )}
+                    {note && (
+                      <tr className="bg-[#f59e0b]/5">
+                        <td colSpan={20} className="p-0">
+                          <div className="pb-1 pl-4 pr-3 sm:pl-14">{note}</div>
+                        </td>
+                      </tr>
+                    )}
+                    </Fragment>
+                  );
+                })}
               </tbody>
             </table>
           </div>
