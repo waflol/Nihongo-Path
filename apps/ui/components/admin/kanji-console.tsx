@@ -884,13 +884,29 @@ export function KanjiAdminConsole({
       </div>
 
       {error && (
-        <div className="mt-4 rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-2.5 text-sm text-red-600 dark:text-red-400">
-          {error}
+        <div className="mt-4 flex items-start gap-3 rounded-xl border border-red-500/40 bg-red-500/10 text-red-600 dark:text-red-400 px-4 py-2.5 text-sm" role="status">
+          <span className="min-w-0 flex-1">{error}</span>
+          <button
+            type="button"
+            onClick={() => setError(null)}
+            aria-label="Đóng thông báo"
+            className="-mr-1 shrink-0 rounded-md px-1.5 text-base leading-none opacity-60 transition-opacity hover:opacity-100"
+          >
+            ✕
+          </button>
         </div>
       )}
       {notice && (
-        <div className="mt-4 rounded-xl border border-emerald-500/40 bg-emerald-500/10 px-4 py-2.5 text-sm text-emerald-700 dark:text-emerald-300">
-          {notice}
+        <div className="mt-4 flex items-start gap-3 rounded-xl border border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 px-4 py-2.5 text-sm" role="status">
+          <span className="min-w-0 flex-1">{notice}</span>
+          <button
+            type="button"
+            onClick={() => setNotice(null)}
+            aria-label="Đóng thông báo"
+            className="-mr-1 shrink-0 rounded-md px-1.5 text-base leading-none opacity-60 transition-opacity hover:opacity-100"
+          >
+            ✕
+          </button>
         </div>
       )}
 
