@@ -49,5 +49,8 @@ export function validateBaseUrl(raw: string | undefined): string {
   if (u.protocol === "http:" && !isLocalHost(host)) {
     throw new UnprocessableEntityException("Địa chỉ công khai phải dùng https:// (http chỉ cho máy nội bộ / localhost)");
   }
+  // A bare host (e.g. `http://192.168.1.220:11434`) is Ollama / LM Studio's root:
+  // their OpenAI-compatible API lives under `/v1`.
+  if (u.pathname === "/") u.pathname = "/v1";
   return u.toString().replace(/\/+$/, "");
 }

@@ -550,6 +550,12 @@ export class AiServicesService {
     if (!key && !provider.publicModels) {
       throw new UnprocessableEntityException("Nhập khoá API để tải danh sách mô hình");
     }
+    // Ollama lists its installed models at `/api/tags` (the OpenAI-compatible
+    // `/v1/models` is a subset on older versions). Try it first for custom servers.
+    if (provider.custom && provider.kind === "openai") {
+      const tags = await this.listOllamaTags(provider.baseUrl, key);
+      if (tags) return tags;
+    }
     const isGemini = provider.kind === "gemini";
     const url = isGemini ? `${provider.baseUrl}/models?pageSize=200` : `${provider.baseUrl}/models`;
     const headers: Record<string, string> = { Accept: "application/json" };
@@ -580,6 +586,33 @@ export class AiServicesService {
       );
     }
     return normaliseModels(provider, await res.json().catch(() => ({})));
+  }
+
+  /** Installed models of an Ollama server (`/api/tags`); null when the server is not Ollama. */
+  private async listOllamaTags(baseUrl: string, key: string): Promise<AiModelInfo[] | null> {
+    try {
+      const u = new URL(baseUrl);
+      const url = `${u.origin}${u.pathname.replace(/\/v1\/?$/, "").replace(/\/+$/, "")}/api/tags`;
+      const res = await fetch(url, {
+        headers: { Accept: "application/json", ...(key ? { Authorization: `Bearer ${key}` } : {}) },
+        signal: AbortSignal.timeout(8_000),
+      });
+      if (!res.ok) return null;
+      const j = (await res.json().catch(() => null)) as { models?: { name?: string; model?: string; details?: { parameter_size?: string } }[] } | null;
+      if (!Array.isArray(j?.models)) return null;
+      return j.models
+        .map((m) => ({ id: m.model ?? m.name ?? "", size: m.details?.parameter_size }))
+        .filter((m) => m.id && !/embed|rerank/i.test(m.id))
+        .map((m) => ({
+          id: m.id,
+          tier: "free" as const,
+          basis: "estimate" as const,
+          note: `Đã cài trên máy${m.size ? ` · ${m.size}` : ""}`,
+        }))
+        .sort((a, b) => a.id.localeCompare(b.id));
+    } catch {
+      return null;
+    }
   }
 
   /**

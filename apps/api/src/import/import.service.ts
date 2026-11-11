@@ -1116,18 +1116,30 @@ export class ImportService implements OnApplicationBootstrap {
     } catch {
       /* lookup failed — everything is checked */
     }
-    table.rows.forEach((row, i) => {
+    // Only what the local data cannot settle goes to the AI: a Hán Việt the kanji data
+    // covers (or an earlier verdict settled) and a reading the analyser agrees with are
+    // certain, so they are left out of the request; a card with nothing left is not sent.
+    for (let i = 0; i < table.rows.length; i++) {
+      const row = table.rows[i]!;
       const front = (row[mapping.front] ?? "").trim();
       const extra = extrasByRow[i];
-      if (!front || !extra) return;
+      if (!front || !extra) continue;
       // A meaning the AI itself just wrote is already flagged — only a meaning from the file is checked.
       const meaning = (row[mapping.back] ?? "").trim();
       const shown = meaning || suggested.get(i) || "";
       const key = ImportService.cardKey(front, extra.reading, extra.hanViet, shown);
-      if (this.cardCheckCache.has(key) || known.has(key) || todo.has(key)) return;
-      if (!extra.reading && !extra.hanViet && !meaning) return;
-      todo.set(key, { front, reading: extra.reading, hanViet: extra.hanViet, meaning });
-    });
+      if (this.cardCheckCache.has(key) || known.has(key) || todo.has(key)) continue;
+      if (!extra.reading && !extra.hanViet && !meaning) continue;
+      const given = mapping.hanViet ? (row[mapping.hanViet] ?? "").trim() : "";
+      const hanViet =
+        extra.hanViet && suggestHanViet(front) === "" && !this.hvCache.has(ImportService.hvKey(front, given)) ? extra.hanViet : "";
+      const reading = extra.reading && !(await this.readingConfirmed(front, extra.reading)) ? extra.reading : "";
+      if (!reading && !hanViet && !meaning) {
+        this.cardCheckCache.set(key, []); // everything is settled locally
+        continue;
+      }
+      todo.set(key, { front, reading, hanViet, meaning });
+    }
     const list = [...todo.entries()].slice(0, 600);
     if (list.length === 0) return;
     if (task) Object.assign(task, { phase: "AI đang kiểm tra lại thẻ", done: 0, total: list.length });
@@ -1151,6 +1163,17 @@ export class ImportService implements OnApplicationBootstrap {
         if (got) this.cardCheckCache.set(key, out);
       });
     });
+  }
+
+  /** A given reading the morphological analyser independently produces too: no AI second opinion needed. */
+  private async readingConfirmed(front: string, reading: string): Promise<boolean> {
+    if (!KANJI_RE.test(front)) return false;
+    try {
+      const guess = (await this.morph.analyze(front)).reading;
+      return !!guess && readingVariants(guess).some((g) => readingVariants(reading).includes(g));
+    } catch {
+      return false;
+    }
   }
 
   /** AI verdicts on Hán Việt cells, keyed by "word|given" (so preview and confirm agree). */
