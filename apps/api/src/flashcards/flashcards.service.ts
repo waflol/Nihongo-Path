@@ -1,4 +1,6 @@
-import { checkHanViet, hanVietFits, norm as hvNorm, setKanjiHanViet, suggestHanViet } from "../import/han-viet-suggest.js";
+import { checkHanViet, correctHanVietPartial, hanVietFits, harmonizeHanViet, norm as hvNorm, setKanjiHanViet, suggestHanViet } from "../import/han-viet-suggest.js";
+import { readingFitsKanji } from "../import/kanji-reading.js";
+import { ensureKanjiTables } from "../import/kanji-table.js";
 import { ReadingService, readingVariants } from "./reading.service.js";
 import {
   BadRequestException,
@@ -34,6 +36,19 @@ import type { UserCardProgressDocument } from "../srs/schemas/progress.schema.js
 /** Personal deck write input (the caller's own deck). */
 /** Which card field an import warning is about. */
 export type ReviewField = "hanViet" | "reading" | "back";
+/** Which cards the "Cần xem xét" list shows: every warning, or the ones about one field. */
+export type ReviewFilter = "all" | ReviewField;
+
+/** The field a warning text is about (the wording is written by the import / the checks). */
+export const reviewFieldOf = (t: string): ReviewField => (/^Hán Việt/.test(t) ? "hanViet" : /^cách đọc/.test(t) ? "reading" : "back");
+
+/** Mongo clause selecting the cards with a warning of the given kind. */
+function reviewClause(f: ReviewFilter): Record<string, unknown> {
+  if (f === "hanViet") return { reviewIssues: { $regex: /^Hán Việt/ } };
+  if (f === "reading") return { reviewIssues: { $regex: /^cách đọc/ } };
+  if (f === "back") return { reviewIssues: { $elemMatch: { $not: /^(Hán Việt|cách đọc)/ } } };
+  return { "reviewIssues.0": { $exists: true } };
+}
 
 export interface DeckWriteInput {
   title: string;
@@ -138,18 +153,25 @@ export class FlashcardsService implements OnModuleInit {
    * about and, where one can be worked out, the value that would fix it
    * (Hán Việt from the curated table, reading from the analyser).
    */
+  private ensureKanjiTable(): Promise<void> {
+    return ensureKanjiTables(this.kanji);
+  }
+
   private async reviewItems(c: FlashcardDocument): Promise<{ text: string; field: ReviewField; fix?: string }[]> {
     const out: { text: string; field: ReviewField; fix?: string }[] = [];
     for (const text of c.reviewIssues ?? []) {
       const field: ReviewField = /^Hán Việt/.test(text) ? "hanViet" : /^cách đọc/.test(text) ? "reading" : "back";
       let fix: string | undefined;
       // A warning written by the AI's check carries its own suggestion.
-      const ai = /\(AI gợi ý: (.+)\)$/.exec(text)?.[1];
+      const aiRaw = /\(AI gợi ý: (.+)\)$/.exec(text)?.[1];
+      // Older warnings may carry the ký spelling: show it as kí, like everywhere else.
+      const ai = aiRaw && field === "hanViet" ? harmonizeHanViet(c.front, aiRaw) : aiRaw;
       if (ai) {
         const cur = field === "hanViet" ? c.hanViet : field === "reading" ? c.reading : c.back;
         if (ai !== (cur ?? "") && (field !== "hanViet" || hanVietFits(c.front, ai))) fix = ai;
       } else if (field === "hanViet") {
-        const v = suggestHanViet(c.front);
+        // The whole word from the table, else the syllables the table can vouch for (a kanji it lacks stays as written).
+        const v = suggestHanViet(c.front) || (c.hanViet ? (correctHanVietPartial(c.front, c.hanViet) ?? "") : "");
         if (v && v !== (c.hanViet ?? "")) fix = v;
       } else if (field === "reading" && this.morph) {
         try {
@@ -422,7 +444,7 @@ export class FlashcardsService implements OnModuleInit {
   /** Mongo filter for the card-manager list: text search, one tag, "no example". */
   private cardFilter(
     deckId: string,
-    f: { q?: string; tag?: string; missing?: boolean; card?: string; review?: boolean },
+    f: { q?: string; tag?: string; missing?: boolean; card?: string; review?: ReviewFilter },
   ): Record<string, unknown> {
     const filter: Record<string, unknown> = { deck: new Types.ObjectId(deckId) };
     if (f.card && Types.ObjectId.isValid(f.card)) filter._id = new Types.ObjectId(f.card);
@@ -433,7 +455,7 @@ export class FlashcardsService implements OnModuleInit {
     }
     if (f.tag) filter.tags = f.tag;
     if (f.missing) filter.examples = { $size: 0 };
-    if (f.review) filter["reviewIssues.0"] = { $exists: true };
+    if (f.review) Object.assign(filter, reviewClause(f.review));
     return filter;
   }
 
@@ -445,18 +467,19 @@ export class FlashcardsService implements OnModuleInit {
   async pageCards(
     caller: AuthUser,
     deckId: string,
-    opts: { page: number; pageSize: number; q?: string; tag?: string; missing?: boolean; card?: string; review?: boolean },
+    opts: { page: number; pageSize: number; q?: string; tag?: string; missing?: boolean; card?: string; review?: ReviewFilter },
   ): Promise<{
     items: FlashcardDocument[];
     total: number;
     missingExamples: number;
     needsReview: number;
+    needsReviewBy: Record<ReviewField, number>;
     tags: { tag: string; count: number }[];
   }> {
     await this.getDeck(caller, deckId);
     const filter = this.cardFilter(deckId, opts);
     const deckOid = new Types.ObjectId(deckId);
-    const [items, total, missingExamples, needsReview, tagRows] = await Promise.all([
+    const [items, total, missingExamples, needsReview, byHanViet, byReading, byBack, tagRows] = await Promise.all([
       this.card
         .find(filter)
         .sort({ order: 1, _id: 1 })
@@ -465,7 +488,10 @@ export class FlashcardsService implements OnModuleInit {
         .exec(),
       this.card.countDocuments(filter).exec(),
       this.card.countDocuments({ deck: deckOid, examples: { $size: 0 } }).exec(),
-      this.card.countDocuments({ deck: deckOid, "reviewIssues.0": { $exists: true } }).exec(),
+      this.card.countDocuments({ deck: deckOid, ...reviewClause("all") }).exec(),
+      this.card.countDocuments({ deck: deckOid, ...reviewClause("hanViet") }).exec(),
+      this.card.countDocuments({ deck: deckOid, ...reviewClause("reading") }).exec(),
+      this.card.countDocuments({ deck: deckOid, ...reviewClause("back") }).exec(),
       this.card
         .aggregate<{ _id: string; count: number }>([
           { $match: { deck: deckOid } },
@@ -475,6 +501,7 @@ export class FlashcardsService implements OnModuleInit {
         ])
         .exec(),
     ]);
+    if (items.some((c) => (c.reviewIssues?.length ?? 0) > 0)) await this.ensureKanjiTable();
     return {
       items: await Promise.all(
         items.map(async (c) =>
@@ -486,6 +513,7 @@ export class FlashcardsService implements OnModuleInit {
       total,
       missingExamples,
       needsReview,
+      needsReviewBy: { hanViet: byHanViet, reading: byReading, back: byBack },
       tags: tagRows.map((t) => ({ tag: t._id, count: t.count })),
     };
   }
@@ -850,7 +878,7 @@ export class FlashcardsService implements OnModuleInit {
     if (input.examples !== undefined) cardDoc.examples = cleanExamples(input.examples);
     if (input.tags !== undefined) cardDoc.tags = input.tags;
     // Fixing the meaning / reading, or an explicit "reviewed", closes the import warnings.
-    if (input.hanViet !== undefined) cardDoc.hanViet = input.hanViet.trim();
+    if (input.hanViet !== undefined) cardDoc.hanViet = harmonizeHanViet(input.front ?? cardDoc.front ?? "", input.hanViet.trim());
     if (input.reviewed || (input.back !== undefined && back !== "")) cardDoc.reviewIssues = [];
     // "Bỏ qua" on a reading warning keeps the card's reading: the analyser learns it.
     if (input.resolve === "reading" && input.reading === undefined && cardDoc.reading) {
@@ -949,7 +977,7 @@ export class FlashcardsService implements OnModuleInit {
   /** Background "re-check the whole deck" runs, by deck id (in memory; progress for the floating tracker). */
   private readonly rechecks = new Map<
     string,
-    { deckId: string; owner: string; title: string; status: "running" | "done" | "error"; done: number; total: number; flagged: number; error?: string; cancelled?: boolean }
+    { deckId: string; owner: string; title: string; field: ReviewFilter; status: "running" | "done" | "error"; done: number; total: number; flagged: number; error?: string; cancelled?: boolean }
   >();
 
   /** The caller's re-check runs (running or recently finished). */
@@ -975,15 +1003,16 @@ export class FlashcardsService implements OnModuleInit {
     verify: (
       items: { id: number; word: string; reading: string; hanViet: string; meaning: string }[],
     ) => Promise<Map<number, { reading?: string; hanViet?: string; meaning?: string }> | null>,
+    field: ReviewFilter = "all",
   ) {
     const deck = await this.getDeck(caller, deckId);
     if (deck.shared && !this.isAdmin(caller)) throw new ForbiddenException("Shared decks are admin-managed");
     const key = String(deck._id);
     const running = this.rechecks.get(key);
-    if (running?.status === "running") return { deckId: key, status: running.status, done: running.done, total: running.total, flagged: running.flagged, title: running.title };
-    const job = { deckId: key, owner: caller.sub, title: deck.title, status: "running" as "running" | "done" | "error", done: 0, total: 0, flagged: 0, error: undefined as string | undefined };
+    if (running?.status === "running") return { deckId: key, status: running.status, done: running.done, total: running.total, flagged: running.flagged, title: running.title, field: running.field };
+    const job = { deckId: key, owner: caller.sub, title: deck.title, field, status: "running" as "running" | "done" | "error", done: 0, total: 0, flagged: 0, error: undefined as string | undefined };
     this.rechecks.set(key, job);
-    void this.runRecheck(job, deck._id, verify).catch((e: unknown) => {
+    void this.runRecheck(job, deck._id, verify, field).catch((e: unknown) => {
       job.status = "error";
       job.error = e instanceof Error ? e.message : "Kiểm tra thất bại";
     });
@@ -992,9 +1021,11 @@ export class FlashcardsService implements OnModuleInit {
   }
 
   /**
-   * AI proofreading over a whole deck (reading, Hán Việt, meaning). Old AI
-   * warnings are replaced by the fresh verdicts; warnings from the import
-   * itself are kept.
+   * Re-check one kind of warning over a whole deck (or all three). Hán Việt is judged by the
+   * kanji admin data alone; a reading by the kanji admin data and the analyser, the AI only
+   * when they cannot settle it; a meaning by the AI. The old AI / table warnings of the checked
+   * field are replaced by the fresh verdicts; warnings from the import itself, and every other
+   * field's warnings, are kept.
    */
   private async runRecheck(
     job: { status: "running" | "done" | "error"; done: number; total: number; flagged: number; error?: string; cancelled?: boolean },
@@ -1002,29 +1033,46 @@ export class FlashcardsService implements OnModuleInit {
     verify: (
       items: { id: number; word: string; reading: string; hanViet: string; meaning: string }[],
     ) => Promise<Map<number, { reading?: string; hanViet?: string; meaning?: string }> | null>,
+    only: ReviewFilter,
   ): Promise<void> {
-    // Hán Việt is judged by the kanji data from /admin/kanji — not by the AI.
-    try {
-      const rows = (await this.kanji?.find({ hanViet: { $exists: true, $ne: "" } }, { char: 1, hanViet: 1 }).lean().exec()) ?? [];
-      if (rows.length > 0) setKanjiHanViet(Object.fromEntries(rows.map((r) => [r.char, r.hanViet as string])));
-    } catch {
-      /* the curated table still answers */
-    }
+    await this.ensureKanjiTable();
+    const wants = (f: ReviewField) => only === "all" || only === f;
     const cards = await this.card.find({ deck: deckOid }).sort({ order: 1, _id: 1 }).limit(3000).exec();
     job.total = cards.length;
-    const isAi = (t: string) => /\(AI gợi ý: /.test(t) || /^Hán Việt/.test(t); // both are re-judged here
+    // The warnings this run re-judges (an import warning about a meaning is not one of them).
+    const rejudged = (t: string) => {
+      const f = reviewFieldOf(t);
+      return wants(f) && (f !== "back" || /\(AI gợi ý: /.test(t));
+    };
     for (let i = 0; i < cards.length; i += 15) {
       if (job.cancelled) return;
       const batch = cards.slice(i, i + 15);
-      const got = await verify(
-        batch.map((c, n) => ({
+      // What the AI is still asked: a meaning always; a reading only when the kanji data and the analyser cannot settle it.
+      const askReading: boolean[] = [];
+      for (const c of batch) {
+        const reading = c.reading ?? "";
+        let ask = wants("reading") && !!reading;
+        if (ask && readingVariants(reading).some((r) => readingFitsKanji(c.front, r))) ask = false;
+        if (ask && this.morph) {
+          try {
+            const g = (await this.morph.analyze(c.front.replace(/[（(][^）)]*[）)]/g, ""))).reading;
+            if (g && readingVariants(reading).includes(g)) ask = false;
+          } catch {
+            /* analyser unavailable — ask the AI */
+          }
+        }
+        askReading.push(ask);
+      }
+      const items = batch
+        .map((c, n) => ({
           id: n + 1,
           word: c.front.replace(/[（(][^）)]*[）)]/g, "").trim(),
-          reading: c.reading ?? "",
-          hanViet: c.hanViet ?? "",
-          meaning: c.back ?? "",
-        })),
-      ).catch(() => null);
+          reading: askReading[n] ? (c.reading ?? "") : "",
+          hanViet: "",
+          meaning: wants("back") ? (c.back ?? "") : "",
+        }))
+        .filter((it) => it.reading || it.meaning);
+      const got = items.length === 0 ? new Map<number, { reading?: string; hanViet?: string; meaning?: string }>() : await verify(items).catch(() => null);
       if (job.cancelled) return;
       if (!got) {
         job.status = "error";
@@ -1037,17 +1085,16 @@ export class FlashcardsService implements OnModuleInit {
         const reading = c.reading ?? "";
         const hanViet = c.hanViet ?? "";
         const meaning = c.back ?? "";
-        if (r?.reading && reading && /^[\p{Script=Hiragana}ー]+$/u.test(r.reading) && !readingVariants(reading).includes(r.reading)) {
+        if (askReading[n] && r?.reading && /^[\p{Script=Hiragana}ー]+$/u.test(r.reading) && !readingVariants(reading).includes(r.reading)) {
           out.push(`cách đọc “${reading}” có thể chưa đúng (AI gợi ý: ${r.reading})`);
         }
-        const hvIssue = hanViet ? checkHanViet(c.front, hanViet) : null;
+        const hvIssue = wants("hanViet") && hanViet ? checkHanViet(c.front, hanViet) : null;
         if (hvIssue) out.push(hvIssue);
-        if (r?.meaning && meaning && hvNorm(r.meaning) !== hvNorm(meaning)) {
+        if (wants("back") && r?.meaning && meaning && hvNorm(r.meaning) !== hvNorm(meaning)) {
           out.push(`nghĩa “${meaning}” có thể chưa sát (AI gợi ý: ${r.meaning})`);
         }
-        const kept = (c.reviewIssues ?? []).filter((t) => !isAi(t));
-        const field = (t: string) => (/^Hán Việt/.test(t) ? "hv" : /^cách đọc/.test(t) ? "rd" : "bk");
-        const next = [...kept, ...out.filter((t) => !kept.some((k) => field(k) === field(t)))];
+        const kept = (c.reviewIssues ?? []).filter((t) => !rejudged(t));
+        const next = [...kept, ...out.filter((t) => !kept.some((k) => reviewFieldOf(k) === reviewFieldOf(t)))];
         if (out.length > 0) job.flagged++;
         if (next.join("\n") !== (c.reviewIssues ?? []).join("\n")) {
           await this.card.updateOne({ _id: c._id }, { $set: { reviewIssues: next } }).exec();

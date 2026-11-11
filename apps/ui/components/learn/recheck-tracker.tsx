@@ -10,8 +10,17 @@ interface RecheckJob {
   done: number;
   total: number;
   flagged: number;
+  field?: "all" | "hanViet" | "reading" | "back";
   error?: string;
 }
+
+/** Title and badge glyph of each kind of check. */
+const FIELD_INFO = {
+  all: { title: "Kiểm tra lại cả bộ", glyph: "検" },
+  hanViet: { title: "Kiểm tra Hán tự", glyph: "漢" },
+  reading: { title: "Kiểm tra phát âm", glyph: "音" },
+  back: { title: "Kiểm tra nghĩa", glyph: "義" },
+} as const;
 
 /** Fired right after a whole-deck re-check is started so the tracker polls at once. */
 export const RECHECK_STARTED_EVENT = "deck-recheck-started";
@@ -21,7 +30,7 @@ export const RECHECK_PROGRESS_EVENT = "deck-recheck-progress";
 const POLL_MS = 2000;
 
 /**
- * Floating progress for "Kiểm tra lại cả bộ". Mounted once in the root layout,
+ * Floating progress for the whole-deck checks (Hán tự / phát âm / nghĩa). Mounted once in the root layout,
  * so the run keeps showing while the user moves between pages.
  */
 export function RecheckTracker() {
@@ -72,47 +81,75 @@ export function RecheckTracker() {
   return (
     <div className="flex flex-col gap-2" aria-live="polite">
       {visible.map((j) => {
-        const pct = j.total > 0 ? Math.round((j.done / j.total) * 100) : 0;
+        const pct = j.total > 0 ? Math.min(100, Math.round((j.done / j.total) * 100)) : 0;
         const href = `${window.location.pathname.startsWith("/admin") ? "/admin/decks" : "/learn/decks"}/${j.deckId}`;
+        const info = FIELD_INFO[j.field ?? "all"];
+        const running = j.status === "running";
+        const failed = j.status === "error";
+        const badge = failed
+          ? "bg-[#ef4444]/15 text-[#dc2626] dark:text-[#fca5a5]"
+          : running
+            ? "bg-[color-mix(in_srgb,var(--primary)_16%,transparent)] text-[var(--primary)]"
+            : "bg-[#22c55e]/15 text-[#15803d] dark:text-[#86efac]";
+        const close = () => setHidden((h) => [...h, j.deckId + j.status]);
         return (
-          <div key={j.deckId} className="rounded-xl border border-[var(--border)] bg-[var(--background-1)] p-3 text-sm shadow-lg">
-            <div className="flex items-start justify-between gap-2">
-              <p className="min-w-0 truncate font-medium text-[var(--foreground)]" title={j.title}>
-                Kiểm tra lại: {j.title}
-              </p>
-              {j.status !== "running" && (
-                <button
-                  type="button"
-                  onClick={() => setHidden((h) => [...h, j.deckId + j.status])}
-                  aria-label="Đóng"
-                  className="text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
-                >
+          <div key={j.deckId} className="overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--background-1)] shadow-xl">
+            <div className="flex items-center gap-3 p-3">
+              <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-lg font-semibold ${badge}`} aria-hidden="true">
+                {running ? info.glyph : failed ? "!" : "✓"}
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-semibold text-[var(--foreground)]">{info.title}</p>
+                <p className="truncate text-xs text-[var(--muted-foreground)]" title={j.title}>
+                  {j.title}
+                </p>
+              </div>
+              {running && <span className="text-lg font-semibold tabular-nums text-[var(--foreground)]">{j.total > 0 ? `${pct}%` : "…"}</span>}
+              {!running && (
+                <button type="button" onClick={close} aria-label="Đóng" className="rounded-md px-1.5 py-0.5 text-[var(--muted-foreground)] hover:bg-[var(--layer)] hover:text-[var(--foreground)]">
                   ✕
                 </button>
               )}
             </div>
-            {j.status === "running" && (
-              <>
-                <div role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100} className="mt-2 h-2 overflow-hidden rounded-full bg-[var(--layer)]">
-                  <div className="h-full bg-[var(--primary)] transition-all" style={{ width: `${Math.max(pct, 3)}%` }} />
+
+            {running && (
+              <div className="px-3 pb-3">
+                <div role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100} className="h-2 overflow-hidden rounded-full bg-[var(--layer)]">
+                  <div
+                    className={`h-full rounded-full bg-gradient-to-r from-[var(--primary)] to-[color-mix(in_srgb,var(--primary)_55%,#22c55e)] transition-all duration-500 ${j.total === 0 ? "animate-pulse" : ""}`}
+                    style={{ width: `${Math.max(pct, 4)}%` }}
+                  />
                 </div>
-                <p className="mt-1 text-xs text-[var(--muted-foreground)]">
-                  {j.total > 0 ? `AI đang kiểm tra ${j.done}/${j.total} thẻ (${pct}%)` : "Đang chuẩn bị…"} — bạn có thể sang trang khác{" "}
-                  <button type="button" onClick={() => cancel(j.deckId)} className="font-medium text-[var(--foreground)] underline">
+                <div className="mt-2 flex items-center justify-between text-xs text-[var(--muted-foreground)]">
+                  <span>{j.total > 0 ? `${j.done}/${j.total} thẻ` : "Đang chuẩn bị…"} · có thể sang trang khác</span>
+                  <button type="button" onClick={() => cancel(j.deckId)} className="rounded-md border border-[var(--border)] px-2 py-0.5 font-medium text-[var(--foreground)] hover:bg-[var(--layer)]">
                     Hủy
                   </button>
-                </p>
-              </>
+                </div>
+              </div>
             )}
+
             {j.status === "done" && (
-              <p className="mt-1 text-xs text-[var(--muted-foreground)]">
-                Đã kiểm tra {j.total} thẻ · {j.flagged} thẻ cần xem xét.{" "}
-                <Link href={href} onClick={() => setHidden((h) => [...h, j.deckId + j.status])} className="font-medium text-[var(--primary)] hover:underline">
+              <div className="flex items-center justify-between gap-2 border-t border-[var(--border)] px-3 py-2 text-xs">
+                <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[var(--muted-foreground)]">
+                  <span>{j.total} thẻ</span>
+                  <span
+                    className={`rounded-full px-2 py-0.5 font-semibold ${
+                      j.flagged > 0
+                        ? "bg-[#f59e0b]/20 text-[#b45309] dark:text-[#fbbf24]"
+                        : "bg-[#22c55e]/15 text-[#15803d] dark:text-[#86efac]"
+                    }`}
+                  >
+                    {j.flagged > 0 ? `${j.flagged} cần xem xét` : "Không phát hiện lỗi"}
+                  </span>
+                </span>
+                <Link href={href} onClick={close} className="shrink-0 font-medium text-[var(--primary)] hover:underline">
                   Xem bộ thẻ →
                 </Link>
-              </p>
+              </div>
             )}
-            {j.status === "error" && <p className="mt-1 text-xs text-[#b91c1c]">{j.error ?? "Kiểm tra thất bại"}</p>}
+
+            {failed && <p className="border-t border-[var(--border)] px-3 py-2 text-xs text-[#b91c1c] dark:text-[#fca5a5]">{j.error ?? "Kiểm tra thất bại"}</p>}
           </div>
         );
       })}

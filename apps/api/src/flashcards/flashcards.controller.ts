@@ -61,6 +61,11 @@ class PageCardsQuery {
   @IsOptional() @IsString() review?: string;
 }
 
+/** Which kind of warning a whole-deck re-check judges (all three when omitted). */
+class RecheckQuery {
+  @IsOptional() @IsIn(["hanViet", "reading", "back"]) field?: "hanViet" | "reading" | "back";
+}
+
 class CardFilterDto {
   @IsOptional() @IsString() q?: string;
   @IsOptional() @IsString() tag?: string;
@@ -382,7 +387,7 @@ export class FlashcardsController {
       tag: query.tag,
       missing: query.missing === "1" || query.missing === "true",
       card: query.card,
-      review: query.review === "1" || query.review === "true",
+      review: query.review === "hanViet" || query.review === "reading" || query.review === "back" ? query.review : query.review === "1" || query.review === "true" ? "all" : undefined,
     });
   }
 
@@ -398,9 +403,9 @@ export class FlashcardsController {
 
   @Post("decks/:id/recheck")
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: "Re-run the AI check (reading, Hán Việt, meaning) over the whole deck → “Cần xem xét” warnings" })
-  recheck(@CurrentUser() caller: AuthUser, @Param("id") id: string) {
-    return this.flashcards.startRecheck(caller, id, (items) => this.ai.verifyCards(items));
+  @ApiOperation({ summary: "Re-check Hán Việt, reading or meaning (`field`, all when omitted) over the whole deck → “Cần xem xét” warnings" })
+  recheck(@CurrentUser() caller: AuthUser, @Param("id") id: string, @Query() query: RecheckQuery) {
+    return this.flashcards.startRecheck(caller, id, (items) => this.ai.verifyCards(items), query.field ?? "all");
   }
 
   @Delete("recheck-jobs/:id")

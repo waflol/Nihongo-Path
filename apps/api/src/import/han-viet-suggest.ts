@@ -50,7 +50,7 @@ export function suggestHanViet(text: string): string {
   // A note in brackets ("エンジンがかかる (=エンジンが動く)", also an unclosed one) is not part of the word.
   for (const ch of text.replace(/[（(][^）)]*[）)]?/g, "")) {
     const v = t[ch];
-    if (v) out.push(v.split("/")[0].toLocaleUpperCase("vi"));
+    if (v) out.push(fixKi(v.split("/")[0].toLocaleUpperCase("vi")));
     else if (/[\u4e00-\u9fff]/.test(ch)) return ""; // an unknown kanji: a partial reading would mislead
   }
   return out.join(" ");
@@ -77,7 +77,29 @@ export function correctHanViet(front: string, given: string): string | null {
       const keep = sameCount
         ? (readings.find((r) => exact(r) === exact(tokens[i])) ?? readings.find((r) => norm(r) === norm(tokens[i])))
         : undefined;
-      return (keep ?? readings[0]).toLocaleUpperCase("vi");
+      return fixKi((keep ?? readings[0]).toLocaleUpperCase("vi"));
+    })
+    .join(" ");
+}
+
+/**
+ * Best-effort fix of a Hán Việt cell when the table knows only some of the kanji (so
+ * `correctHanViet` gives up): each syllable of a kanji the table knows is corrected (a valid
+ * reading stays), a syllable of an unknown kanji is left as written. `null` when the syllables
+ * cannot be lined up with the kanji (different count) or the word has none.
+ */
+export function correctHanVietPartial(front: string, given: string): string | null {
+  const t = load();
+  const kanji = [...front.replace(/[（(][^）)]*[）)]?/g, "")].filter((c) => /[\u4e00-\u9fff々]/.test(c));
+  const tokens = given.trim().split(/\s+/).filter(Boolean);
+  if (kanji.length === 0 || tokens.length !== kanji.length) return null;
+  return kanji
+    .map((k, i) => {
+      const entry = t[k];
+      if (!entry) return fixKi(tokens[i]!);
+      const readings = entry.split("/");
+      const keep = readings.find((r) => norm(r) === norm(tokens[i]!));
+      return fixKi((keep ?? readings[0]!).toLocaleUpperCase("vi"));
     })
     .join(" ");
 }
@@ -92,13 +114,48 @@ export function hanVietFits(word: string, hv: string): boolean {
   return kanji > 0 && hv.trim().split(/\s+/).filter(Boolean).length === kanji;
 }
 
+/** Comparison form of a syllable: tones stripped and i/y unified (kí = ký, kỳ = kì), so spelling variants match. */
 export const norm = (x: string) =>
   x
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .replace(/đ/gi, "d")
     .toLowerCase()
+    .replace(/y/g, "i")
     .trim();
+
+const KY_TO_KI: Record<string, string> = { ý: "í", ỳ: "ì", ỷ: "ỉ", ỹ: "ĩ", ỵ: "ị" };
+
+/** A lone "ký" syllable is always written "kí" (kỳ → kì, kỷ → kỉ, kỹ → kĩ, kỵ → kị); case is kept. */
+export function fixKi(syllable: string): string {
+  const m = /^(k)([ýỳỷỹỵ])$/i.exec(syllable.normalize("NFC"));
+  if (!m) return syllable;
+  const i = KY_TO_KI[m[2]!.toLocaleLowerCase("vi")]!;
+  return m[1] + (m[1] === "K" ? i.toLocaleUpperCase("vi") : i);
+}
+
+/**
+ * Write a Hán Việt reading the way the project spells it, whoever wrote it (the file,
+ * the AI or a hand-typed cell): "ký" becomes "kí" always, and a syllable that is only a
+ * spelling variant of the kanji table's reading takes the table's form. Syllables of
+ * kanji the table lacks keep their spelling (but for ký → kí), and so does a reading
+ * with a different syllable count.
+ */
+export function harmonizeHanViet(front: string, hv: string): string {
+  const t = load();
+  const kanji = [...front.replace(/[（(][^）)]*[）)]?/g, "")].filter((c) => /[\u4e00-\u9fff]/.test(c));
+  const tokens = hv.trim().split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return hv;
+  const aligned = kanji.length > 0 && tokens.length === kanji.length;
+  return tokens
+    .map((tok, i) => {
+      const entry = aligned ? t[kanji[i]!] : undefined;
+      const hit = entry?.split("/").find((r) => norm(r) === norm(tok));
+      const out = hit ? (tok === tok.toLocaleUpperCase("vi") ? hit.toLocaleUpperCase("vi") : hit.toLocaleLowerCase("vi")) : tok;
+      return fixKi(out);
+    })
+    .join(" ");
+}
 
 /**
  * Does a given Hán Việt cell fit the word's kanji? `null` = cannot tell (a kanji

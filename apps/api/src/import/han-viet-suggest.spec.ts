@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { checkHanViet, correctHanViet, setKanjiHanViet, suggestHanViet } from "./han-viet-suggest.js";
+import { checkHanViet, correctHanViet, correctHanVietPartial, fixKi, harmonizeHanViet, setKanjiHanViet, suggestHanViet } from "./han-viet-suggest.js";
 
 describe("Hán Việt from the kanji admin data", () => {
   afterEach(() => setKanjiHanViet({}));
@@ -30,5 +30,39 @@ describe("Hán Việt from the kanji admin data", () => {
     setKanjiHanViet({ 洗: "tẩy" });
     expect(correctHanViet("洗練", "tẩy luyện")).toBeNull();
     expect(correctHanViet("ねこ", "mèo")).toBeNull();
+  });
+});
+
+describe("ký → kí", () => {
+  it("always rewrites a lone ký syllable, keeping case and tone family", () => {
+    expect(fixKi("ký")).toBe("kí");
+    expect(fixKi("KÝ")).toBe("KÍ");
+    expect(fixKi("kỳ")).toBe("kì");
+    expect(fixKi("kỵ")).toBe("kị");
+    expect(fixKi("kính")).toBe("kính"); // other syllables untouched
+    expect(fixKi("lý")).toBe("lý");
+  });
+  it("overrides the kanji table's ký and treats both spellings as the same reading", () => {
+    setKanjiHanViet({ 寄: "ký", 附: "phụ" });
+    expect(checkHanViet("寄附", "ký phụ")).toBeNull();
+    expect(checkHanViet("寄附", "kí phụ")).toBeNull();
+    expect(suggestHanViet("寄附")).toBe("KÍ PHỤ");
+    expect(correctHanViet("寄附", "kí phụ")).toBe("KÍ PHỤ");
+    expect(harmonizeHanViet("寄附", "ký phụ")).toBe("kí phụ");
+    expect(harmonizeHanViet("寄附", "KÝ PHỤ")).toBe("KÍ PHỤ");
+  });
+  it("applies even when the kanji is not in the table or the count differs", () => {
+    setKanjiHanViet({});
+    expect(harmonizeHanViet("寄附", "ký phụ")).toBe("kí phụ");
+    expect(harmonizeHanViet("寄附", "KÝ")).toBe("KÍ");
+  });
+});
+
+describe("correctHanVietPartial", () => {
+  it("fixes the syllables the table knows and keeps those of unknown kanji", () => {
+    setKanjiHanViet({ 置: "trí" });
+    expect(correctHanVietPartial("措置", "thố bị")).toBe("thố TRÍ"); // 措 unknown: kept; 置 → TRÍ
+    expect(correctHanVietPartial("措置", "thố")).toBeNull(); // cannot line the syllables up
+    expect(correctHanVietPartial("ねこ", "mèo")).toBeNull();
   });
 });

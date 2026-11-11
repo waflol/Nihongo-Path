@@ -2,7 +2,9 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { checkHanViet, checkMeaning, correctHanViet, hanVietFits, norm as hvNorm, setKanjiHanViet, suggestHanViet } from "./han-viet-suggest.js";
+import { readingFitsKanji } from "./kanji-reading.js";
+import { ensureKanjiTables } from "./kanji-table.js";
+import { checkHanViet, checkMeaning, correctHanViet, correctHanVietPartial, hanVietFits, harmonizeHanViet, norm as hvNorm, setKanjiHanViet, suggestHanViet } from "./han-viet-suggest.js";
 import type { KanjiDocument } from "../content/schemas/kanji.schema.js";
 import { AiExampleService, lostKanji } from "../ai/ai-example.service.js";
 import {
@@ -1100,6 +1102,7 @@ export class ImportService implements OnApplicationBootstrap {
     task?: ImportTask,
   ): Promise<void> {
     if (!this.ai) return;
+    await this.ensureKanjiTable();
     const todo = new Map<string, { front: string; reading: string; hanViet: string; meaning: string }>();
     // A card identical to one already in the database was checked when it came in: skip it.
     const known = new Set<string>();
@@ -1155,7 +1158,7 @@ export class ImportService implements OnApplicationBootstrap {
         }
         // Hán Việt comes from the kanji data when every kanji is in it — the AI does not second-guess that.
         if (r?.hanViet && c.hanViet && suggestHanViet(c.front) === "" && hvNorm(r.hanViet) !== hvNorm(c.hanViet) && hanVietFits(c.front, r.hanViet)) {
-          out.push(`Hán Việt “${c.hanViet}” có thể chưa đúng (AI gợi ý: ${r.hanViet})`);
+          out.push(`Hán Việt “${c.hanViet}” có thể chưa đúng (AI gợi ý: ${harmonizeHanViet(c.front, r.hanViet)})`);
         }
         if (r?.meaning && c.meaning && hvNorm(r.meaning) !== hvNorm(c.meaning)) {
           out.push(`nghĩa “${c.meaning}” có thể chưa sát (AI gợi ý: ${r.meaning})`);
@@ -1165,12 +1168,17 @@ export class ImportService implements OnApplicationBootstrap {
     });
   }
 
-  /** A given reading the morphological analyser independently produces too: no AI second opinion needed. */
+  /**
+   * A given reading settled locally, so the AI is not asked: it is built from the on/kun
+   * readings in the kanji admin data, or the morphological analyser independently produces it.
+   */
   private async readingConfirmed(front: string, reading: string): Promise<boolean> {
     if (!KANJI_RE.test(front)) return false;
+    const variants = readingVariants(reading);
+    if (variants.some((r) => readingFitsKanji(front, r))) return true;
     try {
       const guess = (await this.morph.analyze(front)).reading;
-      return !!guess && readingVariants(guess).some((g) => readingVariants(reading).includes(g));
+      return !!guess && /^[\p{Script=Hiragana}ー]+$/u.test(guess) && readingVariants(guess).some((g) => variants.includes(g));
     } catch {
       return false;
     }
@@ -1186,13 +1194,19 @@ export class ImportService implements OnApplicationBootstrap {
    * (or a word the table does not know) is settled by the AI verdict if there is one.
    */
   private hanVietOf(front: string, given: string): { value: string; issue: string | null } {
+    const r = this.hanVietRaw(front, given);
+    // One spelling per word (ký → kí), whoever wrote the reading.
+    return { value: harmonizeHanViet(front, r.value), issue: r.issue };
+  }
+
+  private hanVietRaw(front: string, given: string): { value: string; issue: string | null } {
     const tableValue = suggestHanViet(front);
     const v = this.hvCache.get(ImportService.hvKey(front, given));
     if (!given.trim()) return { value: v?.hanViet || tableValue, issue: null };
     const issue = checkHanViet(front, given);
     if (!issue || v?.ok) return { value: given, issue: null };
     // The kanji data settles it: keep valid syllables, replace the wrong ones.
-    const fixed = v?.hanViet || correctHanViet(front, given) || tableValue;
+    const fixed = v?.hanViet || correctHanViet(front, given) || tableValue || correctHanVietPartial(front, given);
     // Corrected from the table: no warning to act on — the stored value is already right.
     return { value: fixed || given, issue: fixed ? null : issue };
   }
@@ -1203,17 +1217,8 @@ export class ImportService implements OnApplicationBootstrap {
    * still open — a cell the table disagrees with, or a word it does not know —
    * goes to the AI.
    */
-  /** The kanji admin data (`kanjis.hanViet`), reloaded at most once a minute. */
-  private kanjiTableAt = 0;
-  private async ensureKanjiTable(): Promise<void> {
-    if (Date.now() - this.kanjiTableAt < 60_000) return;
-    try {
-      const rows = await this.kanji.find({ hanViet: { $exists: true, $ne: "" } }, { char: 1, hanViet: 1 }).lean().exec();
-      setKanjiHanViet(Object.fromEntries(rows.map((r) => [r.char, r.hanViet as string])));
-      this.kanjiTableAt = Date.now();
-    } catch {
-      /* the curated JSON table still answers */
-    }
+  private ensureKanjiTable(): Promise<void> {
+    return ensureKanjiTables(this.kanji);
   }
 
   private async verifyHanViet(table: Table, mapping: ColumnMapping, task?: ImportTask, useAi = true): Promise<void> {

@@ -53,11 +53,21 @@ interface PageCard {
   reviewItems?: { text: string; field: "hanViet" | "reading" | "back"; fix?: string }[];
 }
 
+type ReviewField = "hanViet" | "reading" | "back";
+
+/** The three kinds of check / warning, in the order the buttons show. */
+const CHECKS: { field: ReviewField; checkLabel: string; warnLabel: string; hint: string }[] = [
+  { field: "hanViet", checkLabel: "Kiểm tra Hán tự", warnLabel: "Hán Việt", hint: "Đối chiếu âm Hán Việt của mọi thẻ với bảng kanji admin" },
+  { field: "reading", checkLabel: "Kiểm tra phát âm", warnLabel: "Cách đọc", hint: "Đối chiếu cách đọc với âm on/kun trong bảng kanji admin (AI chỉ xem những thẻ còn nghi ngờ)" },
+  { field: "back", checkLabel: "Kiểm tra nghĩa", warnLabel: "Nghĩa", hint: "AI kiểm tra nghĩa tiếng Việt của mọi thẻ" },
+];
+
 interface PageData {
   items: PageCard[];
   total: number;
   missingExamples: number;
   needsReview?: number;
+  needsReviewBy?: Record<ReviewField, number>;
   tags: { tag: string; count: number }[];
 }
 
@@ -103,7 +113,7 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
   const [q, setQ] = useState("");
   const [tag, setTag] = useState("");
   const [missing, setMissing] = useState(false);
-  const [review, setReview] = useState(false);
+  const [review, setReview] = useState<"" | ReviewField>("");
 
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [allMatching, setAllMatching] = useState(false);
@@ -139,21 +149,21 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
   const [categories, setCategories] = useState<string[]>([]);
 
   const canWrite = mode === "admin" || (deck !== null && !deck.shared);
-  const [rechecking, setRechecking] = useState(false);
+  const [rechecking, setRechecking] = useState<ReviewField | null>(null);
   const [recheckMsg, setRecheckMsg] = useState<string | null>(null);
   const reload = useCallback(() => setVersion((v) => v + 1), []);
-  /** Ask the AI to proofread every card again → refreshes the "Cần xem xét" warnings. */
-  async function recheckAll() {
-    setRechecking(true);
+  /** Re-check one field (Hán Việt / reading / meaning) of every card → refreshes that kind of "Cần xem xét" warning. */
+  async function recheckAll(field: ReviewField) {
+    setRechecking(field);
     setRecheckMsg(null);
     try {
-      const res = await fetch(`/api/flashcards/decks/${deckId}/recheck`, { method: "POST" });
+      const res = await fetch(`/api/flashcards/decks/${deckId}/recheck?field=${field}`, { method: "POST" });
       if (!res.ok) setRecheckMsg("Không bắt đầu kiểm tra lại được. Thử lại sau.");
       else window.dispatchEvent(new Event(RECHECK_STARTED_EVENT)); // progress shows bottom-right, on any page
     } catch {
       setRecheckMsg("Không bắt đầu kiểm tra lại được. Thử lại sau.");
     } finally {
-      setRechecking(false);
+      setRechecking(null);
     }
   }
   // Reload the warnings as the background run advances.
@@ -212,7 +222,7 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
       if (q) params.set("q", q);
       if (tag) params.set("tag", tag);
       if (missing) params.set("missing", "1");
-      if (review) params.set("review", "1");
+      if (review) params.set("review", review);
       if (focusCard) params.set("card", focusCard);
       const res = await fetch(`/api/flashcards/decks/${deckId}/cards/page?${params}`, {
         cache: "no-store",
@@ -299,7 +309,9 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
   const FIELD_LABEL = { hanViet: "Hán Việt", reading: "Cách đọc", back: "Nghĩa" } as const;
 
   const reviewNote = (card: PageCard) => {
-    const items = card.reviewItems ?? (card.reviewIssues ?? []).map((text) => ({ text, field: "back" as const, fix: undefined }));
+    const all = card.reviewItems ?? (card.reviewIssues ?? []).map((text) => ({ text, field: "back" as const, fix: undefined }));
+    // Filtering on one kind of warning (Hán Việt / cách đọc / nghĩa) shows only that kind's lines.
+    const items = review ? all.filter((it) => it.field === review) : all;
     if (items.length === 0) return null;
     return (
       <div className="mx-4 mb-4 mt-1 overflow-hidden rounded-xl border border-[#f59e0b]/40 bg-[#f59e0b]/10">
@@ -359,7 +371,7 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
     );
   };
 
-  function setFilter(next: { tag?: string; missing?: boolean; review?: boolean }) {
+  function setFilter(next: { tag?: string; missing?: boolean; review?: "" | ReviewField }) {
     if (next.tag !== undefined) setTag(next.tag);
     if (next.missing !== undefined) setMissing(next.missing);
     if (next.review !== undefined) setReview(next.review);
@@ -684,23 +696,35 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
           >
             Chưa có ví dụ{data ? ` (${data.missingExamples})` : ""}
           </button>
-          {data && (data.needsReview ?? 0) > 0 && (
-            <button
-              type="button"
-              aria-pressed={review}
-              onClick={() => setFilter({ review: !review })}
-              className={
-                btn + (review ? " border-[#f59e0b] bg-[#fffbeb] text-[#92400e] dark:bg-[#2a2008] dark:text-[#fcd34d]" : "")
-              }
-            >
-              ⚠ Cần xem xét ({data.needsReview})
-            </button>
-          )}
-          {canWrite && (
-            <button type="button" className={btn} onClick={() => void recheckAll()} disabled={rechecking} title="AI kiểm tra lại cách đọc, Hán Việt, nghĩa của toàn bộ thẻ">
-              {rechecking ? "Đang bắt đầu…" : "↻ Kiểm tra lại cả bộ"}
-            </button>
-          )}
+          {CHECKS.map(({ field, warnLabel }) => {
+            const n = data?.needsReviewBy?.[field] ?? 0;
+            if (n === 0 && review !== field) return null;
+            const on = review === field;
+            return (
+              <button
+                key={`warn-${field}`}
+                type="button"
+                aria-pressed={on}
+                onClick={() => setFilter({ review: on ? "" : field })}
+                className={btn + (on ? " border-[#f59e0b] bg-[#fffbeb] text-[#92400e] dark:bg-[#2a2008] dark:text-[#fcd34d]" : "")}
+              >
+                ⚠ {warnLabel} ({n})
+              </button>
+            );
+          })}
+          {canWrite &&
+            CHECKS.map(({ field, checkLabel, hint }) => (
+              <button
+                key={`check-${field}`}
+                type="button"
+                className={btn}
+                onClick={() => void recheckAll(field)}
+                disabled={rechecking !== null}
+                title={hint}
+              >
+                {rechecking === field ? "Đang bắt đầu…" : `↻ ${checkLabel}`}
+              </button>
+            ))}
           {canWrite && data && data.missingExamples > 0 && (
             <RetryExamplesButton deckId={deckId} className={btn} onChanged={reload} />
           )}
