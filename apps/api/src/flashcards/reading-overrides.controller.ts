@@ -1,4 +1,4 @@
-import { Controller, Delete, Get, HttpCode, HttpStatus, NotFoundException, Param } from "@nestjs/common";
+import { Controller, Delete, Get, HttpCode, HttpStatus, NotFoundException, Param, Query } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { ContentAdmin } from "../auth/decorators/roles.decorator.js";
 import { ReadingService } from "./reading.service.js";
@@ -20,8 +20,8 @@ export class ReadingOverridesController {
   @Delete(":word")
   @HttpCode(HttpStatus.NO_CONTENT)
   @ContentAdmin()
-  @ApiOperation({ summary: "Forget a learned reading" })
-  async forget(@Param("word") word: string) {
-    if (!(await this.reading.forget(word))) throw new NotFoundException("Từ này chưa được học");
+  @ApiOperation({ summary: "Forget a learned reading (one of them with ?reading=, else all of the word's)" })
+  async forget(@Param("word") word: string, @Query("reading") reading?: string) {
+    if (!(await this.reading.forget(word, reading))) throw new NotFoundException("Từ này chưa được học");
   }
 }

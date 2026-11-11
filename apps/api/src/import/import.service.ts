@@ -1177,8 +1177,8 @@ export class ImportService implements OnApplicationBootstrap {
     const variants = readingVariants(reading);
     if (variants.some((r) => readingFitsKanji(front, r))) return true;
     try {
-      const guess = (await this.morph.analyze(front)).reading;
-      return !!guess && /^[\p{Script=Hiragana}ー]+$/u.test(guess) && readingVariants(guess).some((g) => variants.includes(g));
+      const known = (await this.morph.analyze(front)).readings.filter((g) => /^[\p{Script=Hiragana}ー]+$/u.test(g));
+      return known.some((g) => variants.includes(g));
     } catch {
       return false;
     }
@@ -1385,9 +1385,11 @@ export class ImportService implements OnApplicationBootstrap {
     // (放っておく = ほうっておく, not はなっておく), so its disagreement is no longer a warning by itself.
     if (givenReading && KANJI_RE.test(front) && !this.ai) {
       try {
-        const guess = readingVariants((await this.morph.analyze(front.replace(/[（(][^）)]*[）)]/g, ""))).reading)[0] ?? "";
+        const a = await this.morph.analyze(front.replace(/[（(][^）)]*[）)]/g, ""));
+        const guess = readingVariants(a.reading)[0] ?? "";
         const given = readingVariants(givenReading);
-        if (guess && given.length > 0 && !given.some((g) => g === guess || g.includes(guess) || guess.includes(g))) {
+        const known = a.readings.flatMap((r) => readingVariants(r));
+        if (guess && given.length > 0 && !given.some((g) => known.some((k) => g === k || g.includes(k) || k.includes(g)))) {
           issues.push(`cách đọc “${givenReading}” khác cách đọc tự nhận (${guess})`);
         }
       } catch {

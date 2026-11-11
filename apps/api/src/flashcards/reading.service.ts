@@ -11,6 +11,11 @@ export type PartOfSpeech = (typeof PARTS_OF_SPEECH)[number];
 export interface ReadingResult {
   /** Hiragana reading; `""` when the text has no kanji (pure kana / katakana). */
   reading: string;
+  /**
+   * Every reading known for the text: the ones a person confirmed (a word like 人気 has
+   * にんき and ひとけ) plus the analyser's own guess. Empty for kana-only text.
+   */
+  readings: string[];
   /** Best-guess part of speech (verb / noun / adjective / phrase) or `null`. */
   partOfSpeech: PartOfSpeech | null;
 }
@@ -66,15 +71,18 @@ export class ReadingService {
 
   constructor(@Optional() @InjectConnection() private readonly conn?: Connection) {}
 
-  /** Readings a person confirmed against the analyser (word → hiragana), loaded on first use. */
-  private overrides: Promise<Map<string, string>> | null = null;
+  /** Readings a person confirmed against the analyser (word → hiragana list, oldest first), loaded on first use. */
+  private overrides: Promise<Map<string, string[]>> | null = null;
 
-  private loadOverrides(): Promise<Map<string, string>> {
+  private loadOverrides(): Promise<Map<string, string[]>> {
     this.overrides ??= (async () => {
-      const m = new Map<string, string>();
+      const m = new Map<string, string[]>();
       try {
         const rows = await this.conn?.collection("reading_overrides").find({}).toArray();
-        for (const r of rows ?? []) if (r.word && r.reading) m.set(String(r.word), String(r.reading));
+        for (const r of rows ?? []) {
+          const list: string[] = Array.isArray(r.readings) ? r.readings.map(String) : r.reading ? [String(r.reading)] : [];
+          if (r.word && list.length > 0) m.set(String(r.word), [...new Set(list)]);
+        }
       } catch (e) {
         this.logger.warn(`reading overrides not loaded: ${(e as Error).message}`);
       }
@@ -84,29 +92,46 @@ export class ReadingService {
   }
 
   /** Every word a person fixed the reading of, newest first (admin list). */
-  async listOverrides(): Promise<{ word: string; reading: string; updatedAt?: Date }[]> {
+  async listOverrides(): Promise<{ word: string; reading: string; readings: string[]; updatedAt?: Date }[]> {
     const rows = await this.conn?.collection("reading_overrides").find({}).sort({ updatedAt: -1 }).toArray();
-    return (rows ?? []).map((r) => ({ word: String(r.word), reading: String(r.reading), updatedAt: r.updatedAt as Date | undefined }));
+    const m = await this.loadOverrides();
+    return (rows ?? []).map((r) => {
+      const readings = m.get(String(r.word)) ?? (r.reading ? [String(r.reading)] : []);
+      return { word: String(r.word), reading: readings[0] ?? "", readings, updatedAt: r.updatedAt as Date | undefined };
+    });
   }
 
-  /** Take a learned reading back: the analyser reads the word its own way again. */
-  async forget(word: string): Promise<boolean> {
-    (await this.loadOverrides()).delete(word);
+  /**
+   * Take a learned reading back: the analyser reads the word its own way again.
+   * With `reading`, only that one goes (a word may keep its other readings).
+   */
+  async forget(word: string, reading?: string): Promise<boolean> {
+    const m = await this.loadOverrides();
+    const left = reading ? (m.get(word) ?? []).filter((r) => r !== toHiragana(reading.trim())) : [];
+    if (left.length > 0) {
+      m.set(word, left);
+      const res = await this.conn?.collection("reading_overrides").updateOne({ word }, { $set: { reading: left[0], readings: left, updatedAt: new Date() } });
+      return (res?.matchedCount ?? 0) > 0;
+    }
+    m.delete(word);
     const res = await this.conn?.collection("reading_overrides").deleteOne({ word });
     return (res?.deletedCount ?? 0) > 0;
   }
 
   /**
-   * The analyser got this word wrong and a person kept the card's reading
-   * ("Bỏ qua" on the warning): remember it, so the word is read that way from now on.
+   * The analyser got this word wrong, or the word has several readings, and a person kept
+   * the card's reading ("Bỏ qua" on the warning): remember it. A word keeps ALL the readings
+   * confirmed for it (人気 = にんき and ひとけ), so confirming one never overwrites another.
    */
   async learn(rawWord: string, reading: string): Promise<void> {
     const word = rawWord.replace(/[（(][^）)]*[）)]/g, "").trim();
     const r = toHiragana(reading.trim());
     if (!word || !r || !KANJI_RE.test(word)) return;
-    (await this.loadOverrides()).set(word, r);
+    const m = await this.loadOverrides();
+    const list = [...new Set([...(m.get(word) ?? []), r])];
+    m.set(word, list);
     try {
-      await this.conn?.collection("reading_overrides").updateOne({ word }, { $set: { word, reading: r, updatedAt: new Date() } }, { upsert: true });
+      await this.conn?.collection("reading_overrides").updateOne({ word }, { $set: { word, reading: list[0], readings: list, updatedAt: new Date() } }, { upsert: true });
     } catch (e) {
       this.logger.warn(`reading override not saved: ${(e as Error).message}`);
     }
@@ -139,7 +164,7 @@ export class ReadingService {
   async analyze(rawText: string): Promise<ReadingResult> {
     // Drop an existing "(ねこ)" annotation — the reading is derived, not typed.
     const text = rawText.replace(/[（(][^）)]*[）)]/g, "").trim();
-    if (text === "") return { reading: "", partOfSpeech: null };
+    if (text === "") return { reading: "", readings: [], partOfSpeech: null };
 
     const tk = await this.getTokenizer();
     const tokens = tk.tokenize(text);
@@ -154,7 +179,7 @@ export class ReadingService {
     const inner = tokens.findIndex((t, i) => t.pos === "助詞" && i > 0 && i < tokens.length - 1);
     const partOfSpeech: PartOfSpeech | null = inner > 0 ? "phrase" : head ? tokenPos(head) : null;
 
-    if (!KANJI_RE.test(text)) return { reading: "", partOfSpeech };
+    if (!KANJI_RE.test(text)) return { reading: "", readings: [], partOfSpeech };
 
     const reading = tokens
       .map((t) => {
@@ -163,7 +188,15 @@ export class ReadingService {
         return toHiragana(r);
       })
       .join("");
-    const known = (await this.loadOverrides()).get(text);
-    return { reading: known ?? reading, partOfSpeech };
+    const known = (await this.loadOverrides()).get(text) ?? [];
+    return { reading: known[0] ?? reading, readings: [...new Set([...known, reading])], partOfSpeech };
+  }
+
+  /** Does the card's own reading text hold a reading this word is known to have? */
+  async isKnownReading(rawWord: string, cardReading: string): Promise<boolean> {
+    const have = readingVariants(cardReading);
+    if (have.length === 0) return false;
+    const { readings } = await this.analyze(rawWord);
+    return readings.some((r) => have.includes(r));
   }
 }

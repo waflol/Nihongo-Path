@@ -120,6 +120,13 @@ class BulkTagsDto {
   @IsOptional() @IsArray() @IsString({ each: true }) remove?: string[];
 }
 
+class BulkResolveDto {
+  @IsIn(["hanViet", "reading", "back"]) field: "hanViet" | "reading" | "back";
+  @IsIn(["apply", "dismiss"]) action: "apply" | "dismiss";
+  @IsOptional() @IsArray() @IsString({ each: true }) ids?: string[];
+  @IsOptional() @ValidateNested() @Type(() => CardFilterDto) filter?: CardFilterDto;
+}
+
 /**
  * Personal-deck + save-a-word surface (P3-CARD-03/04).
  *
@@ -450,6 +457,17 @@ export class FlashcardsController {
     @Body() body: BulkTagsDto,
   ) {
     return this.flashcards.bulkTags(caller, id, body);
+  }
+
+  @Post("decks/:id/cards/review/resolve")
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: "Apply the suggested fix of, or dismiss, one kind of import warning on many cards (ids or a filter)" })
+  bulkResolveReview(
+    @CurrentUser() caller: AuthUser,
+    @Param("id") id: string,
+    @Body() body: BulkResolveDto,
+  ) {
+    return this.flashcards.bulkResolveReview(caller, id, body);
   }
 
   @Post("cards")

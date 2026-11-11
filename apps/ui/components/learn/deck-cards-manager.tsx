@@ -306,6 +306,54 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
     reload();
   }
 
+  /**
+   * "Áp dụng tất cả" / "Bỏ qua tất cả": settle the warnings of the filtered kind in one go — for the
+   * selected cards, or (nothing selected) every card that still has that warning under the current filters.
+   */
+  async function resolveBulk(action: "apply" | "dismiss") {
+    if (!review) return;
+    const useIds = !allMatching && selected.size > 0;
+    const count = useIds ? selected.size : total;
+    if (count === 0) return;
+    const kind = { hanViet: "Hán Việt", reading: "cách đọc", back: "nghĩa" }[review];
+    const scope = useIds ? `${count} thẻ đã chọn` : `${count} thẻ đang có cảnh báo ${kind}`;
+    const ok = await confirm({
+      title: action === "apply" ? "Áp dụng gợi ý hàng loạt?" : "Bỏ qua cảnh báo hàng loạt?",
+      message:
+        action === "apply"
+          ? `Thay ${kind} theo gợi ý cho ${scope}. Thẻ không có gợi ý được giữ nguyên.`
+          : `Giữ nguyên ${kind} và xoá cảnh báo cho ${scope}.${review === "reading" ? " Cách đọc đó sẽ được ghi nhớ là hợp lệ của từ." : ""}`,
+      confirmLabel: action === "apply" ? "Áp dụng" : "Bỏ qua",
+      tone: "primary",
+    });
+    if (!ok) return;
+    setBulkBusy(true);
+    setError(null);
+    setNotice(null);
+    const res = await fetch(`/api/flashcards/decks/${deckId}/cards/review/resolve`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        field: review,
+        action,
+        ...(useIds ? { ids: [...selected] } : { filter: { q: q || undefined, tag: tag || undefined, missing: missing || undefined } }),
+      }),
+    }).catch(() => null);
+    setBulkBusy(false);
+    if (!res?.ok) {
+      setError(action === "apply" ? "Không áp dụng được hàng loạt" : "Không bỏ qua được hàng loạt");
+      return;
+    }
+    const r = (await res.json().catch(() => null)) as { applied: number; dismissed: number; skipped: number; matched: number } | null;
+    setNotice(
+      action === "apply"
+        ? `Đã áp dụng gợi ý cho ${r?.applied ?? 0} thẻ${r && r.skipped > 0 ? `, ${r.skipped} thẻ không có gợi ý` : ""}`
+        : `Đã bỏ qua cảnh báo của ${r?.dismissed ?? 0} thẻ${r && r.skipped > 0 ? `, ${r.skipped} thẻ lỗi` : ""}`,
+    );
+    clearSelection();
+    reload();
+  }
+
   const FIELD_LABEL = { hanViet: "Hán Việt", reading: "Cách đọc", back: "Nghĩa" } as const;
 
   const reviewNote = (card: PageCard) => {
@@ -735,6 +783,24 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
           )}
         </div>
         {recheckMsg && <p role="status" className="text-sm text-[var(--muted-foreground)]">{recheckMsg}</p>}
+        {canWrite && review && total > 0 && (
+          <div className="flex flex-wrap items-center gap-2 rounded-xl border border-[#f59e0b]/40 bg-[#f59e0b]/10 px-3 py-2 text-sm">
+            <span className="text-xs font-medium text-[#b45309] dark:text-[#fbbf24]">
+              {!allMatching && selected.size > 0 ? `${selected.size} thẻ đã chọn` : `Tất cả ${total} thẻ trong bộ lọc`}
+            </span>
+            <button
+              type="button"
+              disabled={bulkBusy}
+              onClick={() => void resolveBulk("apply")}
+              className="inline-flex items-center gap-1 rounded-lg bg-[#16a34a] px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-[#15803d] disabled:opacity-60"
+            >
+              {bulkBusy ? "Đang xử lý…" : "✓ Áp dụng gợi ý tất cả"}
+            </button>
+            <button type="button" disabled={bulkBusy} onClick={() => void resolveBulk("dismiss")} className={btn}>
+              Bỏ qua tất cả
+            </button>
+          </div>
+        )}
         {data && data.tags.length > 0 && (
           <div className="flex max-h-28 flex-wrap items-center gap-1.5 overflow-y-auto">
             <span className="mr-1 text-xs font-medium text-[var(--muted-foreground)]">Tag:</span>

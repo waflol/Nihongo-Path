@@ -130,6 +130,9 @@ export interface SavedVocabCard {
  * writes to the content collection itself — the card keeps its own `front`/
  * `back` so the study engine is self-contained (P3-CARD-02).
  */
+/** Most cards one bulk "áp dụng / bỏ qua tất cả" request settles. */
+const BULK_REVIEW_MAX = 5000;
+
 @Injectable()
 export class FlashcardsService implements OnModuleInit {
   constructor(
@@ -177,8 +180,10 @@ export class FlashcardsService implements OnModuleInit {
         if (v && v !== (c.hanViet ?? "")) fix = v;
       } else if (field === "reading" && this.morph) {
         try {
-          const g = (await this.morph.analyze(c.front.replace(/[（(][^）)]*[）)]/g, ""))).reading;
-          if (g && g !== (c.reading ?? "")) fix = g;
+          const a = await this.morph.analyze(c.front.replace(/[（(][^）)]*[）)]/g, ""));
+          // The card's reading is one this word is known to have (人気 = にんき / ひとけ): nothing to warn about.
+          if (a.readings.length > 0 && readingVariants(c.reading).some((r) => a.readings.includes(r))) continue;
+          if (a.reading && a.reading !== (c.reading ?? "")) fix = a.reading;
         } catch {
           /* analyser unavailable — no suggestion */
         }
@@ -603,6 +608,69 @@ export class FlashcardsService implements OnModuleInit {
       }
     }
     return { total: items.length, items: items.slice(0, limit) };
+  }
+
+  /**
+   * "Áp dụng tất cả" / "Bỏ qua tất cả": settle one kind of import warning (Hán Việt, reading
+   * or meaning) on many cards at once — an explicit id list, or every card of the deck that
+   * still has that warning (narrowed by the manager's search / tag filter). `apply` takes each
+   * card's suggested fix (a card without one is skipped); `dismiss` keeps the card as it is
+   * (and, for readings, teaches the analyser). Capped so one request stays bounded.
+   */
+  async bulkResolveReview(
+    caller: AuthUser,
+    deckId: string,
+    input: {
+      field: ReviewField;
+      action: "apply" | "dismiss";
+      ids?: string[];
+      filter?: { q?: string; tag?: string; missing?: boolean };
+    },
+  ): Promise<{ matched: number; applied: number; dismissed: number; skipped: number }> {
+    const deck = await this.getDeck(caller, deckId);
+    if (deck.shared && !this.isAdmin(caller)) {
+      throw new ForbiddenException("Only admins modify shared-deck cards");
+    }
+    let match: Record<string, unknown>;
+    if (input.ids && input.ids.length > 0) {
+      let oids: Types.ObjectId[];
+      try {
+        oids = input.ids.map((i) => new Types.ObjectId(i));
+      } catch {
+        throw new BadRequestException("Invalid card id");
+      }
+      match = { deck: deck._id, _id: { $in: oids }, ...reviewClause(input.field) };
+    } else {
+      match = this.cardFilter(deckId, { ...(input.filter ?? {}), review: input.field });
+    }
+    const cards = await this.card.find(match).sort({ order: 1, _id: 1 }).limit(BULK_REVIEW_MAX).exec();
+    await this.ensureKanjiTable();
+    let applied = 0;
+    let dismissed = 0;
+    let skipped = 0;
+    for (let i = 0; i < cards.length; i += 10) {
+      await Promise.all(
+        cards.slice(i, i + 10).map(async (c) => {
+          try {
+            if (input.action === "dismiss") {
+              await this.updateCard(caller, String(c._id), { resolve: input.field });
+              dismissed++;
+              return;
+            }
+            const fix = (await this.reviewItems(c)).find((it) => it.field === input.field && it.fix)?.fix;
+            if (!fix) {
+              skipped++;
+              return;
+            }
+            await this.updateCard(caller, String(c._id), { [input.field]: fix, resolve: input.field });
+            applied++;
+          } catch {
+            skipped++;
+          }
+        }),
+      );
+    }
+    return { matched: cards.length, applied, dismissed, skipped };
   }
 
   /**
@@ -1090,8 +1158,8 @@ export class FlashcardsService implements OnModuleInit {
         if (ask && readingVariants(reading).some((r) => readingFitsKanji(c.front, r))) ask = false;
         if (ask && this.morph) {
           try {
-            const g = (await this.morph.analyze(c.front.replace(/[（(][^）)]*[）)]/g, ""))).reading;
-            if (g && readingVariants(reading).includes(g)) ask = false;
+            const known = (await this.morph.analyze(c.front.replace(/[（(][^）)]*[）)]/g, ""))).readings;
+            if (readingVariants(reading).some((r) => known.includes(r))) ask = false;
           } catch {
             /* analyser unavailable — ask the AI */
           }
