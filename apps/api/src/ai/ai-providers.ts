@@ -11,7 +11,7 @@
 export interface AiProvider {
   id: string;
   name: string;
-  kind: "gemini" | "openai" | "anthropic";
+  kind: "gemini" | "openai" | "anthropic" | "antigravity-cli";
   /** OpenAI-style base URL (unused for `gemini`). */
   baseUrl: string;
   defaultModel: string;
@@ -29,6 +29,11 @@ export interface AiProvider {
   suitabilityFilter?: boolean;
   /** Admin-supplied endpoint (local server / any OpenAI- or Anthropic-style API). */
   custom?: boolean;
+  /**
+   * Runs through a local CLI the admin authorises with their Google account
+   * (no API key, no URL): see `ai-antigravity-cli.ts`.
+   */
+  cli?: boolean;
   /** Model ids that are known not to be chat models (rejected when adding the service). */
   nonChat?: RegExp;
   /** Task-specific translation models: they only translate (no chat), via the native `ai/run` API. */
@@ -39,6 +44,8 @@ export interface AiProvider {
   baseUrlTemplate?: string;
   /** No `/models` endpoint: offer these ids instead. */
   staticModels?: string[];
+  /** Short note per static model id (shown in the picker). */
+  modelNotes?: Record<string, string>;
   note: string;
 }
 
@@ -53,6 +60,35 @@ export const AI_PROVIDERS: readonly AiProvider[] = [
     keyUrl: "https://aistudio.google.com/apikey",
     pricingUrl: "https://ai.google.dev/gemini-api/docs/pricing",
     note: "Gói miễn phí, chất lượng tiếng Việt tốt.",
+  },
+  {
+    id: "antigravity",
+    name: "Google AI Pro (Antigravity CLI)",
+    kind: "antigravity-cli",
+    baseUrl: "",
+    defaultModel: "default",
+    defaultRpm: 6,
+    keyUrl: "",
+    pricingUrl: "https://antigravity.google/",
+    tierHint: "unknown",
+    suitabilityFilter: false,
+    cli: true,
+    // After authorising, the admin page lists the models the account can really use (`agy models`);
+    // these are only the fallback when that list cannot be read.
+    staticModels: ["default", "gemini-3.8-flash", "gemini-3.6-flash-high", "gemini-3.6-flash-medium", "gemini-3.6-flash-low", "gemini-3.1-pro-high", "gemini-3.1-pro-low"],
+    modelNotes: {
+      default: "Để Antigravity CLI tự chọn model mặc định (khuyên dùng khi chưa rõ tài khoản dùng được model nào)",
+      "gemini-3.8-flash": "Flash 3.8 — nhanh, đủ cho dịch / đặt câu",
+      "gemini-3.6-flash-high": "Flash 3.6, suy luận cao",
+      "gemini-3.6-flash-medium": "Flash 3.6, suy luận vừa",
+      "gemini-3.6-flash-low": "Flash 3.6, suy luận thấp — nhanh nhất",
+      "gemini-3.1-pro-high": "Pro 3.1, suy luận cao — chính xác nhưng chậm và tốn hạn mức",
+      "gemini-3.1-pro-low": "Pro 3.1, suy luận thấp",
+    },
+    note:
+      "Dùng tài khoản Google AI Pro qua Antigravity CLI (thay Gemini CLI, vốn đã bị Google chặn với gói cá nhân) — không cần khoá API. " +
+      "Sau khi thêm, bấm “Ủy quyền tài khoản Google”, rồi chọn model. Chậm hơn API (mỗi lần gọi chạy một tiến trình), chỉ nên dùng cá nhân với một tài khoản; " +
+      "Google có thể không cho phép bọc agy trong ứng dụng khác ở gói consumer (chưa xác nhận).",
   },
   {
     id: "groq",

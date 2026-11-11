@@ -77,11 +77,11 @@ export function normaliseModels(provider: AiProvider, raw: unknown): AiModelInfo
   if (provider.staticModels) {
     return provider.staticModels.map((id) => ({
       id,
-      tier: "free" as const,
+      tier: provider.tierHint ?? ("free" as const),
       basis: "estimate" as const,
-      note: provider.translators?.includes(id)
+      note: provider.modelNotes?.[id] ?? (provider.translators?.includes(id)
         ? "Model chuyên dịch (m2m100, 100 ngôn ngữ): chỉ dịch câu Nhật→Việt, không viết câu ví dụ và không kiểm tra nghĩa của từ"
-        : "Danh sách gợi ý (nhà cung cấp không có API liệt kê) — bấm Kiểm tra để chắc",
+        : "Danh sách gợi ý (nhà cung cấp không có API liệt kê) — bấm Kiểm tra để chắc"),
       translationOnly: provider.translators?.includes(id) || undefined,
       isDefault: id === provider.defaultModel,
     }));

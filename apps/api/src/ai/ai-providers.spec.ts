@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { providerById } from "./ai-providers.js";
+import { isValidCliModel } from "./ai-antigravity-cli.js";
+import { normaliseModels } from "./ai-models.js";
+import { AI_PROVIDERS, providerById } from "./ai-providers.js";
 
 describe("Cloudflare nonChat guard", () => {
   const re = providerById("cloudflare")!.nonChat!;
@@ -31,5 +33,40 @@ describe("Cloudflare translation task models", () => {
     expect(cf.nonChat!.test("@cf/meta/m2m100-1.2b")).toBe(false);
     expect(cf.notJaVi!.test("@cf/ai4bharat/indictrans2-en-indic-1B")).toBe(true);
     expect(cf.notJaVi!.test("@cf/meta/m2m100-1.2b")).toBe(false);
+  });
+});
+
+describe("Google AI Pro (Antigravity CLI) preset", () => {
+  const p = providerById("antigravity")!;
+
+  it("runs through the CLI: no key, no URL, and the CLI picks the model by default", () => {
+    expect(p.kind).toBe("antigravity-cli");
+    expect(p.cli).toBe(true);
+    expect(p.baseUrl).toBe("");
+    expect(p.keyUrl).toBe("");
+    expect(p.defaultModel).toBe("default");
+    expect(p.staticModels).toContain(p.defaultModel);
+  });
+
+  it("offers fallback models, each with a note, and every id is safe for `--model`", () => {
+    expect(p.staticModels!.length).toBeGreaterThan(3);
+    for (const id of p.staticModels!) {
+      expect(p.modelNotes![id], id).toBeTruthy();
+      expect(isValidCliModel(id), id).toBe(true);
+    }
+    expect(isValidCliModel("--yolo")).toBe(false);
+    expect(isValidCliModel("a b")).toBe(false);
+  });
+
+  it("the picker lists them as unknown-cost (a subscription, not a free key)", () => {
+    const list = normaliseModels(p, {});
+    expect(list.map((m) => m.id)).toEqual(p.staticModels);
+    expect(list.every((m) => m.tier === "unknown")).toBe(true);
+    expect(list.find((m) => m.id === "default")).toMatchObject({ isDefault: true });
+  });
+
+  it("is the only CLI preset, and the retired Gemini CLI one is gone", () => {
+    expect(AI_PROVIDERS.filter((x) => x.cli).map((x) => x.id)).toEqual(["antigravity"]);
+    expect(providerById("gemini-cli")).toBeUndefined();
   });
 });

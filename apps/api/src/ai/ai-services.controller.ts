@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Body,
+  Logger,
   Controller,
   Delete,
   Get,
@@ -121,9 +122,45 @@ export class AiServicesController {
   @Delete("services/:id")
   @HttpCode(HttpStatus.NO_CONTENT)
   @ContentAdmin()
-  @ApiOperation({ summary: "Remove an AI service" })
+  @ApiOperation({ summary: "Remove an AI service (a Gemini/Antigravity CLI one also loses its sign-in, data and logged calls on the server)" })
   async remove(@Param("id") id: string): Promise<void> {
+    const cli = await this.services.isCli(id);
     await this.services.remove(id);
+    if (cli) {
+      // The service is already gone: a failure here must not look like the removal failed.
+      await this.callLog.removeByService(id).catch((e: Error) => new Logger(AiServicesController.name).error(`Logged calls of ${id} not removed: ${e.message}`));
+    }
+  }
+
+  @Post("services/:id/cli-login")
+  @HttpCode(HttpStatus.OK)
+  @ContentAdmin()
+  @ApiOperation({ summary: "Antigravity CLI service: start the Google sign-in; the answer has the link to open" })
+  cliLoginStart(@Param("id") id: string) {
+    return this.services.cliLoginStart(id);
+  }
+
+  @Get("services/:id/cli-login")
+  @ContentAdmin()
+  @ApiOperation({ summary: "Antigravity CLI service: progress of the sign-in and the signed-in account" })
+  cliLoginStatus(@Param("id") id: string) {
+    return this.services.cliLoginStatus(id);
+  }
+
+  @Post("services/:id/cli-login/code")
+  @HttpCode(HttpStatus.OK)
+  @ContentAdmin()
+  @ApiOperation({ summary: "Antigravity CLI service: submit the authorisation code Google showed" })
+  cliLoginCode(@Param("id") id: string, @Body() body: { code?: string }) {
+    return this.services.cliLoginCode(id, body?.code ?? "");
+  }
+
+  @Delete("services/:id/cli-login")
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ContentAdmin()
+  @ApiOperation({ summary: "Antigravity CLI service: forget the signed-in Google account" })
+  async cliLogout(@Param("id") id: string): Promise<void> {
+    await this.services.cliLogout(id);
   }
 
   @Post("services/:id/benchmark")

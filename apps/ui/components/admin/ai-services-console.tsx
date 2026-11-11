@@ -19,6 +19,8 @@ interface Provider {
   custom?: boolean;
   /** Needs the Cloudflare account id. */
   baseUrlTemplate?: string;
+  /** Runs through the Antigravity CLI: no key, the admin authorises a Google account. */
+  cli?: boolean;
   note: string;
 }
 
@@ -43,6 +45,18 @@ interface Service {
   lastOkAt: string | null;
   cooldownUntil: string | null;
   readOnly?: boolean;
+  /** Antigravity CLI services: a Google account is signed in (which one). */
+  cli?: boolean;
+  authorized?: boolean;
+  account?: string | null;
+}
+
+interface CliLogin {
+  state: "idle" | "starting" | "awaiting_code" | "verifying" | "done" | "failed";
+  url?: string;
+  error?: string;
+  authorized?: boolean;
+  account?: string | null;
 }
 
 const API = "/api/flashcards/admin/ai";
@@ -290,6 +304,207 @@ function StatusBadge({ s }: { s: Service }) {
   return <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${cls}`}>{text}</span>;
 }
 
+/**
+ * Model of a Antigravity CLI service, chosen from the models the CLI accepts. Shown once the Google
+ * account is authorised (which models an account may use depends on its plan: press "Kiểm tra" after).
+ */
+function CliModelSelect({ serviceId, current, onSaved }: { serviceId: string; current: string; onSaved: () => void }) {
+  const [models, setModels] = useState<ModelInfo[]>([]);
+  const [value, setValue] = useState(current);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    let live = true;
+    void (async () => {
+      const res = await fetch(`${API}/models`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider: "antigravity", serviceId }),
+      }).catch(() => null);
+      if (live && res?.ok) setModels((await res.json()) as ModelInfo[]);
+    })();
+    return () => {
+      live = false;
+    };
+  }, [serviceId]);
+
+  useEffect(() => setValue(current), [current]);
+
+  async function save() {
+    setSaving(true);
+    setMsg(null);
+    const res = await fetch(`${API}/services/${serviceId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ model: value }),
+    }).catch(() => null);
+    setSaving(false);
+    if (res?.ok) {
+      setMsg({ ok: true, text: "Đã lưu model. Bấm “Kiểm tra” để thử." });
+      onSaved();
+    } else {
+      const d = (await res?.json().catch(() => null)) as { message?: string | string[] } | null;
+      setMsg({ ok: false, text: (Array.isArray(d?.message) ? d?.message.join(", ") : d?.message) ?? "Không lưu được model" });
+    }
+  }
+
+  const info = models.find((m) => m.id === value);
+  return (
+    <div className="space-y-2">
+      <label className="block text-xs text-[var(--muted-foreground)]">
+        Model
+        <select className={`mt-1 ${inputClass} max-w-md`} value={value} onChange={(e) => setValue(e.target.value)}>
+          {!models.some((m) => m.id === value) && <option value={value}>{value}</option>}
+          {models.map((m) => (
+            <option key={m.id} value={m.id}>
+              {m.id}
+              {m.isDefault ? " (khuyên dùng)" : ""}
+            </option>
+          ))}
+        </select>
+      </label>
+      {info?.note && <p className="text-xs text-[var(--muted-foreground)]">{info.note}</p>}
+      <div className="flex items-center gap-2">
+        <button type="button" className={btn} disabled={saving || value === current || !value.trim()} onClick={() => void save()}>
+          {saving ? "Đang lưu…" : "Lưu model"}
+        </button>
+        {msg && <span className={"text-xs " + (msg.ok ? "text-[#15803d] dark:text-[#86efac]" : "text-[#b91c1c]")}>{msg.text}</span>}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Authorises the Google account of a Antigravity CLI service. The server runs the
+ * CLI's own sign-in; the admin opens Google's page, approves, and pastes the
+ * code Google shows. The token stays on the server and is never shown here.
+ */
+function CliLoginPanel({ serviceId, model, onClose, onChanged }: { serviceId: string; model: string; onClose: () => void; onChanged: () => void }) {
+  const [st, setSt] = useState<CliLogin | null>(null);
+  const [code, setCode] = useState("");
+  const [msg, setMsg] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const url = `${API}/services/${serviceId}/cli-login`;
+
+  async function request(path: string, method: string, body?: unknown): Promise<CliLogin | null> {
+    const res = await fetch(`${url}${path}`, {
+      method,
+      headers: body ? { "Content-Type": "application/json" } : undefined,
+      body: body ? JSON.stringify(body) : undefined,
+    }).catch(() => null);
+    if (!res) {
+      setMsg("Không kết nối được API");
+      return null;
+    }
+    if (!res.ok) {
+      const d = (await res.json().catch(() => null)) as { message?: string | string[] } | null;
+      setMsg((Array.isArray(d?.message) ? d?.message.join(", ") : d?.message) ?? `Lỗi (${res.status})`);
+      return null;
+    }
+    return (await res.json().catch(() => ({}))) as CliLogin;
+  }
+
+  async function start() {
+    setBusy(true);
+    setMsg(null);
+    setCode("");
+    const r = await request("", "POST");
+    setBusy(false);
+    if (r) setSt(r);
+  }
+
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setMsg(null);
+    const r = await request("/code", "POST", { code: code.trim() });
+    setBusy(false);
+    if (r) {
+      setSt(r);
+      setCode("");
+    }
+  }
+
+  // While waiting for Google / the CLI, follow its progress.
+  const state = st?.state;
+  useEffect(() => {
+    if (state !== "verifying" && state !== "awaiting_code") return;
+    const t = setInterval(async () => {
+      const res = await fetch(url, { cache: "no-store" }).catch(() => null);
+      if (!res?.ok) return;
+      const r = (await res.json()) as CliLogin;
+      setSt(r);
+      if (r.state === "done") onChanged();
+    }, 1500);
+    return () => clearInterval(t);
+  }, [state, url, onChanged]);
+
+  return (
+    <div className="mt-3 space-y-3 border-t border-[var(--border)] pt-3 text-sm text-[var(--foreground)]">
+      {(!st || st.state === "idle" || st.state === "failed") && (
+        <div className="space-y-2">
+          <p className="text-xs text-[var(--muted-foreground)]">
+            Bạn sẽ đăng nhập Google và cho phép Antigravity CLI trên máy chủ dùng tài khoản của bạn (nên là tài khoản có gói Google AI Pro). Ứng dụng
+            không đọc hay hiển thị token — nó nằm riêng cho dịch vụ này trên máy chủ, và bạn có thể đăng xuất bất cứ lúc nào.
+          </p>
+          <div className="flex gap-2">
+            <button type="button" className={btn} disabled={busy} onClick={() => void start()}>
+              {busy ? "Đang tạo liên kết…" : "Tạo liên kết đăng nhập"}
+            </button>
+            <button type="button" className={btn} onClick={onClose}>
+              Đóng
+            </button>
+          </div>
+        </div>
+      )}
+      {st?.state === "failed" && st.error && <p className="text-xs text-[#b91c1c]">Không đăng nhập được: {st.error}</p>}
+      {(st?.state === "awaiting_code" || st?.state === "verifying") && st.url && (
+        <div className="space-y-3">
+          <ol className="list-decimal space-y-2 pl-5 text-xs text-[var(--muted-foreground)]">
+            <li>
+              <a href={st.url} target="_blank" rel="noreferrer" className="font-medium text-[var(--primary)] hover:underline">
+                Mở trang đăng nhập Google ↗
+              </a>{" "}
+              và chọn đúng tài khoản có gói AI Pro.
+            </li>
+            <li>Bấm cho phép; Google sẽ hiện một <strong>mã uỷ quyền</strong> (authorization code).</li>
+            <li>Dán mã đó vào ô dưới đây rồi bấm Xác nhận. Mã chỉ dùng được một lần và trong vài phút.</li>
+          </ol>
+          <form onSubmit={submit} className="flex flex-wrap items-center gap-2">
+            <input
+              className={`${inputClass} max-w-md`}
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+              placeholder="Dán mã uỷ quyền"
+              autoComplete="off"
+              spellCheck={false}
+              disabled={st.state === "verifying"}
+            />
+            <button type="submit" className={btn} disabled={busy || st.state === "verifying" || code.trim().length < 8}>
+              {st.state === "verifying" ? "Đang xác minh…" : "Xác nhận"}
+            </button>
+            <button type="button" className={btn} onClick={onClose}>
+              Đóng
+            </button>
+          </form>
+          {st.error && <p className="text-xs text-[#b91c1c]">{st.error}</p>}
+        </div>
+      )}
+      {st?.state === "done" && (
+        <div className="space-y-3">
+          <p className="text-xs text-[#15803d] dark:text-[#86efac]">Đã ủy quyền{st.account ? `: ${st.account}` : ""}. Chọn model rồi bấm “Kiểm tra”.</p>
+          <CliModelSelect serviceId={serviceId} current={model} onSaved={onChanged} />
+          <button type="button" className={btn} onClick={onClose}>
+            Đóng
+          </button>
+        </div>
+      )}
+      {msg && <p className="text-xs text-[#b91c1c]">{msg}</p>}
+    </div>
+  );
+}
+
 export function AiServicesConsole() {
   const [providers, setProviders] = useState<Provider[]>([]);
   const [services, setServices] = useState<Service[]>([]);
@@ -300,6 +515,7 @@ export function AiServicesConsole() {
   const [deleting, setDeleting] = useState<Service | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
   const [task, setTask] = useState<BenchTask>("translate");
+  const [authOpen, setAuthOpen] = useState<string | null>(null);
   const [edit, setEdit] = useState({ label: "", model: "", rpm: "", apiKey: "", baseUrl: "" });
 
   // Add form
@@ -380,9 +596,9 @@ export function AiServicesConsole() {
     setError(null);
     const res = await call("/services", "POST", {
       provider: pid,
-      apiKey,
+      apiKey: provider?.cli ? "" : apiKey,
       label: label.trim() || undefined,
-      model: model.trim() || undefined,
+      model: provider?.cli ? undefined : model.trim() || undefined,
       rpm: Number(rpm) || undefined,
       baseUrl: provider?.custom ? baseUrl.trim() : undefined,
       apiFormat: provider?.custom ? apiFormat : undefined,
@@ -397,7 +613,8 @@ export function AiServicesConsole() {
     setApiKey("");
     setLabel("");
     await load();
-    void test(created.id); // check the new key straight away
+    if (provider?.cli) setAuthOpen(created.id); // a CLI service must be authorised before it can be tried
+    else void test(created.id); // check the new key straight away
   }
 
   async function move(index: number, dir: -1 | 1) {
@@ -479,7 +696,11 @@ export function AiServicesConsole() {
       <ConfirmDialog
         open={deleting !== null}
         title="Xoá dịch vụ AI?"
-        message={`“${deleting?.label ?? ""}” sẽ bị xoá cùng khoá API đã lưu. Các dịch vụ còn lại vẫn được dùng.`}
+        message={
+          deleting?.cli
+            ? `“${deleting.label}” sẽ bị xoá cùng toàn bộ dữ liệu của nó trên máy chủ: đăng nhập Google (đăng xuất agy trước), thư mục làm việc, các cuộc hội thoại và nhật ký các lần gọi. Nếu không xoá hết được thì dịch vụ được giữ lại để bạn thử lại. Để thu hồi hẳn quyền của ứng dụng, vào myaccount.google.com/permissions. Các dịch vụ còn lại vẫn được dùng.`
+            : `“${deleting?.label ?? ""}” sẽ bị xoá cùng khoá API đã lưu. Các dịch vụ còn lại vẫn được dùng.`
+        }
         confirmLabel="Xoá"
         busyLabel="Đang xoá…"
         busy={busy === deleting?.id}
@@ -532,7 +753,7 @@ export function AiServicesConsole() {
                       )}
                     </p>
                     <p className="mt-1 text-xs text-[var(--muted-foreground)]">
-                      {s.providerName} · <code>{s.model}</code> · {s.keyHint ? `khoá ····${s.keyHint}` : "không dùng khoá"} · {s.rpm} yêu cầu/phút{s.provider === "custom" && s.baseUrl ? ` · ${s.baseUrl}` : ""}
+                      {s.providerName} · <code>{s.model}</code> · {s.cli ? (s.authorized ? `tài khoản Google: ${s.account ?? "đã ủy quyền"}` : "chưa ủy quyền tài khoản Google") : s.keyHint ? `khoá ····${s.keyHint}` : "không dùng khoá"} · {s.rpm} yêu cầu/phút{s.provider === "custom" && s.baseUrl ? ` · ${s.baseUrl}` : ""}
                       {(["translate", "write", "grammar", "pronounce"] as const)
                         .filter((t) => s.benchTasks?.[t]?.ok)
                         .map((t) => ` · ${{ translate: "dịch", write: "đặt câu", grammar: "ngữ pháp", pronounce: "phát âm" }[t]} ${s.benchTasks![t]!.accuracy.toFixed(0)}`)
@@ -560,6 +781,28 @@ export function AiServicesConsole() {
                         {s.enabled ? "Đang bật" : "Đang tắt"}
                       </button>
                     </>
+                  )}
+                  {s.cli && !s.readOnly && (
+                    <button type="button" className={btn} onClick={() => setAuthOpen(authOpen === s.id ? null : s.id)}>
+                      {s.authorized ? "Đổi tài khoản" : "Ủy quyền tài khoản Google"}
+                    </button>
+                  )}
+                  {s.cli && s.authorized && (
+                    <button
+                      type="button"
+                      className={btn}
+                      disabled={busy === s.id}
+                      title="Xoá trạng thái đăng nhập trên máy chủ. Để thu hồi hẳn quyền của ứng dụng, vào myaccount.google.com/permissions"
+                      onClick={async () => {
+                        setBusy(s.id);
+                        const res = await call(`/services/${s.id}/cli-login`, "DELETE");
+                        setBusy(null);
+                        if (!res?.ok) setError(await message(res, "Không đăng xuất được"));
+                        await load();
+                      }}
+                    >
+                      Đăng xuất
+                    </button>
                   )}
                   <button type="button" className={btn} disabled={busy === s.id} onClick={() => void test(s.id)}>
                     {busy === s.id ? "Đang thử…" : "Kiểm tra"}
@@ -590,6 +833,7 @@ export function AiServicesConsole() {
               {t && (
                 <p className={"mt-2 text-xs " + (t.ok ? "text-[#15803d] dark:text-[#86efac]" : "text-[#b91c1c]")}>{t.text}</p>
               )}
+              {authOpen === s.id && s.cli && <CliLoginPanel serviceId={s.id} model={s.model} onClose={() => setAuthOpen(null)} onChanged={() => void load()} />}
               {!t && s.lastError && s.status !== "ok" && (
                 <p className="mt-2 text-xs text-[var(--muted-foreground)]">Lần lỗi gần nhất: {s.lastError}</p>
               )}
@@ -599,10 +843,20 @@ export function AiServicesConsole() {
                     Tên hiển thị
                     <input className={`mt-1 ${inputClass}`} value={edit.label} onChange={(e) => setEdit({ ...edit, label: e.target.value })} />
                   </label>
-                  <label className="text-xs text-[var(--muted-foreground)]">
-                    Model
-                    <input className={`mt-1 ${inputClass}`} value={edit.model} onChange={(e) => setEdit({ ...edit, model: e.target.value })} />
-                  </label>
+                  {s.cli ? (
+                    <div className="sm:col-span-2">
+                      {s.authorized ? (
+                        <CliModelSelect serviceId={s.id} current={s.model} onSaved={() => void load()} />
+                      ) : (
+                        <p className="text-xs text-[var(--muted-foreground)]">Ủy quyền tài khoản Google trước, rồi mới chọn được model.</p>
+                      )}
+                    </div>
+                  ) : (
+                    <label className="text-xs text-[var(--muted-foreground)]">
+                      Model
+                      <input className={`mt-1 ${inputClass}`} value={edit.model} onChange={(e) => setEdit({ ...edit, model: e.target.value })} />
+                    </label>
+                  )}
                   <label className="text-xs text-[var(--muted-foreground)]">
                     Yêu cầu/phút
                     <input className={`mt-1 ${inputClass}`} inputMode="numeric" value={edit.rpm} onChange={(e) => setEdit({ ...edit, rpm: e.target.value })} />
@@ -613,11 +867,11 @@ export function AiServicesConsole() {
                       <input className={`mt-1 ${inputClass}`} value={edit.baseUrl} onChange={(e) => setEdit({ ...edit, baseUrl: e.target.value })} />
                     </label>
                   )}
-                  <label className="text-xs text-[var(--muted-foreground)]">
+                  {!s.cli && <label className="text-xs text-[var(--muted-foreground)]">
                     Khoá API mới (để trống = giữ nguyên)
                     <input className={`mt-1 ${inputClass}`} type="password" autoComplete="off" value={edit.apiKey} onChange={(e) => setEdit({ ...edit, apiKey: e.target.value })} />
-                  </label>
-                  <div className="sm:col-span-4">
+                  </label>}
+                  {!s.cli && <div className="sm:col-span-4">
                     <ModelPicker
                       providerId={s.provider}
                       apiKey={edit.apiKey}
@@ -628,7 +882,7 @@ export function AiServicesConsole() {
                       publicModels={providers.find((p) => p.id === s.provider)?.publicModels}
                       baseUrl={edit.baseUrl}
                     />
-                  </div>
+                  </div>}
                   <div className="sm:col-span-4 flex gap-2">
                     <button type="button" className={btn} disabled={busy === s.id} onClick={() => void saveEdit(s.id)}>
                       Lưu
@@ -665,7 +919,7 @@ export function AiServicesConsole() {
               ))}
             </select>
           </label>
-          <label className="text-sm">
+          {!provider?.cli && <label className="text-sm">
             <span className="text-[var(--muted-foreground)]">
               Khoá API{provider?.custom && " (để trống nếu máy cục bộ không cần)"}
             </span>
@@ -678,7 +932,7 @@ export function AiServicesConsole() {
               onChange={(e) => setApiKey(e.target.value)}
               placeholder={provider?.custom ? "Tuỳ chọn" : "Dán khoá API"}
             />
-          </label>
+          </label>}
           {provider?.baseUrlTemplate && (
             <label className="text-sm sm:col-span-2">
               <span className="text-[var(--muted-foreground)]">Account ID (32 ký tự, ở dash.cloudflare.com)</span>
@@ -735,10 +989,14 @@ export function AiServicesConsole() {
               </p>
             </div>
           )}
-          <label className="text-sm">
-            <span className="text-[var(--muted-foreground)]">Model</span>
-            <input className={`mt-1 ${inputClass}`} value={model} onChange={(e) => setModel(e.target.value)} />
-          </label>
+          {provider?.cli ? (
+            <p className="text-sm text-[var(--muted-foreground)] sm:self-end">Model: chọn sau khi ủy quyền tài khoản Google (mặc định “{provider.defaultModel}”).</p>
+          ) : (
+            <label className="text-sm">
+              <span className="text-[var(--muted-foreground)]">Model</span>
+              <input className={`mt-1 ${inputClass}`} value={model} onChange={(e) => setModel(e.target.value)} />
+            </label>
+          )}
           <div className="grid grid-cols-2 gap-3">
             <label className="text-sm">
               <span className="text-[var(--muted-foreground)]">Tên hiển thị (tuỳ chọn)</span>
@@ -750,7 +1008,7 @@ export function AiServicesConsole() {
             </label>
           </div>
         </div>
-        {provider && (
+        {provider && !provider.cli && (
           <div className="mt-3">
             <ModelPicker
               providerId={provider.id}
@@ -770,14 +1028,14 @@ export function AiServicesConsole() {
             {provider.keyUrl && <a href={provider.keyUrl} target="_blank" rel="noreferrer" className="font-medium text-[var(--primary)] hover:underline">
               Lấy khoá API ↗
             </a>}{" "}
-            · Tên model có thể đổi theo thời gian — bấm “Kiểm tra” sau khi thêm. Dịch vụ mới được xếp ở cuối danh sách ưu tiên.
+            · Tên model có thể đổi theo thời gian — bấm “Kiểm tra” sau khi {provider.cli ? "ủy quyền" : "thêm"}. Dịch vụ mới được xếp ở cuối danh sách ưu tiên.
           </p>
         )}
         <button
           type="submit"
           disabled={
             busy === "add" ||
-            (provider?.custom ? !baseUrl.trim() : apiKey.trim().length < 8) ||
+            (provider?.cli ? false : provider?.custom ? !baseUrl.trim() : apiKey.trim().length < 8) ||
             (Boolean(provider?.baseUrlTemplate) && accountId.trim().length !== 32)
           }
           className="mt-4 rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-semibold text-[var(--primary-foreground)] hover:bg-[var(--primary-hover)] disabled:cursor-not-allowed disabled:opacity-60"

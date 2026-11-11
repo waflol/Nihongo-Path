@@ -1,8 +1,10 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   Logger,
   NotFoundException,
+  OnModuleDestroy,
   Optional,
   UnprocessableEntityException,
 } from "@nestjs/common";
@@ -25,6 +27,7 @@ import {
 } from "./ai-benchmark.js";
 import { fetchNvidiaCatalog, nvidiaModels } from "./ai-nvidia.js";
 import { validateBaseUrl } from "./ai-url.js";
+import { authStatus, cancelAllLogins, destroyHome, ensureHome, isValidCliModel, listCliModels, loginStatus, logout, startLogin, submitLoginCode, AntigravityCliFailure, type LoginStatus } from "./ai-antigravity-cli.js";
 import { normaliseModels, type AiModelInfo } from "./ai-models.js";
 import type { AiServiceDocument } from "./ai-service.schema.js";
 
@@ -67,6 +70,11 @@ export interface AiServiceView {
   cooldownUntil: string | null;
   /** From the server's .env (read-only, always tried last). */
   readOnly?: boolean;
+  /** Runs through the Antigravity CLI: no key, the admin authorises a Google account instead. */
+  cli?: boolean;
+  /** CLI services: whether a Google account is signed in, and which one. */
+  authorized?: boolean;
+  account?: string | null;
 }
 
 export type FailureKind = "auth" | "rate" | "transient";
@@ -85,7 +93,7 @@ const STATUS_OF: Record<FailureKind, string> = { rate: "cooldown", transient: "e
  * resort after the admin's own services.
  */
 @Injectable()
-export class AiServicesService {
+export class AiServicesService implements OnModuleDestroy {
   private readonly logger = new Logger(AiServicesService.name);
   private cache: { at: number; list: RuntimeAiService[] } | null = null;
   /** In-memory cooldowns (id → until); mirrored to the database for the admin page. */
@@ -145,7 +153,7 @@ export class AiServicesService {
 
   /** Decrypted key; "" for a keyless custom server; null when it cannot be decrypted. */
   private keyOf(d: AiServiceDocument): string | null {
-    if (!d.keyBox) return d.provider === "custom" ? "" : null;
+    if (!d.keyBox) return d.provider === "custom" || providerById(d.provider)?.cli ? "" : null;
     return openSecret(d.keyBox, this.secret);
   }
 
@@ -257,6 +265,7 @@ export class AiServicesService {
       lastError: d.lastError,
       lastOkAt: d.lastOkAt ? d.lastOkAt.toISOString() : null,
       cooldownUntil: d.cooldownUntil && d.cooldownUntil.getTime() > Date.now() ? d.cooldownUntil.toISOString() : null,
+      ...(providerById(d.provider)?.cli ? { cli: true, ...authStatus(String(d._id)) } : {}),
     };
   }
 
@@ -386,9 +395,10 @@ export class AiServicesService {
     const model = this.requireModel();
     const provider = providerById(input.provider ?? "");
     if (!provider) throw new UnprocessableEntityException("Unknown provider");
-    const apiKey = (input.apiKey ?? "").trim();
+    // A CLI service never stores a key (it signs in with a Google account).
+    const apiKey = provider.cli ? "" : (input.apiKey ?? "").trim();
     // A custom (local) server may need no key; everything else does.
-    if (apiKey.length > 400 || (apiKey.length < 8 && !(provider.custom && apiKey === ""))) {
+    if (apiKey.length > 400 || (apiKey.length < 8 && !((provider.custom || provider.cli) && apiKey === ""))) {
       throw new UnprocessableEntityException("API key looks invalid");
     }
     if (apiKey && !this.secret) {
@@ -398,6 +408,7 @@ export class AiServicesService {
     const modelName = (input.model ?? "").trim() || provider.defaultModel;
     if (!modelName) throw new UnprocessableEntityException("Nhập tên mô hình");
     this.assertChatModel(provider, modelName);
+    if (provider.cli && !isValidCliModel(modelName)) throw new UnprocessableEntityException("Tên model không hợp lệ");
     const last = await model.findOne().sort({ priority: -1 }).exec();
     const doc = await model.create({
       provider: provider.id,
@@ -410,6 +421,7 @@ export class AiServicesService {
       rpm: this.rpmOf(input.rpm, provider.defaultRpm),
       priority: (last?.priority ?? -1) + 1,
     });
+    if (provider.cli) await ensureHome(String(doc._id));
     this.cache = null;
     return this.view(doc);
   }
@@ -456,6 +468,7 @@ export class AiServicesService {
     if (input.model !== undefined && input.model.trim()) {
       const preset = providerById(doc.provider);
       if (preset) this.assertChatModel(preset, input.model.trim());
+      if (preset?.cli && !isValidCliModel(input.model.trim())) throw new UnprocessableEntityException("Tên model không hợp lệ");
       doc.modelName = input.model.trim();
     }
     if (input.rpm !== undefined) doc.rpm = this.rpmOf(input.rpm, doc.rpm);
@@ -464,7 +477,7 @@ export class AiServicesService {
       if (input.baseUrl !== undefined && input.baseUrl.trim()) doc.baseUrl = validateBaseUrl(input.baseUrl);
       if (input.apiFormat !== undefined) doc.apiFormat = input.apiFormat === "anthropic" ? "anthropic" : "openai";
     }
-    if (input.apiKey !== undefined && input.apiKey.trim()) {
+    if (input.apiKey !== undefined && input.apiKey.trim() && !providerById(doc.provider)?.cli) {
       const k = input.apiKey.trim();
       if (k.length < 8 || k.length > 400) throw new UnprocessableEntityException("API key looks invalid");
       if (!this.secret) throw new ConflictException("Set AI_KEY_SECRET (or JWT_ACCESS_SECRET)");
@@ -482,9 +495,87 @@ export class AiServicesService {
     return this.view(doc);
   }
 
+  /** Whether the stored service runs through a CLI (its data on the server is wiped with it). */
+  async isCli(id: string): Promise<boolean> {
+    const d = await this.find(id);
+    return Boolean(providerById(d.provider)?.cli) || d.provider === "gemini-cli";
+  }
+
   async remove(id: string): Promise<void> {
     const doc = await this.find(id);
+    // A CLI service holds a Google sign-in on this server: wipe it FIRST and keep the service if that fails,
+    // so a leftover token is never orphaned (no service, no button to remove it).
+    if (providerById(doc.provider)?.cli || doc.provider === "gemini-cli") {
+      try {
+        await destroyHome(String(doc._id));
+      } catch (e) {
+        this.logger.error(`Antigravity CLI data of ${id} not removed: ${(e as Error).message}`);
+        throw new ConflictException(`Chưa xoá được dữ liệu đăng nhập của dịch vụ trên máy chủ nên giữ lại dịch vụ — thử lại, hoặc xoá thư mục ${"`data/antigravity-cli/" + id + "`"} bằng tay (${(e as Error).message})`);
+      }
+    }
     await doc.deleteOne();
+    this.cooldown.delete(id);
+    this.cache = null;
+  }
+
+  // ── Antigravity CLI services: the admin authorises a Google account ─────────
+
+  onModuleDestroy(): void {
+    cancelAllLogins();
+  }
+
+  /** The stored service, which must be a Antigravity CLI one. */
+  private async cliService(id: string): Promise<AiServiceDocument> {
+    const d = await this.find(id);
+    if (!providerById(d.provider)?.cli) throw new BadRequestException("Dịch vụ này không dùng Antigravity CLI");
+    return d;
+  }
+
+  private cliFailed(e: unknown): never {
+    if (e instanceof AntigravityCliFailure) throw new BadRequestException(e.message);
+    throw e;
+  }
+
+  /** Starts the Google sign-in: the answer carries the link the admin must open. */
+  async cliLoginStart(id: string): Promise<LoginStatus> {
+    const d = await this.cliService(id);
+    try {
+      return await startLogin(String(d._id));
+    } catch (e) {
+      return this.cliFailed(e);
+    }
+  }
+
+  /** Progress of the sign-in (the admin page polls this). When it finishes, the service gets a clean slate. */
+  async cliLoginStatus(id: string): Promise<LoginStatus & { authorized: boolean; account: string | null }> {
+    const d = await this.cliService(id);
+    const st = loginStatus(String(d._id));
+    const auth = authStatus(String(d._id));
+    if (auth.authorized && d.status === "invalid") {
+      d.status = "unknown";
+      d.lastError = "";
+      d.cooldownUntil = undefined;
+      this.cooldown.delete(id);
+      await d.save();
+      this.cache = null;
+    }
+    return { ...st, ...auth };
+  }
+
+  /** The code Google showed the admin after they approved. */
+  async cliLoginCode(id: string, code: string): Promise<LoginStatus> {
+    const d = await this.cliService(id);
+    try {
+      return submitLoginCode(String(d._id), String(code ?? ""));
+    } catch (e) {
+      return this.cliFailed(e);
+    }
+  }
+
+  /** Forgets the signed-in Google account (the service stays, unauthorised). */
+  async cliLogout(id: string): Promise<void> {
+    const d = await this.cliService(id);
+    await logout(String(d._id));
     this.cooldown.delete(id);
     this.cache = null;
   }
@@ -524,6 +615,20 @@ export class AiServicesService {
   }): Promise<AiModelInfo[]> {
     let provider = providerById(input.provider ?? "");
     let key = (input.apiKey ?? "").trim();
+    if (provider?.cli) {
+      const cli = provider;
+      // The models this account can really use (`agy models`), else the suggested list.
+      const live = input.serviceId && Types.ObjectId.isValid(input.serviceId) ? await listCliModels(input.serviceId).catch(() => null) : null;
+      if (!live) return normaliseModels(cli, {});
+      const own: AiModelInfo[] = live.map((m) => ({
+        id: m.id,
+        tier: "unknown",
+        basis: "estimate",
+        note: cli.modelNotes?.[m.id] ?? m.note ?? "Model của tài khoản (agy models)",
+      }));
+      // "default" (no --model) stays first: the CLI picks for itself.
+      return [{ id: cli.defaultModel, tier: "unknown", basis: "estimate", note: cli.modelNotes?.[cli.defaultModel], isDefault: true }, ...own];
+    }
     if (input.serviceId) {
       const rt = await this.runtimeOf(input.serviceId);
       provider = rt.provider;

@@ -92,6 +92,13 @@ export class AiCallLogService {
     }
   }
 
+  /** Deletes every logged call of one service (prompts and answers of a removed service). */
+  async removeByService(serviceId: string): Promise<{ deleted: number }> {
+    if (!this.model) return { deleted: 0 };
+    const r = await this.model.deleteMany({ serviceId }).exec();
+    return { deleted: r.deletedCount ?? 0 };
+  }
+
   async clear(): Promise<{ deleted: number }> {
     if (!this.model) return { deleted: 0 };
     const r = await this.model.deleteMany({}).exec();
