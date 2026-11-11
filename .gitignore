@@ -151,8 +151,6 @@ vite.config.ts.timestamp-*
 # Turbo Repo
 .turbo
 
-.claude/settings.json
-
 # kanji import cache
 apps/api/data/kanji/
 # Antigravity CLI state of each service (sign-in data) - never commit
