@@ -939,7 +939,7 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
                 <option value="">Tự động (theo ưu tiên)</option>
                 {aiServices.map((x) => (
                   <option key={x.id} value={x.id}>
-                    {x.label || x.model}
+                    {x.label && x.model && !x.label.includes(x.model) ? `${x.label} · ${x.model}` : x.label || x.model}
                   </option>
                 ))}
               </select>

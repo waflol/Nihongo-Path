@@ -70,7 +70,7 @@ export function ExamplesLogPanel({ deckId, mode }: { deckId: string; mode: "lear
       .then((r) => (r.ok ? r.json() : []))
       .then((l: { id: string; label: string; model: string }[]) => {
         const s = Array.isArray(l) ? l.find((x) => x.id === log.serviceId) : null;
-        if (s) setServiceName(s.label || s.model);
+        if (s) setServiceName(s.label && s.model && !s.label.includes(s.model) ? `${s.label} · ${s.model}` : s.label || s.model);
       })
       .catch(() => undefined);
   }, [log?.serviceId]);
