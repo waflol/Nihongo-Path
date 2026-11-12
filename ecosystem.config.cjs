@@ -6,7 +6,7 @@ module.exports = {
       name: "api",
       cwd: "./apps/api",
       script: "pnpm",
-      args: "start:prod",
+      args: "dev",
       interpreter: "none", // pnpm is a binary, not a JS file for pm2 to run with node
       max_memory_restart: "800M",
       autorestart: true,
@@ -15,7 +15,7 @@ module.exports = {
       name: "ui",
       cwd: "./apps/ui",
       script: "pnpm",
-      args: "start",
+      args: "dev",
       interpreter: "none",
       max_memory_restart: "800M",
       autorestart: true,
