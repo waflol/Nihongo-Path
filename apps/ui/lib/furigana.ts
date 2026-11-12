@@ -20,8 +20,8 @@ export type KanjiReadings = Record<string, { on: string[]; kun: string[] }>;
 export function furiganaParts(front: string, reading: string, dict?: KanjiReadings): FuriganaPart[] {
   // PDF imports leave spaces between the characters (人 見 知 り): they are not part of the word.
   front = squeezeJa(front);
-  // A bracketed note after the word ("予期（する）") stays plain text after the ruby.
-  const m = /^([^（(]*?)\s*([（(].*)?$/.exec(front.trim());
+  // A bracketed note after the word ("予期（する）", "着々［と］") stays plain text after the ruby.
+  const m = /^([^（(［[]*?)\s*([（(［[].*)?$/.exec(front.trim());
   const base = (m?.[1] ?? front).trim();
   const tail = m?.[2] ?? "";
   const plain: FuriganaPart[] = [{ text: front }];

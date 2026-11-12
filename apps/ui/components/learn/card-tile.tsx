@@ -18,6 +18,8 @@ export interface TileCard {
   examples?: { sentence: string; translation?: string; source?: string }[];
   tags?: string[];
   origin?: string;
+  /** Fields a person corrected by hand after a warning: the deck check leaves them alone. */
+  userFixed?: string[];
   /** The card's own number in the source list (STT); kept when searching / filtering. */
   order?: number;
 }
@@ -127,8 +129,16 @@ export function CardTile({
             </ul>
           ) : null}
 
-          {(card.tags && card.tags.length > 0) || card.origin ? (
+          {(card.tags && card.tags.length > 0) || card.origin || (card.userFixed?.length ?? 0) > 0 ? (
             <div className="mt-3 flex flex-wrap items-center gap-1.5">
+              {card.userFixed && card.userFixed.length > 0 ? (
+                <span
+                  title="Đã sửa tay sau cảnh báo: chức năng kiểm tra từ vựng bỏ qua các trường này"
+                  className="rounded-full bg-[var(--layer)] px-2 py-0.5 text-[11px] font-medium text-[var(--muted-foreground)]"
+                >
+                  đã sửa tay: {card.userFixed.map((f) => (f === "reading" ? "cách đọc" : f === "back" ? "nghĩa" : "Hán Việt")).join(", ")}
+                </span>
+              ) : null}
               {card.tags?.map((t) => (
                 isJlptLevel(t) ? (
                   onTagClick ? (

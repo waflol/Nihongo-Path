@@ -2,7 +2,7 @@ import { correctHanViet, correctHanVietPartial, hanVietFits, harmonizeHanViet, n
 import { createHash } from "node:crypto";
 import { readingFitsKanji } from "../import/kanji-reading.js";
 import { ensureKanjiTables } from "../import/kanji-table.js";
-import { ReadingService, readingVariants } from "./reading.service.js";
+import { ReadingService, WORD_NOTE_RE, readingVariants, splitStrayReading } from "./reading.service.js";
 import {
   BadRequestException,
   ConflictException,
@@ -45,6 +45,24 @@ export type RecheckField = ReviewFilter | "readingBack";
 
 /** The field a warning text is about (the wording is written by the import / the checks). */
 export const reviewFieldOf = (t: string): ReviewField => (/^Hán Việt/.test(t) ? "hanViet" : /^cách đọc/.test(t) ? "reading" : "back");
+
+/** The warning for a reading that holds words which are not a reading (e.g. Vietnamese from the meaning column). */
+export function strayReadingIssue(reading: string, stray: string, kana: string): string {
+  return `cách đọc “${reading}” lẫn chữ không phải cách đọc: “${stray}”${kana ? ` (gợi ý: ${kana})` : ""}`;
+}
+
+/**
+ * The fields a person corrected by hand in one edit: the value changed, the field had a warning
+ * before the edit, and the change is not the check's own suggestion being applied (`resolve`).
+ */
+export function userFixedFields(
+  before: { reading: string; back: string; hanViet: string },
+  after: { reading: string; back: string; hanViet: string },
+  warned: Set<ReviewField>,
+  resolve?: ReviewField,
+): ReviewField[] {
+  return (["reading", "back", "hanViet"] as const).filter((f) => f !== resolve && warned.has(f) && after[f].trim() !== before[f].trim());
+}
 
 /** Mongo clause selecting the cards with a warning of the given kind. */
 function reviewClause(f: ReviewFilter): Record<string, unknown> {
@@ -180,9 +198,13 @@ export class FlashcardsService implements OnModuleInit {
         // The whole word from the table, else the syllables the table can vouch for (a kanji it lacks stays as written).
         const v = suggestHanViet(c.front) || (c.hanViet ? (correctHanVietPartial(c.front, c.hanViet) ?? "") : "");
         if (v && v !== (c.hanViet ?? "")) fix = v;
+      } else if (field === "reading" && splitStrayReading(c.reading).stray) {
+        // Vietnamese words in the reading: the fix is the reading without them.
+        const kana = splitStrayReading(c.reading).kana;
+        if (kana) fix = kana;
       } else if (field === "reading" && this.morph) {
         try {
-          const a = await this.morph.analyze(c.front.replace(/[（(][^）)]*[）)]/g, ""));
+          const a = await this.morph.analyze(c.front.replace(WORD_NOTE_RE, ""));
           // The card's reading is one this word is known to have (人気 = にんき / ひとけ): nothing to warn about.
           if (a.readings.length > 0 && readingVariants(c.reading).some((r) => a.readings.includes(r))) continue;
           if (a.reading && a.reading !== (c.reading ?? "")) fix = a.reading;
@@ -925,6 +947,9 @@ export class FlashcardsService implements OnModuleInit {
       throw new ForbiddenException("Only admins modify shared-deck cards");
     }
 
+    // What the card looked like, and which fields had a warning, before this edit.
+    const before = { front: cardDoc.front, reading: cardDoc.reading ?? "", back: cardDoc.back ?? "", hanViet: cardDoc.hanViet ?? "" };
+    const warned = new Set((cardDoc.reviewIssues ?? []).map(reviewFieldOf));
     const front = input.front?.trim() ?? cardDoc.front;
     const back = input.back?.trim() ?? cardDoc.back;
     // An imported card may still wait for its meaning; every other card needs both faces.
@@ -963,6 +988,14 @@ export class FlashcardsService implements OnModuleInit {
     if (input.resolve) {
       const of = (t: string): ReviewField => (/^Hán Việt/.test(t) ? "hanViet" : /^cách đọc/.test(t) ? "reading" : "back");
       cardDoc.reviewIssues = (cardDoc.reviewIssues ?? []).filter((t) => of(t) !== input.resolve);
+    }
+    // A person corrected a warned field by hand (not by applying the check's own suggestion): the check
+    // leaves that field alone from now on, and a corrected reading is remembered for the word everywhere.
+    const fixedNow = userFixedFields(before, { reading: cardDoc.reading ?? "", back: cardDoc.back ?? "", hanViet: cardDoc.hanViet ?? "" }, warned, input.resolve);
+    const keep = front === before.front ? (cardDoc.userFixed ?? []) : [];
+    if (fixedNow.length > 0 || keep.length !== (cardDoc.userFixed ?? []).length) cardDoc.userFixed = [...new Set([...keep, ...fixedNow])];
+    if (fixedNow.includes("reading") && cardDoc.reading) {
+      for (const v of readingVariants(cardDoc.reading)) void this.morph?.learn(cardDoc.front, v, cardDoc.back);
     }
     cardDoc.dedupeKey = key;
     await cardDoc.save();
@@ -1148,7 +1181,7 @@ export class FlashcardsService implements OnModuleInit {
     // Only what the re-check needs: the heavy fields (examples, image) stay in the database.
     const cards = await this.card
       .find({ deck: deckOid, ...(ids && ids.length > 0 ? { _id: { $in: ids.map((i) => new Types.ObjectId(i)) } } : {}) })
-      .select("front reading back hanViet reviewIssues order readingChecked backChecked")
+      .select("front reading back hanViet reviewIssues order readingChecked backChecked userFixed")
       .sort({ order: 1, _id: 1 })
       .limit(3000)
       .exec();
@@ -1167,7 +1200,7 @@ export class FlashcardsService implements OnModuleInit {
     };
     await saveLog(false);
 
-    const clean = (t: string) => t.replace(/[（(][^）)]*[）)]/g, "").trim();
+    const clean = (t: string) => t.replace(WORD_NOTE_RE, "").trim();
     const fingerprint = (a: string, b: string) => createHash("sha1").update(`${a}|${b}`).digest("base64url").slice(0, 12);
     const tick = () => new Promise<void>((r) => setImmediate(r)); // let the API serve requests between chunks
     const gate = async () => {
@@ -1207,6 +1240,8 @@ export class FlashcardsService implements OnModuleInit {
       askReading: string[];
       /** A katakana word whose reading does not match the word. */
       kataIssue?: string;
+      /** The reading holds words that are not a reading (Latin / Vietnamese text). */
+      strayIssue?: string;
       /** A reading valid for the word but tied to another meaning (from what people confirmed). */
       readingClash?: string;
     };
@@ -1218,18 +1253,25 @@ export class FlashcardsService implements OnModuleInit {
         await tick();
         if (!(await gate())) return;
       }
-      const reading = c.reading ?? "";
+      const rawReading = c.reading ?? "";
       const word = clean(c.front);
-      const rHash = fingerprint(word, reading);
+      const rHash = fingerprint(word, rawReading);
+      // Words that are not a reading at all (Vietnamese slipped in from the meaning column) are a warning of
+      // their own; the rest is judged without them, so a valid kana part can never vouch for the stray words.
+      const { kana: reading, stray } = splitStrayReading(rawReading);
+      // A field a person corrected by hand after a warning is theirs: the check leaves it alone.
+      const handFixed = (f: ReviewField) => (c.userFixed ?? []).includes(f);
       const bHash = fingerprint(word, c.back ?? "");
       const p: Plan = {
         c,
         rHash,
         bHash,
-        judgeReading: wants("reading") && (force || c.readingChecked !== rHash),
-        judgeBack: wants("back") && (force || c.backChecked !== bHash),
+        // A reading with stray words is judged again on every run (older runs let it through), until it is fixed.
+        judgeReading: wants("reading") && !handFixed("reading") && (force || c.readingChecked !== rHash || !!stray),
+        judgeBack: wants("back") && !handFixed("back") && (force || c.backChecked !== bHash),
         askReading: [],
       };
+      if (p.judgeReading && stray) p.strayIssue = strayReadingIssue(rawReading, stray, reading);
       if (p.judgeReading && reading && /^[\p{Script=Katakana}ー・\s]+$/u.test(word)) {
         // A katakana word is its own reading: only check the reading matches the word (no AI, no hiragana suggestion).
         const norm = (t: string) => t.replace(/[\s・]/g, "").replace(/[\u30A1-\u30F6]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0x60));
@@ -1251,7 +1293,9 @@ export class FlashcardsService implements OnModuleInit {
           // The analyser reads an unknown compound kanji by kanji (一人 → イチ+ニン), so it would "confirm" a wrong reading: ask the AI too.
           else if (known.length > 0 && (await fragmented(word))) invalid = variants;
         }
-        p.askReading = invalid;
+        // A reading a person confirmed for this word (fixed by hand on any card, or kept on a warning) is not asked again.
+        const confirmed = invalid.length > 0 && this.morph ? await this.morph.confirmedReadings(word) : [];
+        p.askReading = invalid.filter((v) => !confirmed.includes(v));
         // A word with a reading per meaning: the card's reading must go with the card's meaning.
         const rm = (await this.morph?.readingMeanings(word)) ?? [];
         const mine = hvNorm(c.back ?? "");
@@ -1271,6 +1315,7 @@ export class FlashcardsService implements OnModuleInit {
       const reading = c.reading ?? "";
       const hanViet = c.hanViet ?? "";
       const meaning = c.back ?? "";
+      if (p.strayIssue) out.push(p.strayIssue);
       if (p.kataIssue) out.push(p.kataIssue);
       if (p.readingClash) out.push(p.readingClash);
       if (p.askReading.length > 0 && r?.reading && /^[\p{Script=Hiragana}ー]+$/u.test(r.reading) && !p.askReading.includes(r.reading)) {
@@ -1278,7 +1323,7 @@ export class FlashcardsService implements OnModuleInit {
       }
       // Hán Việt is looked up in the kanji admin data and replaced in place when it is wrong.
       let fixedHv: string | null = null;
-      if (wants("hanViet")) {
+      if (wants("hanViet") && !(c.userFixed ?? []).includes("hanViet")) {
         // A blank cell is filled when the data knows every kanji of the word.
         const right = hanViet ? (correctHanViet(c.front, hanViet) ?? correctHanVietPartial(c.front, hanViet)) : suggestHanViet(c.front);
         if (right && right !== hanViet) fixedHv = right;

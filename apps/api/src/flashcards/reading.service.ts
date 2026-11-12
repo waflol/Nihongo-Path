@@ -51,6 +51,30 @@ export function readingVariants(raw: string | undefined | null): string[] {
   return [...new Set(parts)];
 }
 
+/** A bracketed note after a word — "予期（する）", "着々［と］" — that is not part of the word itself. */
+export const WORD_NOTE_RE = /[（(［[][^）)］\]]*[）)］\]]/g;
+
+/**
+ * Split a reading cell into the reading proper and the words that do not belong
+ * in it. A PDF import can let the end of a wrapped Vietnamese meaning slip into
+ * the reading column ("chãi, ổn ちゃくちゃく"): every whitespace-separated piece
+ * with a Latin letter in it is such a stray word. `stray` is "" when the cell is
+ * clean, and then `kana` is the cell unchanged.
+ */
+export function splitStrayReading(raw: string | undefined | null): { kana: string; stray: string } {
+  const text = (raw ?? "").trim();
+  if (!/\p{Script=Latin}/u.test(text)) return { kana: text, stray: "" };
+  // "ổnちゃく" (no space): cut where Latin text meets kana, and the other way round.
+  const spaced = text
+    .replace(/([\p{Script=Latin}\p{P}])(?=[\p{Script=Hiragana}\p{Script=Katakana}ー])/gu, "$1 ")
+    .replace(/([\p{Script=Hiragana}\p{Script=Katakana}ー])(?=\p{Script=Latin})/gu, "$1 ");
+  const keep: string[] = [];
+  const drop: string[] = [];
+  for (const piece of spaced.split(/\s+/).filter(Boolean)) (/\p{Script=Latin}/u.test(piece) ? drop : keep).push(piece);
+  const kana = keep.join(" ").replace(/^[\s,，、/／;；]+|[\s,，、/／;；]+$/g, "");
+  return { kana, stray: drop.join(" ") };
+}
+
 /** Katakana → hiragana (leaves ー and everything else alone). */
 export function toHiragana(text: string): string {
   return text.replace(/[ァ-ヶ]/g, (c) =>
@@ -138,9 +162,10 @@ export class ReadingService {
    * confirmed for it (人気 = にんき and ひとけ), so confirming one never overwrites another.
    */
   async learn(rawWord: string, reading: string, meaning?: string): Promise<void> {
-    const word = rawWord.replace(/[（(][^）)]*[）)]/g, "").trim();
+    const word = rawWord.replace(WORD_NOTE_RE, "").trim();
     const r = toHiragana(reading.trim());
-    if (!word || !r || !KANJI_RE.test(word)) return;
+    // A reading with Vietnamese / Latin words in it is never a reading to remember ("Bỏ qua" on such a warning).
+    if (!word || !r || !KANJI_RE.test(word) || /\p{Script=Latin}/u.test(r)) return;
     const m = await this.loadOverrides();
     const list = [...new Set([...(m.get(word) ?? []), r])];
     m.set(word, list);
@@ -184,7 +209,7 @@ export class ReadingService {
 
   async analyze(rawText: string): Promise<ReadingResult> {
     // Drop an existing "(ねこ)" annotation — the reading is derived, not typed.
-    const text = rawText.replace(/[（(][^）)]*[）)]/g, "").trim();
+    const text = rawText.replace(WORD_NOTE_RE, "").trim();
     if (text === "") return { reading: "", readings: [], partOfSpeech: null };
     await this.loadOverrides();
 
@@ -214,10 +239,16 @@ export class ReadingService {
     return { reading: known[0] ?? reading, readings: [...new Set([...known, reading])], readingMeanings: this.meanings.get(text) ?? [], partOfSpeech };
   }
 
+  /** Readings a person confirmed for this word (fixed by hand or kept on a warning); [] when none. */
+  async confirmedReadings(rawWord: string): Promise<string[]> {
+    const m = await this.loadOverrides();
+    return m.get(rawWord.replace(WORD_NOTE_RE, "").trim()) ?? [];
+  }
+
   /** Meanings people tied to each confirmed reading of a word (from the overrides only; no analysis). */
   async readingMeanings(rawWord: string): Promise<{ reading: string; meaning: string }[]> {
     await this.loadOverrides();
-    return this.meanings.get(rawWord.replace(/[（(][^）)]*[）)]/g, "").trim()) ?? [];
+    return this.meanings.get(rawWord.replace(WORD_NOTE_RE, "").trim()) ?? [];
   }
 
   /** Does the card's own reading text hold a reading this word is known to have? */

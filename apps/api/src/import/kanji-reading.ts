@@ -47,25 +47,25 @@ const isKanji = (ch: string) => /[㐀-鿿々〆]/.test(ch);
 
 /** True when `reading` can be built from the word's own kana and the table readings of its kanji, in order. */
 export function readingFitsKanji(front: string, reading: string): boolean {
-  const word = [...kataToHira(front.normalize("NFKC").replace(/[（(][^）)]*[）)]?/g, "").replace(/\s+/g, ""))];
+  const word = [...kataToHira(front.normalize("NFKC").replace(/[（(［[][^）)］\]]*[）)］\]]?/g, "").replace(/\s+/g, ""))];
   const target = kataToHira(reading.normalize("NFKC").replace(/\s+/g, ""));
   if (word.length === 0 || !target || !word.some((c) => isKanji(c))) return false;
-  const memo = new Map<number, boolean>();
-  const go = (i: number, j: number): boolean => {
+  const memo = new Map<string, boolean>();
+  // `prev` is the reading just given to the kanji before: 々 repeats exactly that one (着々 = ちゃく+ちゃく, 人々 = ひと+びと).
+  const go = (i: number, j: number, prev: string): boolean => {
     if (i === word.length) return j === target.length;
-    const key = i * 1000 + j;
+    const ch = word[i]!;
+    const key = `${i}:${j}:${ch === "々" ? prev : ""}`;
     const hit = memo.get(key);
     if (hit !== undefined) return hit;
-    const ch = word[i]!;
     let ok = false;
     if (!isKanji(ch)) {
-      ok = target[j] === ch && go(i + 1, j + 1);
+      ok = target[j] === ch && go(i + 1, j + 1, "");
     } else {
-      const char = ch === "々" ? word[i - 1] : ch;
-      const cands = char ? readings.get(char) : undefined;
-      for (const base of cands ?? []) {
+      const cands = ch === "々" ? (prev ? [prev] : []) : (readings.get(ch) ?? []);
+      for (const base of cands) {
         for (const f of forms(base)) {
-          if (target.startsWith(f, j) && go(i + 1, j + f.length)) {
+          if (target.startsWith(f, j) && go(i + 1, j + f.length, f)) {
             ok = true;
             break;
           }
@@ -76,5 +76,5 @@ export function readingFitsKanji(front: string, reading: string): boolean {
     memo.set(key, ok);
     return ok;
   };
-  return go(0, 0);
+  return go(0, 0, "");
 }

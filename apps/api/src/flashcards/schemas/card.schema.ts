@@ -110,6 +110,13 @@ export class Flashcard {
   @Prop({ type: String, default: "" })
   backChecked?: string;
 
+  /**
+   * Fields ("reading" | "back" | "hanViet") a person corrected by hand while a warning was on them.
+   * The whole-deck check leaves these fields alone from then on; changing the word (front) clears it.
+   */
+  @Prop({ type: [String], default: [] })
+  userFixed?: string[];
+
   /** Position in the source list (STT) — keeps an imported file's order. */
   @Prop({ type: Number })
   order?: number;

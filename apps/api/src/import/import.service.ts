@@ -22,7 +22,7 @@ import { Model, Types, type Document } from "mongoose";
 import type { FlashcardDeckDocument } from "../flashcards/schemas/deck.schema.js";
 import type { FlashcardDocument } from "../flashcards/schemas/card.schema.js";
 import { cardDedupeKey } from "../flashcards/dedupe.js";
-import { KANJI_RE, ReadingService, readingVariants } from "../flashcards/reading.service.js";
+import { KANJI_RE, ReadingService, readingVariants, splitStrayReading } from "../flashcards/reading.service.js";
 import type { CardExample } from "../flashcards/schemas/card.schema.js";
 import { CONTENT_ADMIN } from "../common/roles.js";
 import type { AuthUser } from "../auth/auth.types.js";
@@ -1404,17 +1404,30 @@ export class ImportService implements OnApplicationBootstrap {
       const back = (row[mapping.back] ?? "").trim();
       const close = /^[^()（）]*[)）]\s*/.exec(reading);
       const open = /[(（][^()（）]*$/.exec(back);
-      if (!close || !open) continue;
-      row[mapping.reading] = reading.slice(close[0].length).trim();
-      row[mapping.back] = back.slice(0, open.index).trim();
+      if (close && open) {
+        row[mapping.reading] = reading.slice(close[0].length).trim();
+        row[mapping.back] = back.slice(0, open.index).trim();
+      }
+      // The end of a wrapped meaning that slipped into the reading column ("chãi, ổn ちゃくちゃく"):
+      // keep the kana as the reading; the meaning is likely missing those words, so it gets a warning.
+      const { kana, stray } = splitStrayReading(row[mapping.reading]);
+      if (stray) {
+        row[mapping.reading] = kana;
+        this.strayReading.set(row, stray);
+      }
     }
   }
+
+  /** Words taken out of a row's reading cell by `repairSplitCells` (they belong to the meaning). */
+  private readonly strayReading = new WeakMap<Record<string, string>, string>();
 
   /** Why a row's own (not derived) meaning / reading / Hán Việt looks wrong. */
   private async reviewIssues(row: Record<string, string>, mapping: ColumnMapping, front: string): Promise<string[]> {
     const issues: string[] = [];
     const meaning = checkMeaning((row[mapping.back] ?? "").trim());
     if (meaning) issues.push(meaning);
+    const stray = this.strayReading.get(row);
+    if (stray) issues.push(`nghĩa có thể thiếu chữ: “${stray}” nằm lẫn ở cột cách đọc`);
     const hv = mapping.hanViet ? (row[mapping.hanViet] ?? "").trim() : "";
     const hvIssue = this.hanVietOf(front, hv).issue;
     if (hvIssue) issues.push(hvIssue);
