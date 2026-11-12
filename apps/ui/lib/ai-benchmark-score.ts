@@ -20,8 +20,8 @@ export function speedScore(ms: number): number {
 }
 
 /** The jobs scored separately; each has its own priority order (mirrors the server's `BenchTask`). */
-export type BenchTask = "translate" | "write" | "grammar" | "pronounce";
-export const TASK_LABELS: Record<BenchTask, string> = { translate: "Dịch", write: "Đặt câu", grammar: "Phân tích ngữ pháp", pronounce: "Cách phát âm" };
+export type BenchTask = "translate" | "write" | "grammar" | "pronounce" | "verify";
+export const TASK_LABELS: Record<BenchTask, string> = { translate: "Dịch", write: "Đặt câu", grammar: "Phân tích ngữ pháp", pronounce: "Kiểm tra từ vựng", verify: "Kiểm tra từ vựng" };
 
 export interface RankInput {
   id: string;

@@ -63,9 +63,18 @@ class PageCardsQuery {
 
 /** Which kind of warning a whole-deck re-check judges (all three when omitted). */
 class RecheckQuery {
-  @IsOptional() @IsIn(["hanViet", "reading", "back"]) field?: "hanViet" | "reading" | "back";
+  @IsOptional() @IsIn(["hanViet", "reading", "back", "readingBack"]) field?: "hanViet" | "reading" | "back" | "readingBack";
   /** "1" / "true": judge every card again, even those whose word, reading and meaning are unchanged since the last check. */
   @IsOptional() @IsIn(["1", "true", "0", "false"]) force?: string;
+  /** Ask only this AI service (its id from the admin list); the usual priority order when omitted. */
+  @IsOptional() @IsString() serviceId?: string;
+  /** Cards per AI request (1–50, default 10). */
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(50) batch?: number;
+}
+
+class RecheckBodyDto {
+  /** Check only these cards (the admin's selection); the whole deck when omitted. */
+  @IsOptional() @IsArray() @ArrayMaxSize(3000) @IsString({ each: true }) ids?: string[];
 }
 
 class CardFilterDto {
@@ -413,8 +422,8 @@ export class FlashcardsController {
   @Post("decks/:id/recheck")
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: "Re-check Hán Việt, reading or meaning (`field`, all when omitted) over the whole deck → “Cần xem xét” warnings" })
-  recheck(@CurrentUser() caller: AuthUser, @Param("id") id: string, @Query() query: RecheckQuery) {
-    return this.flashcards.startRecheck(caller, id, (items) => this.ai.verifyCards(items), query.field ?? "all", query.force === "1" || query.force === "true");
+  recheck(@CurrentUser() caller: AuthUser, @Param("id") id: string, @Query() query: RecheckQuery, @Body() body: RecheckBodyDto) {
+    return this.flashcards.startRecheck(caller, id, (items) => this.ai.verifyCards(items, query.serviceId || undefined), query.field ?? "all", query.force === "1" || query.force === "true", query.batch ?? 10, body?.ids);
   }
 
   @Get("decks/:id/han-viet-log")

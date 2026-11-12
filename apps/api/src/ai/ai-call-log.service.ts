@@ -64,7 +64,8 @@ export class AiCallLogService {
     if (opts.serviceId) filter.serviceId = opts.serviceId;
     if (opts.ok !== undefined) filter.ok = opts.ok;
     // "Tạo ví dụ" covers both batch generation and the per-word activity.
-    if (opts.purpose) filter.purpose = opts.purpose === "example" ? { $in: ["example", "vocab"] } : opts.purpose;
+    // "Kiểm tra từ vựng" covers the reading (pronounce) lookups as well; "example" the older "vocab" rows.
+    if (opts.purpose) filter.purpose = opts.purpose === "example" ? { $in: ["example", "vocab"] } : opts.purpose === "verify" ? { $in: ["verify", "pronounce"] } : opts.purpose;
     if (opts.q?.trim()) {
       const rx = new RegExp(opts.q.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
       filter.$or = [{ words: rx }, { response: rx }];

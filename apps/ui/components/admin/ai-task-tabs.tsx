@@ -2,7 +2,7 @@
 
 import { TASK_LABELS, type BenchTask } from "@/lib/ai-benchmark-score";
 
-const TASKS = ["translate", "write", "grammar", "pronounce"] as const satisfies readonly BenchTask[];
+const TASKS = ["translate", "write", "grammar", "verify"] as const satisfies readonly BenchTask[];
 
 /** Segmented tab strip shared by the priority list and the benchmark panel. */
 export function AiTaskTabs({

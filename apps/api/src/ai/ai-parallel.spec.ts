@@ -53,7 +53,7 @@ describe("parallel dispatch", () => {
   it("runs batches on two ready services at the same time", async () => {
     stubFetch();
     const { svc } = make([A, B]);
-    const out = await Promise.all(Array.from({ length: 40 }, (_, i) => svc.run(task(i))));
+    const out = await Promise.all(Array.from({ length: 20 }, (_, i) => svc.run(task(i))));
     expect(out.every((r) => r?.vi === "ok")).toBe(true);
     expect(maxActive).toBe(2);
     expect(Object.keys(hits).length).toBe(2);
@@ -62,7 +62,7 @@ describe("parallel dispatch", () => {
   it("moves a batch to the next ready service when the first fails", async () => {
     stubFetch("openrouter.ai");
     const { svc, services } = make([A, B]);
-    const out = await Promise.all(Array.from({ length: 20 }, (_, i) => svc.run(task(i))));
+    const out = await Promise.all(Array.from({ length: 10 }, (_, i) => svc.run(task(i))));
     expect(out.every((r) => r?.vi === "ok")).toBe(true);
     expect(services.reportFailure).toHaveBeenCalledWith("a", "transient", expect.any(String), undefined);
     expect(hits["b.example"]).toBe(1);

@@ -754,9 +754,9 @@ export function AiServicesConsole() {
                     </p>
                     <p className="mt-1 text-xs text-[var(--muted-foreground)]">
                       {s.providerName} · <code>{s.model}</code> · {s.cli ? (s.authorized ? `tài khoản Google: ${s.account ?? "đã ủy quyền"}` : "chưa ủy quyền tài khoản Google") : s.keyHint ? `khoá ····${s.keyHint}` : "không dùng khoá"} · {s.rpm} yêu cầu/phút{s.provider === "custom" && s.baseUrl ? ` · ${s.baseUrl}` : ""}
-                      {(["translate", "write", "grammar", "pronounce"] as const)
+                      {(["translate", "write", "grammar", "verify"] as const)
                         .filter((t) => s.benchTasks?.[t]?.ok)
-                        .map((t) => ` · ${{ translate: "dịch", write: "đặt câu", grammar: "ngữ pháp", pronounce: "phát âm" }[t]} ${s.benchTasks![t]!.accuracy.toFixed(0)}`)
+                        .map((t) => ` · ${{ translate: "dịch", write: "đặt câu", grammar: "ngữ pháp", verify: "kiểm tra từ vựng" }[t]} ${s.benchTasks![t]!.accuracy.toFixed(0)}`)
                         .join("")}
                     </p>
                   </div>

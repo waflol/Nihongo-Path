@@ -40,6 +40,8 @@ import type { UserCardProgressDocument } from "../srs/schemas/progress.schema.js
 export type ReviewField = "hanViet" | "reading" | "back";
 /** Which cards the "Cần xem xét" list shows: every warning, or the ones about one field. */
 export type ReviewFilter = "all" | ReviewField;
+/** What a whole-deck re-check covers: one field, all three, or reading + meaning together (one AI pass). */
+export type RecheckField = ReviewFilter | "readingBack";
 
 /** The field a warning text is about (the wording is written by the import / the checks). */
 export const reviewFieldOf = (t: string): ReviewField => (/^Hán Việt/.test(t) ? "hanViet" : /^cách đọc/.test(t) ? "reading" : "back");
@@ -1051,7 +1053,7 @@ export class FlashcardsService implements OnModuleInit {
   /** Background "re-check the whole deck" runs, by deck id (in memory; progress for the floating tracker). */
   private readonly rechecks = new Map<
     string,
-    { deckId: string; owner: string; title: string; field: ReviewFilter; status: "running" | "paused" | "done" | "error"; done: number; total: number; flagged: number; changed: number; recent: { stt: number; word: string; oldHanViet: string; newHanViet: string }[]; recentFlags: { stt: number; word: string; field: "reading" | "back"; issue: string }[]; error?: string; cancelled?: boolean }
+    { deckId: string; owner: string; title: string; field: RecheckField; status: "running" | "paused" | "done" | "error"; done: number; total: number; flagged: number; changed: number; recent: { stt: number; word: string; oldHanViet: string; newHanViet: string }[]; recentFlags: { stt: number; word: string; field: "reading" | "back"; issue: string }[]; error?: string; cancelled?: boolean }
   >();
 
   /** The latest Hán Việt check of a deck: what it changed (STT, word, old → new Hán Việt). */
@@ -1100,8 +1102,10 @@ export class FlashcardsService implements OnModuleInit {
     verify: (
       items: { id: number; word: string; reading: string; hanViet: string; meaning: string; context?: string }[],
     ) => Promise<Map<number, { reading?: string; hanViet?: string; meaning?: string }> | null>,
-    field: ReviewFilter = "all",
+    field: RecheckField = "all",
     force = false,
+    batchSize = 10,
+    ids?: string[],
   ) {
     const deck = await this.getDeck(caller, deckId);
     if (deck.shared && !this.isAdmin(caller)) throw new ForbiddenException("Shared decks are admin-managed");
@@ -1113,7 +1117,7 @@ export class FlashcardsService implements OnModuleInit {
     if (other) throw new ConflictException("Đang có một lần kiểm tra khác chạy trên máy chủ — thử lại khi nó xong");
     const job = { deckId: key, owner: caller.sub, title: deck.title, field, status: "running" as "running" | "paused" | "done" | "error", done: 0, total: 0, flagged: 0, changed: 0, recent: [] as { stt: number; word: string; oldHanViet: string; newHanViet: string }[], recentFlags: [] as { stt: number; word: string; field: "reading" | "back"; issue: string }[], error: undefined as string | undefined };
     this.rechecks.set(key, job);
-    void this.runRecheck(job, deck._id, verify, field, force).catch((e: unknown) => {
+    void this.runRecheck(job, deck._id, verify, field, force, batchSize, ids?.filter((i) => Types.ObjectId.isValid(i))).catch((e: unknown) => {
       job.status = "error";
       job.error = e instanceof Error ? e.message : "Kiểm tra thất bại";
     });
@@ -1134,14 +1138,16 @@ export class FlashcardsService implements OnModuleInit {
     verify: (
       items: { id: number; word: string; reading: string; hanViet: string; meaning: string; context?: string }[],
     ) => Promise<Map<number, { reading?: string; hanViet?: string; meaning?: string }> | null>,
-    only: ReviewFilter,
+    only: RecheckField,
     force = false,
+    batchSize = 10,
+    ids?: string[],
   ): Promise<void> {
     await this.ensureKanjiTable();
-    const wants = (f: ReviewField) => only === "all" || only === f;
+    const wants = (f: ReviewField) => only === "all" || only === f || (only === "readingBack" && f !== "hanViet");
     // Only what the re-check needs: the heavy fields (examples, image) stay in the database.
     const cards = await this.card
-      .find({ deck: deckOid })
+      .find({ deck: deckOid, ...(ids && ids.length > 0 ? { _id: { $in: ids.map((i) => new Types.ObjectId(i)) } } : {}) })
       .select("front reading back hanViet reviewIssues order readingChecked backChecked")
       .sort({ order: 1, _id: 1 })
       .limit(3000)
@@ -1176,6 +1182,17 @@ export class FlashcardsService implements OnModuleInit {
       if (!hit) {
         hit = (this.morph ? this.morph.analyze(word).then((a) => a.readings) : Promise.resolve([])).catch(() => []);
         analysed.set(word, hit);
+      }
+      return hit;
+    };
+
+    // Two or more single-kanji tokens in a row: the analyser did not know the compound, so its reading is only a guess.
+    const frag = new Map<string, Promise<boolean>>();
+    const fragmented = (word: string) => {
+      let hit = frag.get(word);
+      if (!hit) {
+        hit = (this.morph ? this.morph.tokens(word) : Promise.resolve([])).then((ts) => ts.some((t, i) => i > 0 && /^\p{Script=Han}$/u.test(t.surface_form) && /^\p{Script=Han}$/u.test(ts[i - 1]!.surface_form))).catch(() => false);
+        frag.set(word, hit);
       }
       return hit;
     };
@@ -1224,6 +1241,15 @@ export class FlashcardsService implements OnModuleInit {
         if (invalid.length > 0 && this.morph) {
           const known = await analyserReadings(word);
           invalid = invalid.filter((v) => !known.includes(v));
+        }
+        // Every kanji may fit its own on/kun reading while the WORD reads differently (一人 ひとり, not いちにん).
+        // When the analyser knows the word and the card's reading is not among its readings, the AI gets the last word:
+        // the analyser only escalates, it never raises a warning by itself.
+        if (invalid.length === 0 && this.morph && /\p{Script=Han}/u.test(word)) {
+          const known = (await analyserReadings(word)).filter((g) => /^[\p{Script=Hiragana}ー]+$/u.test(g));
+          if (known.length > 0 && !variants.some((v) => known.includes(v))) invalid = variants;
+          // The analyser reads an unknown compound kanji by kanji (一人 → イチ+ニン), so it would "confirm" a wrong reading: ask the AI too.
+          else if (known.length > 0 && (await fragmented(word))) invalid = variants;
         }
         p.askReading = invalid;
         // A word with a reading per meaning: the card's reading must go with the card's meaning.
@@ -1305,10 +1331,11 @@ export class FlashcardsService implements OnModuleInit {
       await tick();
     }
 
-    // Stage 2b: the rest go to the AI in batches of 15, a few batches at a time.
+    // Stage 2b: the rest go to the AI in batches (10 unless the user chose), a few batches at a time.
     const aiPlans = plans.filter(needsAi);
     const batches: Plan[][] = [];
-    for (let i = 0; i < aiPlans.length; i += 15) batches.push(aiPlans.slice(i, i + 15));
+    const bs = Math.max(1, Math.min(50, Math.floor(batchSize) || 10));
+    for (let i = 0; i < aiPlans.length; i += bs) batches.push(aiPlans.slice(i, i + bs));
     let next = 0;
     let failed = false;
     const worker = async () => {

@@ -800,7 +800,41 @@ export class ImportService implements OnApplicationBootstrap {
     meaning: string;
     reading: string;
     partOfSpeech: Pos;
+    /** The user's pick for this run (only this AI service / items per request). */
+    ai?: { serviceId?: string; batch?: number };
+    /** The card's number (STT) in the deck, for the log. */
+    order?: number;
   }[] = [];
+  /** Log of the latest example run per deck (kept in memory: gone after a restart). */
+  private readonly exampleLogs = new Map<
+    string,
+    {
+      startedAt: number;
+      finishedAt?: number;
+      total: number;
+      serviceId?: string;
+      batch?: number;
+      items: { stt: number; word: string; ok: boolean; sentence: string; translation: string; source: string }[];
+    }
+  >();
+
+  /** What the latest "Tạo ví dụ" run of a deck did, card by card. */
+  async examplesLog(caller: AuthUser, deckId: string) {
+    const deck = await this.resolveWritableDeck(caller, deckId);
+    const log = this.exampleLogs.get(String(deck._id));
+    return {
+      deckId,
+      title: deck.title,
+      ran: !!log,
+      finished: !!log?.finishedAt,
+      startedAt: log?.startedAt ?? 0,
+      finishedAt: log?.finishedAt,
+      total: log?.total ?? 0,
+      serviceId: log?.serviceId ?? "",
+      batch: log?.batch ?? 0,
+      items: log?.items ?? [],
+    };
+  }
   private activeExampleWorkers = 0;
 
   /** After a restart, resume decks whose examples were still being generated. */
@@ -851,6 +885,7 @@ export class ImportService implements OnApplicationBootstrap {
     caller: AuthUser,
     deckId: string,
     action: "pause" | "resume" | "stop" | "retry",
+    ai?: { serviceId?: string; batch?: number },
   ): Promise<{ deckId: string; action: string; remaining: number }> {
     const deck = await this.resolveWritableDeck(caller, deckId);
     if (action !== "retry" && (deck.exampleTotal ?? 0) <= 0) {
@@ -869,12 +904,13 @@ export class ImportService implements OnApplicationBootstrap {
       drop();
       const missing = await this.card
         .find({ deck: deck._id, examples: { $size: 0 } })
-        .select("front back reading partOfSpeech")
+        .select("front back reading partOfSpeech order")
         .exec();
       if (missing.length === 0) {
         await this.finishDeckExamples(deck._id);
         return { deckId, action, remaining: 0 };
       }
+      this.exampleLogs.set(String(deck._id), { startedAt: Date.now(), total: missing.length, serviceId: ai?.serviceId, batch: ai?.batch, items: [] });
       await this.deck
         .updateOne(
           { _id: deck._id },
@@ -889,6 +925,8 @@ export class ImportService implements OnApplicationBootstrap {
           meaning: c.back,
           reading: c.reading ?? "",
           partOfSpeech: (c.partOfSpeech ?? "") as Pos,
+          ai,
+          order: c.order,
         })),
       );
       return { deckId, action, remaining: missing.length };
@@ -981,7 +1019,12 @@ export class ImportService implements OnApplicationBootstrap {
           meaning: job.meaning,
           reading: job.reading,
           partOfSpeech: job.partOfSpeech,
+          ai: job.ai,
         });
+        const log = this.exampleLogs.get(String(job.deck));
+        if (log && log.items.length < 5000) {
+          log.items.push({ stt: job.order ?? log.items.length + 1, word: job.term, ok: !!hit, sentence: hit?.sentence ?? "", translation: hit?.translation ?? "", source: hit?.source ?? "" });
+        }
         if (hit) {
           // Only fill a card that still has no example (never overwrite one
           // the learner added meanwhile).
@@ -1002,6 +1045,8 @@ export class ImportService implements OnApplicationBootstrap {
           )
           .exec();
         if (d && (d.exampleDone ?? 0) >= (d.exampleTotal ?? 0)) {
+          const lg = this.exampleLogs.get(String(job.deck));
+          if (lg) lg.finishedAt = Date.now();
           await this.finishDeckExamples(job.deck);
         }
         if (pauseMs > 0) await new Promise((r) => setTimeout(r, pauseMs));

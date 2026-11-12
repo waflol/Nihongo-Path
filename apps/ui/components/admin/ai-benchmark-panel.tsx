@@ -47,6 +47,8 @@ export interface Bench {
   pronounceRomaji?: number;
   pronounceWords?: number;
   pronounceViet?: number;
+  verifyFix?: number;
+  verifyKeep?: number;
 }
 
 /** One line of a task's history: how a past run of that task went. */
@@ -62,7 +64,7 @@ export interface HistoryEntry {
 
 export interface BenchDetail {
   id: number;
-  kind: "translate" | "write" | "grammar" | "pronounce";
+  kind: "translate" | "write" | "grammar" | "pronounce" | "verify";
   term: string;
   meaning: string;
   source?: string;
@@ -86,6 +88,9 @@ export interface BenchDetail {
   gotReading?: string;
   gotRomaji?: string;
   gotViet?: string;
+  fixScore?: number;
+  keepScore?: number;
+  gotFixes?: string;
 }
 
 export interface BenchService {
@@ -134,8 +139,11 @@ const HOW: Record<BenchTask, string> = {
     "3 câu mẫu. Chính xác = 60% nêu đúng các mẫu ngữ pháp cần có + 25% tách câu thành đủ từ có chú thích (từ loại / nghĩa) + 15% có bản dịch tiếng Việt.",
   pronounce:
     "2 từ mẫu (一人住まい — ひとりずまい, 放っておく — ほうっておく). Chính xác = 55% hiragana đúng với cách đọc chuẩn + 20% romaji khớp (cách viết trường âm ō/ou coi như nhau) + 15% tách từ có kèm cách đọc + 10% có cách đọc theo tiếng Việt.",
+  verify:
+    "11 thẻ từ vựng mẫu, 5 thẻ cố ý sai 1 trường (cách đọc / nghĩa), 6 thẻ đúng (có từ nhiều cách đọc). 3 thẻ cuối gửi giống kiểm tra ở bộ deck (chỉ cách đọc, nghĩa làm gợi ý) và gồm từ khó như 一人住まい. Chính xác = 60% sửa đúng các trường sai + 40% không “sửa” nhầm các trường đúng.",
 };
-const ITEMS: Record<BenchTask, string> = { translate: "10 câu dịch", write: "4 từ đặt câu", grammar: "3 câu ngữ pháp", pronounce: "2 từ phát âm" };
+const DEFAULT_ITEMS: Record<BenchTask, number> = { translate: 10, write: 4, grammar: 3, pronounce: 2, verify: 8 };
+const ITEMS: Record<BenchTask, string> = { translate: "10 câu dịch", write: "4 từ đặt câu", grammar: "3 câu ngữ pháp", pronounce: "2 từ phát âm", verify: "11 thẻ kiểm tra từ vựng" };
 
 export function AiBenchmarkPanel({
   services,
@@ -152,6 +160,8 @@ export function AiBenchmarkPanel({
   const [weight, setWeight] = useState(Math.round(DEFAULT_SPEED_WEIGHT * 100)); // speed share, %
   const [minAcc, setMinAcc] = useState(MIN_ACCURACY);
   const [runs, setRuns] = useState(3);
+  // Items in one AI call; empty = the task's fixed set. Every service gets the same items, so scores stay comparable.
+  const [itemCount, setItemCount] = useState("");
   const [sortBy, setSortBy] = useState<SortKey>("final");
   const [autoSort, setAutoSort] = useState(true);
   const [running, setRunning] = useState<Set<string>>(new Set());
@@ -200,7 +210,7 @@ export function AiBenchmarkPanel({
         fetch(`${API}/services/${id}/benchmark`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ runs, task }),
+          body: JSON.stringify({ runs, task, items: Number(itemCount) || undefined }),
         }).catch(() => null),
       ),
     );
@@ -311,13 +321,26 @@ export function AiBenchmarkPanel({
               <option value={5}>5 (kỹ, có P95)</option>
             </select>
           </label>
+          <label className="flex flex-col gap-1 text-xs text-[var(--muted-foreground)]" title="Số mục gửi trong MỘT lần gọi AI. Mọi dịch vụ đều chạy đúng những mục này nên điểm so sánh được. Lớn hơn bộ mặc định thì bộ mặc định được lặp lại.">
+            Số mục mỗi lần gọi
+            <input
+              type="number"
+              min={1}
+              max={40}
+              inputMode="numeric"
+              placeholder={String(DEFAULT_ITEMS[task])}
+              value={itemCount}
+              onChange={(e) => setItemCount(e.target.value)}
+              className={`${field} w-28`}
+            />
+          </label>
           <label className="flex h-8 items-center gap-2 text-xs text-[var(--muted-foreground)]">
             <input type="checkbox" checked={autoSort} onChange={(e) => setAutoSort(e.target.checked)} />
             Tự sắp xếp thứ tự ưu tiên sau khi chấm
           </label>
         </div>
         <p className="text-[11px] text-[var(--muted-foreground)]">
-          Mỗi lần chạy tốn một lượt gọi API ({ITEMS[task]}{task === "translate" ? "; model chuyên dịch gọi mỗi câu một lần" : ""}) nên {runs} lần chạy dùng khoảng {runs}× hạn mức — chú ý dịch vụ miễn phí có hạn mức thấp.
+          Mỗi lần chạy tốn một lượt gọi API ({itemCount ? `${Math.min(40, Number(itemCount) || 0)} mục` : ITEMS[task]}{task === "translate" ? "; model chuyên dịch gọi mỗi câu một lần" : ""}) nên {runs} lần chạy dùng khoảng {runs}× hạn mức — chú ý dịch vụ miễn phí có hạn mức thấp.
           Gặp lỗi hết hạn mức/từ chối thì dừng ngay để khỏi tốn thêm.
         </p>
       </div>
@@ -610,6 +633,11 @@ function Compare({ rows, task, onClear }: { rows: Row[]; task: BenchTask; onClea
           { label: "Đủ ý", get: (r: Row) => r.bench.completeness, fmt: (n: number) => n.toFixed(1), higherIsBetter: true },
           { label: "Đúng nghĩa của từ", get: (r: Row) => (r.bench.translateOnly ? undefined : r.bench.matchAcc), fmt: (n: number) => n.toFixed(1), higherIsBetter: true },
         ]
+      : task === "verify"
+        ? [
+            { label: "Sửa đúng chỗ sai", get: (r: Row) => r.bench.verifyFix, fmt: (n: number) => n.toFixed(1), higherIsBetter: true },
+            { label: "Không sửa nhầm chỗ đúng", get: (r: Row) => r.bench.verifyKeep, fmt: (n: number) => n.toFixed(1), higherIsBetter: true },
+          ]
       : task === "pronounce"
         ? [
             { label: "Hiragana đúng", get: (r: Row) => r.bench.pronounceReading, fmt: (n: number) => n.toFixed(1), higherIsBetter: true },
@@ -711,6 +739,11 @@ function ResultDetails({ bench, label, task }: { bench: Bench; label: string; ta
                   ] as [string, number | undefined][])
                 : task === "write"
                   ? ([["Viết câu", bench.writeScore]] as [string, number | undefined][])
+                  : task === "verify"
+                    ? ([
+                        ["Sửa đúng chỗ sai", bench.verifyFix],
+                        ["Không sửa nhầm chỗ đúng", bench.verifyKeep],
+                      ] as [string, number | undefined][])
                   : task === "pronounce"
                     ? ([
                         ["Hiragana đúng", bench.pronounceReading],
@@ -799,7 +832,12 @@ function ResultDetails({ bench, label, task }: { bench: Bench; label: string; ta
                 <tr key={d.id}>
                   <td className="px-2 py-1.5 tabular-nums">{d.id}</td>
                   <td className="px-2 py-1.5">
-                    {d.kind === "grammar" || d.kind === "pronounce" ? (
+                    {d.kind === "verify" ? (
+                      <>
+                        <div lang="ja">{d.term}</div>
+                        <div className="text-[var(--muted-foreground)]">{d.source}</div>
+                      </>
+                    ) : d.kind === "grammar" || d.kind === "pronounce" ? (
                       <div lang="ja">{d.source}</div>
                     ) : d.kind === "translate" ? (
                       <>
@@ -818,7 +856,11 @@ function ResultDetails({ bench, label, task }: { bench: Bench; label: string; ta
                     )}
                   </td>
                   <td className="px-2 py-1.5">
-                    {d.kind === "pronounce" ? (
+                    {d.kind === "verify" ? (
+                      <div className="text-[var(--muted-foreground)]">
+                        {d.fixScore !== undefined ? "có trường sai — phải sửa" : "thẻ đúng — không sửa"}
+                      </div>
+                    ) : d.kind === "pronounce" ? (
                       <div className="text-[var(--muted-foreground)]">
                         hiragana: <span lang="ja">{d.expected}</span>
                       </div>
@@ -842,6 +884,8 @@ function ResultDetails({ bench, label, task }: { bench: Bench; label: string; ta
                   <td className="px-2 py-1.5">
                     {!d.answered ? (
                       <span className="text-[#b91c1c]">✗ Không có câu trả lời đọc được</span>
+                    ) : d.kind === "verify" ? (
+                      <div lang="ja">{d.gotFixes || "không sửa gì"}</div>
                     ) : d.kind === "pronounce" ? (
                       <>
                         <div lang="ja">{d.gotReading}</div>
@@ -874,7 +918,13 @@ function ResultDetails({ bench, label, task }: { bench: Bench; label: string; ta
                     )}
                   </td>
                   <td className="whitespace-nowrap px-2 py-1.5">
-                    {d.kind === "pronounce" ? (
+                    {d.kind === "verify" ? (
+                      <>
+                        {d.fixScore !== undefined && <div className="tabular-nums">sửa đúng {d.fixScore}</div>}
+                        {d.keepScore !== undefined && <div className="tabular-nums text-[var(--muted-foreground)]">giữ nguyên {d.keepScore}</div>}
+                        <Verdict ok={(d.fixScore ?? 100) === 100 && (d.keepScore ?? 100) === 100} yes="kiểm tra đúng" no="kiểm tra sai" />
+                      </>
+                    ) : d.kind === "pronounce" ? (
                       <>
                         <div className="tabular-nums">hiragana {d.readingScore ?? 0}</div>
                         <div className="tabular-nums text-[var(--muted-foreground)]">

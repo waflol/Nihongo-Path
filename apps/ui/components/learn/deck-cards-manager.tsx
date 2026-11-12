@@ -150,7 +150,7 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
   const [categories, setCategories] = useState<string[]>([]);
 
   const canWrite = mode === "admin" || (deck !== null && !deck.shared);
-  const [rechecking, setRechecking] = useState<ReviewField | null>(null);
+  const [rechecking, setRechecking] = useState<ReviewField | "readingBack" | null>(null);
   const [recheckMsg, setRecheckMsg] = useState<string | null>(null);
   // Off: cards unchanged since their last check are skipped (fast). On: judge every card again.
   const [recheckForce, setRecheckForce] = useState(false);
@@ -188,13 +188,18 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
     setRecheckMsg(remaining === null ? "Không tạo được ví dụ — thử lại sau." : remaining === 0 ? "Mọi thẻ đều đã có ví dụ." : null);
     if (remaining !== null) reload();
   }
+  const reload = useCallback(() => setVersion((v) => v + 1), []);
   /** Re-check one field (Hán Việt / reading / meaning) of every card → refreshes that kind of "Cần xem xét" warning. */
-  async function recheckAll(field: ReviewField) {
+  async function recheckAll(field: ReviewField | "readingBack") {
     setRechecking(field);
     setRecheckMsg(null);
     const ai = aiQuery();
     try {
-      const res = await fetch(`/api/flashcards/decks/${deckId}/recheck?field=${field}${recheckForce ? "&force=1" : ""}${ai ? `&${ai}` : ""}`, { method: "POST" });
+      const useIds = !allMatching && selected.size > 0;
+      const res = await fetch(`/api/flashcards/decks/${deckId}/recheck?field=${field}${recheckForce || useIds ? "&force=1" : ""}${ai ? `&${ai}` : ""}`, {
+        method: "POST",
+        ...(useIds ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: [...selected] }) } : {}),
+      });
       if (res.status === 409) setRecheckMsg("Đang có một lần kiểm tra khác chạy — đợi nó xong rồi thử lại.");
       else if (!res.ok) setRecheckMsg("Không bắt đầu kiểm tra lại được. Thử lại sau.");
       else window.dispatchEvent(new Event(RECHECK_STARTED_EVENT)); // progress shows bottom-right, on any page
@@ -900,7 +905,10 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
         <div className="space-y-2 border-t border-[var(--border)] pt-3">
         <div className="flex flex-wrap items-center gap-2">
           <span className="mr-1 text-xs font-medium text-[var(--muted-foreground)]">Công cụ:</span>
-          {CHECKS.map(({ field, checkLabel, hint }) => (
+          {[
+            ...CHECKS.filter((c) => c.field === "hanViet"),
+            { field: "readingBack" as const, checkLabel: "Kiểm tra từ vựng", hint: "Kiểm tra cách đọc và nghĩa trong một lần (AI xem cả hai cùng lúc)" },
+          ].map(({ field, checkLabel, hint }) => (
               <button
                 key={`check-${field}`}
                 type="button"
@@ -909,7 +917,7 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
                 disabled={rechecking !== null}
                 title={hint}
               >
-                {rechecking === field ? "Đang bắt đầu…" : `↻ ${checkLabel}`}
+                {rechecking === field ? "Đang bắt đầu…" : `↻ ${checkLabel}${!allMatching && selected.size > 0 ? ` (${selected.size} thẻ đã chọn)` : ""}`}
               </button>
             ))}
           <label className="flex items-center gap-1.5 text-xs text-[var(--muted-foreground)]" title="Bỏ chọn: chỉ kiểm tra thẻ mới hoặc thẻ đã sửa từ lần kiểm tra trước (nhanh hơn)">
@@ -952,9 +960,9 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
           </label>
           <span className="ml-auto flex flex-wrap items-center gap-x-2">
             <span className="font-medium">Log:</span>
-            {(["hanViet", "reading", "back", "examples"] as const).map((f) => (
+            {(["hanViet", "readingBack", "examples"] as const).map((f) => (
               <Link key={f} href={logHref(mode === "admin" ? "/admin/decks" : "/learn/decks", deckId, f)} className="text-[var(--primary)] hover:underline">
-                {{ hanViet: "Hán tự", reading: "Phát âm", back: "Nghĩa", examples: "Ví dụ" }[f]}
+                {{ hanViet: "Hán tự", readingBack: "Từ vựng", examples: "Ví dụ" }[f]}
               </Link>
             ))}
           </span>

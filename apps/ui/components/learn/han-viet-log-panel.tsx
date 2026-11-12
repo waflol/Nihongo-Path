@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { RECHECK_STARTED_EVENT } from "@/components/learn/recheck-tracker";
+import { ExamplesLogPanel } from "@/components/learn/example-log-panel";
+import { LogTabs } from "@/components/learn/log-tabs";
 
 interface HanVietLog {
   deckId: string;
@@ -38,10 +40,16 @@ interface Job {
   error?: string;
 }
 
-/** Log of the latest “Kiểm tra Hán tự” run of a deck: which word (STT) changed, old → new Hán Việt. */
+/** Log page of a deck: the checks (Hán tự / phát âm / nghĩa) or the example generation, picked by `?field=`. */
 export function HanVietLogPanel({ deckId, mode }: { deckId: string; mode: "learn" | "admin" }) {
+  return useSearchParams().get("field") === "examples" ? <ExamplesLogPanel deckId={deckId} mode={mode} /> : <CheckLogPanel deckId={deckId} mode={mode} />;
+}
+
+/** Log of the latest “Kiểm tra Hán tự” run of a deck: which word (STT) changed, old → new Hán Việt. */
+function CheckLogPanel({ deckId, mode }: { deckId: string; mode: "learn" | "admin" }) {
   const sp = useSearchParams().get("field");
-  const field: "hanViet" | "reading" | "back" = sp === "reading" || sp === "back" ? sp : "hanViet";
+  // Reading and meaning share one log (they are checked together); old ?field=reading / back links land there too.
+  const field: "hanViet" | "readingBack" = sp === "reading" || sp === "back" || sp === "readingBack" ? "readingBack" : "hanViet";
   const flagMode = field !== "hanViet";
   const [log, setLog] = useState<HanVietLog | null>(null);
   const [error, setError] = useState(false);
@@ -63,7 +71,7 @@ export function HanVietLogPanel({ deckId, mode }: { deckId: string; mode: "learn
     }
     setLog((await lr.json()) as HanVietLog);
     const jobs = jr?.ok ? ((await jr.json().catch(() => [])) as Job[]) : [];
-    const mine = Array.isArray(jobs) ? (jobs.find((j) => j.deckId === deckId && j.field === field) ?? null) : null;
+    const mine = Array.isArray(jobs) ? (jobs.find((j) => j.deckId === deckId && (field === "hanViet" ? j.field === "hanViet" : j.field === "reading" || j.field === "back" || j.field === "readingBack")) ?? null) : null;
     setJob(mine);
     if (mine && (mine.status === "running" || mine.status === "paused")) timer.current = setTimeout(() => void pollRef.current(), 1500);
   }, [deckId, field]);
@@ -84,7 +92,23 @@ export function HanVietLogPanel({ deckId, mode }: { deckId: string; mode: "learn
     void poll();
   }
 
-  const fl = flagMode ? (log?.[field as "reading" | "back"] ?? null) : null;
+  // Reading + meaning: merge the two flag logs of the latest run(s) into one list.
+  const fl = useMemo(() => {
+    if (!flagMode || !log) return null;
+    const parts = [log.reading, log.back].filter((p) => p?.ran);
+    const flags = [
+      ...(log.reading?.flags ?? []).map((f) => ({ ...f, kind: "Phát âm" })),
+      ...(log.back?.flags ?? []).map((f) => ({ ...f, kind: "Nghĩa" })),
+    ].sort((a, b) => a.stt - b.stt);
+    return {
+      ran: parts.length > 0,
+      finished: parts.length > 0 && parts.every((p) => p.finished),
+      total: Math.max(0, ...parts.map((p) => p.total)),
+      startedAt: Math.max(0, ...parts.map((p) => p.startedAt)),
+      finishedAt: parts.every((p) => p.finishedAt) ? Math.max(0, ...parts.map((p) => p.finishedAt ?? 0)) : undefined,
+      flags,
+    };
+  }, [flagMode, log]);
   const rows = useMemo(() => {
     const q = search.trim().toLowerCase();
     return (log?.changes ?? [])
@@ -95,7 +119,7 @@ export function HanVietLogPanel({ deckId, mode }: { deckId: string; mode: "learn
     const q = search.trim().toLowerCase();
     return (fl?.flags ?? []).filter((c) => !q || [String(c.stt), c.word, c.issue].some((v) => v.toLowerCase().includes(q)));
   }, [fl, search]);
-  const meta = { hanViet: { title: "Log kiểm tra Hán tự", glyph: "漢", cmd: "Kiểm tra Hán tự" }, reading: { title: "Log kiểm tra phát âm", glyph: "音", cmd: "Kiểm tra phát âm" }, back: { title: "Log kiểm tra nghĩa", glyph: "義", cmd: "Kiểm tra nghĩa" } }[field];
+  const meta = { hanViet: { title: "Log kiểm tra Hán tự", glyph: "漢", cmd: "Kiểm tra Hán tự" }, readingBack: { title: "Log kiểm tra từ vựng", glyph: "音", cmd: "Kiểm tra từ vựng" } }[field];
   const ranAny = flagMode ? !!fl?.ran : !!log?.ran;
   const finishedAny = flagMode ? !!fl?.finished : !!log?.finished;
   const startedAt = (flagMode ? fl?.startedAt : log?.startedAt) ?? 0;
@@ -144,6 +168,8 @@ export function HanVietLogPanel({ deckId, mode }: { deckId: string; mode: "learn
           </p>
         </div>
       </div>
+
+      <LogTabs root={mode === "admin" ? "/admin/decks" : "/learn/decks"} deckId={deckId} active={field} />
 
       {error && <p className="mt-6 text-sm text-[#dc2626]">Không tải được log.</p>}
       {!error && !log && <p className="mt-6 text-sm text-[var(--muted-foreground)]">Đang tải…</p>}
@@ -227,13 +253,14 @@ export function HanVietLogPanel({ deckId, mode }: { deckId: string; mode: "learn
                   <tr>
                     <th className="w-20 px-4 py-2.5 font-medium">STT</th>
                     <th className="px-3 py-2.5 font-medium">Từ</th>
+                    <th className="w-24 px-3 py-2.5 font-medium">Loại</th>
                     <th className="px-3 py-2.5 font-medium">Cảnh báo</th>
                   </tr>
                 </thead>
                 <tbody>
                   {flagRows.length === 0 && (
                     <tr>
-                      <td colSpan={3} className="px-3 py-10 text-center text-[var(--muted-foreground)]">
+                      <td colSpan={4} className="px-3 py-10 text-center text-[var(--muted-foreground)]">
                         {count === 0 ? "Chưa có từ nào cần xem xét." : "Không có dòng khớp."}
                       </td>
                     </tr>
@@ -242,6 +269,7 @@ export function HanVietLogPanel({ deckId, mode }: { deckId: string; mode: "learn
                     <tr key={`${c.stt}-${i}`} className="border-t border-[var(--border)] align-middle hover:bg-[var(--layer-hover)]">
                       <td className="px-4 py-2 tabular-nums text-[var(--muted-foreground)]">{c.stt}</td>
                       <td className="px-3 py-2 text-base font-semibold text-[var(--foreground)]">{c.word}</td>
+                      <td className="px-3 py-2 text-[var(--muted-foreground)]">{c.kind}</td>
                       <td className="px-3 py-2 text-[#b45309] dark:text-[#fbbf24]">{c.issue}</td>
                     </tr>
                   ))}

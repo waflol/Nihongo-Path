@@ -13,7 +13,7 @@ interface RecheckJob {
   changed?: number;
   recent?: { stt: number; word: string; oldHanViet: string; newHanViet: string }[];
   recentFlags?: { stt: number; word: string; field: "reading" | "back"; issue: string }[];
-  field?: "all" | "hanViet" | "reading" | "back";
+  field?: "all" | "hanViet" | "reading" | "back" | "readingBack";
   error?: string;
 }
 
@@ -23,6 +23,7 @@ const FIELD_INFO = {
   hanViet: { title: "Kiểm tra Hán tự", glyph: "漢" },
   reading: { title: "Kiểm tra phát âm", glyph: "音" },
   back: { title: "Kiểm tra nghĩa", glyph: "義" },
+  readingBack: { title: "Kiểm tra từ vựng", glyph: "音" },
 } as const;
 
 /** Fired right after a whole-deck re-check is started so the tracker polls at once. */
@@ -106,13 +107,13 @@ export function RecheckTracker() {
         const pct = j.total > 0 ? Math.min(100, Math.round((j.done / j.total) * 100)) : 0;
         const root = window.location.pathname.startsWith("/admin") ? "/admin/decks" : "/learn/decks";
         const href = `${root}/${j.deckId}`;
-        const logHref = `${href}/log${j.field === "reading" || j.field === "back" ? `?field=${j.field}` : ""}`;
+        const logHref = `${href}/log${j.field === "reading" || j.field === "back" || j.field === "readingBack" ? "?field=readingBack" : ""}`;
         const info = FIELD_INFO[j.field ?? "all"];
         const active = j.status === "running" || j.status === "paused";
         const paused = j.status === "paused";
         const failed = j.status === "error";
-        const hasLog = j.field === "hanViet" || j.field === "reading" || j.field === "back";
-        const flagLog = j.field === "reading" || j.field === "back";
+        const hasLog = j.field === "hanViet" || j.field === "reading" || j.field === "back" || j.field === "readingBack";
+        const flagLog = j.field === "reading" || j.field === "back" || j.field === "readingBack";
         const logCount = flagLog ? j.flagged : (j.changed ?? 0);
         const showLog = openLog.includes(j.deckId);
         const badge = failed
@@ -129,7 +130,7 @@ export function RecheckTracker() {
           void fetch(`/api/flashcards/recheck-jobs/${j.deckId}`, { method: "DELETE" }).catch(() => null); // gone for good, also after F5
         };
         const recent = [...(j.recent ?? [])].reverse();
-        const recentFlags = [...(j.recentFlags ?? [])].filter((f) => f.field === j.field).reverse();
+        const recentFlags = [...(j.recentFlags ?? [])].filter((f) => j.field === "readingBack" || f.field === j.field).reverse();
         return (
           <div key={j.deckId} className="overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--background-1)] shadow-xl">
             <div className="flex items-center gap-3 p-3">

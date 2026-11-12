@@ -47,8 +47,8 @@ export const BENCH_ITEMS: readonly BenchItem[] = [
 export const ACCURACY_WEIGHTS = { chrf: 0.35, terminology: 0.15, completeness: 0.1, match: 0.2, write: 0.2 } as const;
 
 /** The jobs a service can be asked to do; each has its own score and its own priority order. */
-export type BenchTask = "translate" | "write" | "grammar" | "pronounce";
-export const BENCH_TASKS: readonly BenchTask[] = ["translate", "write", "grammar", "pronounce"];
+export type BenchTask = "translate" | "write" | "grammar" | "pronounce" | "verify";
+export const BENCH_TASKS: readonly BenchTask[] = ["translate", "write", "grammar", "pronounce", "verify"];
 
 /** One pronunciation answer, as parsed from the model. */
 export interface PronounceAnswer {
@@ -112,7 +112,7 @@ export const MAX_RUNS = 5;
 /** What one test item looked like and how the model did on it. */
 export interface BenchDetail {
   id: number;
-  kind: "translate" | "write" | "grammar" | "pronounce";
+  kind: "translate" | "write" | "grammar" | "pronounce" | "verify";
   /** The word being tested and its meaning (grammar: the sentence). */
   term: string;
   meaning: string;
@@ -149,6 +149,10 @@ export interface BenchDetail {
   gotReading?: string;
   gotRomaji?: string;
   gotViet?: string;
+  /** verify: share of the wrong fields corrected right / of the right fields left alone (0–100, absent when the card has none), and the fixes the model gave. */
+  fixScore?: number;
+  keepScore?: number;
+  gotFixes?: string;
 }
 
 /** One repetition of the benchmark, kept for the record (failures too). */
@@ -226,6 +230,9 @@ export interface BenchResult {
   pronounceRomaji?: number;
   pronounceWords?: number;
   pronounceViet?: number;
+  /** verify: mean 0–100 of wrong fields corrected right / right fields left alone. */
+  verifyFix?: number;
+  verifyKeep?: number;
 }
 
 /** Lower-case, NFC, no punctuation, single-spaced. */
@@ -307,6 +314,13 @@ export function completenessScore(hyp: string, ref: string): number {
 }
 
 /** The test items of one task (translate, write), in test order. */
+/** The first `n` test items, repeating the fixed set when `n` is larger, so every service is measured on the same items. */
+export function takeItems<T>(base: readonly T[], n?: number): T[] {
+  const count = n && n > 0 ? Math.min(MAX_BENCH_ITEMS, Math.floor(n)) : base.length;
+  return Array.from({ length: count }, (_, i) => base[i % base.length]);
+}
+export const MAX_BENCH_ITEMS = 40;
+
 export const itemsOf = (task: "translate" | "write"): BenchItem[] => BENCH_ITEMS.filter((i) => i.task.kind === task);
 
 /**
@@ -437,13 +451,13 @@ export function parseGrammar(text: string): Map<number, GrammarAnswer> {
  * enough annotated pieces, 15% a Vietnamese translation is given. An
  * unanswered sentence scores 0.
  */
-export function scoreGrammar(answers: Map<number, GrammarAnswer>, ms: number, raw?: string): BenchResult {
+export function scoreGrammar(answers: Map<number, GrammarAnswer>, ms: number, raw?: string, list: readonly GrammarBenchItem[] = GRAMMAR_ITEMS): BenchResult {
   const details: BenchDetail[] = [];
   let hitSum = 0;
   let splitSum = 0;
   let transSum = 0;
   let outChars = 0;
-  GRAMMAR_ITEMS.forEach((item, i) => {
+  list.forEach((item, i) => {
     const a = answers.get(i + 1);
     const base = { id: i + 1, kind: "grammar" as const, term: item.ja, meaning: "", source: item.ja, answered: Boolean(a) };
     if (!a) {
@@ -468,7 +482,7 @@ export function scoreGrammar(answers: Map<number, GrammarAnswer>, ms: number, ra
       points: a.grammar.map((g) => g.pattern ?? "").filter(Boolean),
     });
   });
-  const n = GRAMMAR_ITEMS.length;
+  const n = list.length;
   const hit = hitSum / n;
   const split = splitSum / n;
   const trans = transSum / n;
@@ -597,14 +611,14 @@ function similarity(a: string, b: string): number {
  * enough words that each carry a reading, 10% an approximate Vietnamese-style
  * reading is given. An unanswered sentence scores 0.
  */
-export function scorePronounce(answers: Map<number, PronounceAnswer>, ms: number, raw?: string): BenchResult {
+export function scorePronounce(answers: Map<number, PronounceAnswer>, ms: number, raw?: string, list: readonly PronounceBenchItem[] = PRONOUNCE_ITEMS): BenchResult {
   const details: BenchDetail[] = [];
   let readSum = 0;
   let romSum = 0;
   let wordSum = 0;
   let vietSum = 0;
   let outChars = 0;
-  PRONOUNCE_ITEMS.forEach((item, i) => {
+  list.forEach((item, i) => {
     const a = answers.get(i + 1);
     const base = { id: i + 1, kind: "pronounce" as const, term: item.ja, meaning: "", source: item.ja, expected: item.reading, answered: Boolean(a) };
     if (!a) {
@@ -631,7 +645,7 @@ export function scorePronounce(answers: Map<number, PronounceAnswer>, ms: number
       gotViet: a.viet,
     });
   });
-  const n = PRONOUNCE_ITEMS.length;
+  const n = list.length;
   const reading = readSum / n;
   const romaji = romSum / n;
   const words = wordSum / n;
@@ -652,6 +666,146 @@ export function scorePronounce(answers: Map<number, PronounceAnswer>, ms: number
     pronounceWords: round1(words),
     pronounceViet: round1(viet),
     items: n,
+    answered: answers.size,
+    details,
+    raw: raw?.slice(0, 6000),
+    outChars,
+  };
+}
+
+/** One vocabulary card of the proofreading test, with the fix each wrong field should get. */
+export interface VerifyBenchItem {
+  word: string;
+  reading: string;
+  hanViet: string;
+  meaning: string;
+  /** Sent like the deck check sends a doubtful reading: only the reading is judged and the meaning rides along as context. */
+  readingOnly?: boolean;
+  /** Only the fields that are wrong above: the corrected reading (hiragana), Hán Việt (UPPERCASE) or any acceptable Vietnamese meanings. */
+  fix: { reading?: string; hanViet?: string; meaning?: string[] };
+}
+export const VERIFY_ITEMS: readonly VerifyBenchItem[] = [
+  { word: "勉強", reading: "べんきょう", hanViet: "", meaning: "học tập", fix: {} },
+  { word: "経済", reading: "けえざい", hanViet: "", meaning: "kinh tế", fix: { reading: "けいざい" } },
+  { word: "約束", reading: "やくそく", hanViet: "", meaning: "cuộc họp", fix: { meaning: ["hứa", "hẹn", "giao ước"] } },
+  { word: "電話", reading: "でんわ", hanViet: "", meaning: "điện thoại", fix: {} },
+  { word: "図書館", reading: "としょかん", hanViet: "", meaning: "thư viện", fix: {} },
+  // a word with several readings: にんき is right for "được ưa chuộng"
+  { word: "人気", reading: "にんき", hanViet: "", meaning: "được ưa chuộng", fix: {} },
+  { word: "学校", reading: "がっこ", hanViet: "", meaning: "trường học", fix: { reading: "がっこう" } },
+  { word: "天気", reading: "てんき", hanViet: "", meaning: "thời tiết", fix: {} },
+  // Hard readings, sent the way the deck check sends them (reading only, the meaning as context): every kanji fits its own
+  // on/kun yet the word reads differently, or the reading belongs to another meaning.
+  { word: "一人住まい", reading: "いちにんすまい", hanViet: "", meaning: "sống một mình", readingOnly: true, fix: { reading: "ひとりずまい" } },
+  { word: "一日", reading: "いちにち", hanViet: "", meaning: "ngày mùng một", readingOnly: true, fix: { reading: "ついたち" } },
+  { word: "大人", reading: "おとな", hanViet: "", meaning: "người lớn", readingOnly: true, fix: {} },
+];
+
+/** What the model said was wrong on one card; only corrections are present. */
+export interface VerifyFix {
+  reading?: string;
+  hanViet?: string;
+  meaning?: string;
+}
+
+/** Pull `{items:[{id, readingFix, hanVietFix, meaningFix}]}` out of the model's text, keyed by id. */
+export function parseVerify(text: string): Map<number, VerifyFix> {
+  const out = new Map<number, VerifyFix>();
+  const m = /\{[\s\S]*\}/.exec(text);
+  let data: unknown;
+  try {
+    data = JSON.parse(m ? m[0] : text);
+  } catch {
+    return out;
+  }
+  const arr = (data as { items?: unknown })?.items;
+  if (!Array.isArray(arr)) return out;
+  const str = (v: unknown) => (typeof v === "string" ? v.trim() : "");
+  for (const r of arr as Record<string, unknown>[]) {
+    const id = Number(r?.id);
+    if (!Number.isFinite(id)) continue;
+    out.set(id, {
+      reading: str(r.readingFix).slice(0, 100) || undefined,
+      hanViet: str(r.hanVietFix).toLocaleUpperCase("vi").slice(0, 100) || undefined,
+      meaning: str(r.meaningFix).slice(0, 200) || undefined,
+    });
+  }
+  return out;
+}
+
+const hanVietFold = (s: string) => s.normalize("NFC").toLocaleUpperCase("vi").replace(/\s+/g, " ").trim();
+
+/**
+ * Proofreading result of ONE run: 60% the wrong fields are corrected right
+ * (reading and Hán Việt must match, a meaning must contain an accepted
+ * rendering), 40% the right fields are left alone (a false correction costs).
+ * A card the model did not answer counts as "no corrections".
+ */
+export function scoreVerify(answers: Map<number, VerifyFix>, ms: number, raw?: string, list: readonly VerifyBenchItem[] = VERIFY_ITEMS): BenchResult {
+  const details: BenchDetail[] = [];
+  let fixSum = 0;
+  let fixN = 0;
+  let keepSum = 0;
+  let keepN = 0;
+  let outChars = 0;
+  list.forEach((item, i) => {
+    const a = answers.get(i + 1);
+    let fix = 0;
+    let fixes = 0;
+    let keep = 0;
+    let keeps = 0;
+    const field = (name: keyof VerifyFix, given: string, right: boolean) => {
+      if (!given) return;
+      if (!right) {
+        fixes++;
+        const got = a?.[name];
+        const want = item.fix[name];
+        let ok = false;
+        if (got && name === "reading") ok = kanaOnly(got) === want;
+        else if (got && name === "hanViet") ok = hanVietFold(got) === want;
+        else if (got && name === "meaning") ok = (want as string[]).some((w) => got.toLowerCase().includes(w));
+        if (ok) fix += 100;
+      } else {
+        keeps++;
+        if (!a?.[name]) keep += 100;
+      }
+    };
+    field("reading", item.reading, item.fix.reading === undefined);
+    field("hanViet", item.hanViet, item.fix.hanViet === undefined);
+    field("meaning", item.readingOnly ? "" : item.meaning, item.fix.meaning === undefined);
+    if (a) outChars += (a.reading?.length ?? 0) + (a.hanViet?.length ?? 0) + (a.meaning?.length ?? 0);
+    fixSum += fix;
+    fixN += fixes;
+    keepSum += keep;
+    keepN += keeps;
+    details.push({
+      id: i + 1,
+      kind: "verify",
+      term: item.word,
+      meaning: item.meaning,
+      source: `${item.reading} · ${item.meaning}`,
+      answered: Boolean(a),
+      fixScore: fixes ? round1(fix / fixes) : undefined,
+      keepScore: keeps ? round1(keep / keeps) : undefined,
+      gotFixes: a ? [a.reading, a.hanViet, a.meaning].filter(Boolean).join(" · ") : undefined,
+    });
+  });
+  const fixAcc = fixN ? fixSum / fixN : 0;
+  const keepAcc = keepN ? keepSum / keepN : 0;
+  return {
+    ok: answers.size > 0,
+    at: new Date().toISOString(),
+    ms,
+    task: "verify",
+    accuracy: round1(0.6 * fixAcc + 0.4 * keepAcc),
+    chrf: 0,
+    terminology: 0,
+    completeness: 0,
+    matchAcc: 0,
+    writeScore: 0,
+    verifyFix: round1(fixAcc),
+    verifyKeep: round1(keepAcc),
+    items: list.length,
     answered: answers.size,
     details,
     raw: raw?.slice(0, 6000),
@@ -740,6 +894,8 @@ export function aggregateRuns(attempts: BenchAttempt[], itemCount = BENCH_ITEMS.
     pronounceRomaji: opt((r) => r.pronounceRomaji),
     pronounceWords: opt((r) => r.pronounceWords),
     pronounceViet: opt((r) => r.pronounceViet),
+    verifyFix: opt((r) => r.verifyFix),
+    verifyKeep: opt((r) => r.verifyKeep),
     items: last.items,
     answered: Math.round(avg(good.map((r) => r.answered))),
     translateOnly: last.translateOnly,
@@ -880,7 +1036,7 @@ export const historyEntry = (r: BenchResult): BenchHistoryEntry => ({
  * visible until the service is scored again. Grammar was never measured then.
  */
 export function legacyTaskResult(bench: BenchResult | null | undefined, task: BenchTask): BenchResult | undefined {
-  if (!bench?.ok || bench.task || task === "grammar" || task === "pronounce") return undefined;
+  if (!bench?.ok || bench.task || task === "grammar" || task === "pronounce" || task === "verify") return undefined;
   if (task === "write" && bench.translateOnly) return undefined;
   const details = bench.details?.filter((d) => d.kind === task);
   const w = ACCURACY_WEIGHTS;

@@ -33,6 +33,8 @@ export interface ExampleSuggestInput {
   reading?: string;
   /** Verb / noun / adjective, when known. */
   partOfSpeech?: PartOfSpeech | "";
+  /** The user's pick for this run: only this AI service, and/or this many items per request. */
+  ai?: { serviceId?: string; batch?: number };
 }
 
 interface TatoebaSentence {
@@ -294,7 +296,7 @@ export class ExampleSuggestService {
         // is asked, and so on. None agrees → write our own sentence below.
         const tried: string[] = [];
         for (let i = 0; i < MAX_AI_TRIES; i++) {
-          const r = await this.ai.run({ kind: "translate", ja: best.sentence, term, meaning, skip: [...tried] });
+          const r = await this.ai.run({ kind: "translate", ja: best.sentence, term, meaning, skip: [...tried], opts: input.ai });
           if (!r) break; // no further service can answer
           if (r.matches !== false) {
             return { sentence: best.sentence, translation: r.vi, source: "ai-translated" };
@@ -314,7 +316,7 @@ export class ExampleSuggestService {
       if (this.ai && (await this.ai.isEnabled())) {
         const tried: string[] = [];
         for (let i = 0; i < MAX_AI_TRIES; i++) {
-          const r = await this.ai.run({ kind: "write", term, reading, meaning, pos: pos ?? "", skip: [...tried] });
+          const r = await this.ai.run({ kind: "write", term, reading, meaning, pos: pos ?? "", skip: [...tried], opts: input.ai });
           if (!r) break; // no further service can answer
           const sentence = r.ja?.trim() ?? "";
           if ((await this.checkAiSentence(term, input.reading, sentence)).ok) {

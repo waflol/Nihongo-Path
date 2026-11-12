@@ -90,6 +90,12 @@ function withUploadLimits() {
 export class ImportController {
   constructor(private readonly imports: ImportService) {}
 
+  @Get("examples/:deckId/log")
+  @ApiOperation({ summary: "What the latest example-generation run of a deck did, card by card" })
+  examplesLog(@CurrentUser() caller: AuthUser, @Param("deckId") deckId: string) {
+    return this.imports.examplesLog(caller, deckId);
+  }
+
   @Post("examples/:deckId/:action")
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
@@ -99,11 +105,15 @@ export class ImportController {
     @CurrentUser() caller: AuthUser,
     @Param("deckId") deckId: string,
     @Param("action") action: string,
+    @Query("serviceId") serviceId?: string,
+    @Query("batch") batch?: string,
   ) {
     if (action !== "pause" && action !== "resume" && action !== "stop" && action !== "retry") {
       throw new UnprocessableEntityException("action must be pause|resume|stop|retry");
     }
-    return this.imports.controlExamples(caller, deckId, action);
+    const n = Math.floor(Number(batch));
+    const ai = { serviceId: serviceId || undefined, batch: Number.isFinite(n) && n > 0 ? Math.min(50, n) : undefined };
+    return this.imports.controlExamples(caller, deckId, action, ai);
   }
 
   @Post("jobs")

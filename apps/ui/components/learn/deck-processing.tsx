@@ -11,8 +11,8 @@ import { EXAMPLES_STARTED_EVENT } from "@/components/learn/example-job-tracker";
  * button goes through here; it also wakes the floating progress popup.
  * Returns how many cards were queued, or `null` when it could not start.
  */
-export async function startExamples(deckId: string): Promise<number | null> {
-  const res = await fetch(`/api/flashcards/import/examples/${deckId}/retry`, { method: "POST" }).catch(() => null);
+export async function startExamples(deckId: string, query = ""): Promise<number | null> {
+  const res = await fetch(`/api/flashcards/import/examples/${deckId}/retry${query ? `?${query}` : ""}`, { method: "POST" }).catch(() => null);
   if (!res?.ok) return null;
   const body = (await res.json().catch(() => null)) as { remaining?: number } | null;
   window.dispatchEvent(new Event(EXAMPLES_STARTED_EVENT));

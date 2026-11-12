@@ -23,8 +23,8 @@ import { AiServicesService } from "./ai-services.service.js";
 
 /** The task a request names; anything else is a client error. */
 function parseTask(v: unknown): BenchTask {
-  if (v === "translate" || v === "write" || v === "grammar" || v === "pronounce") return v;
-  throw new BadRequestException("task must be translate, write, grammar or pronounce");
+  if (v === "translate" || v === "write" || v === "grammar" || v === "pronounce" || v === "verify") return v;
+  throw new BadRequestException("task must be translate, write, grammar, pronounce or verify");
 }
 
 /**
@@ -167,8 +167,8 @@ export class AiServicesController {
   @HttpCode(HttpStatus.OK)
   @ContentAdmin()
   @ApiOperation({ summary: "Score a service on one task's fixed test set — translate, write or grammar (1–5 runs: accuracy + speed)" })
-  async benchmark(@Param("id") id: string, @Body() body: { runs?: number; task?: string }) {
-    return this.examples.benchmark(await this.services.runtimeOf(id), parseTask(body?.task), Number(body?.runs) || undefined);
+  async benchmark(@Param("id") id: string, @Body() body: { runs?: number; task?: string; items?: number }) {
+    return this.examples.benchmark(await this.services.runtimeOf(id), parseTask(body?.task), Number(body?.runs) || undefined, Number(body?.items) || undefined);
   }
 
   @Post("services/:id/test")

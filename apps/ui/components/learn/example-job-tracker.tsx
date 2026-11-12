@@ -177,6 +177,12 @@ export function ExampleJobTracker() {
                         {j.paused ? "Đã tạm dừng" : `${pct}% — chạy nền, bạn có thể sang trang khác`}
                       </p>
                       <div className="flex shrink-0 gap-1">
+                        <Link
+                          href={`${hrefOf(j)}/log?field=examples`}
+                          className="rounded-md border border-[var(--border)] px-2 py-0.5 text-xs font-medium text-[var(--primary)] hover:bg-[var(--layer-hover)]"
+                        >
+                          Log
+                        </Link>
                         <button
                           type="button"
                           disabled={busyId === j.deckId}
@@ -212,6 +218,9 @@ export function ExampleJobTracker() {
             Đã tạo xong ví dụ cho <strong className="text-[var(--foreground)]">{f.title}</strong>.{" "}
             <Link href={hrefOf(f)} onClick={() => setFinished((x) => x.filter((y) => y.deckId !== f.deckId))} className="font-medium text-[var(--primary)] hover:underline">
               Xem bộ thẻ →
+            </Link>{" "}
+            <Link href={`${hrefOf(f)}/log?field=examples`} onClick={() => setFinished((x) => x.filter((y) => y.deckId !== f.deckId))} className="font-medium text-[var(--primary)] hover:underline">
+              Xem log →
             </Link>
           </p>
           <button
