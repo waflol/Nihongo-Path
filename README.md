@@ -15,8 +15,22 @@ Monorepo pnpm:
 
 ## Chạy nhanh
 
+Yêu cầu: Node ≥ 22.22 (xem `.nvmrc`) và pnpm 12 (phiên bản khoá ở trường `packageManager`
+trong `package.json`). Cài pnpm qua Corepack (đi kèm Node), chỉ cần làm một lần:
+
 ```bash
-nvm use          # Node 22 (.nvmrc)
+nvm install      # cài Node theo .nvmrc nếu máy chưa có
+nvm use
+corepack enable
+corepack prepare pnpm@12.11.2 --activate
+pnpm --version   # 12.11.2
+```
+
+Không dùng được Corepack thì cài global: `npm install -g pnpm@12.11.2`.
+
+Sau đó:
+
+```bash
 pnpm install
 pnpm dev         # UI :3001, API :3000
 ```
