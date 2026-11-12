@@ -1,25 +1,5 @@
-import { Injectable, Logger, Optional, UnprocessableEntityException } from "@nestjs/common";
-import {
-  aggregateRuns,
-  BENCH_ITEMS,
-  DEFAULT_RUNS,
-  GRAMMAR_ITEMS,
-  itemsOf,
-  takeItems,
-  MAX_RUNS,
-  parseGrammar,
-  parsePronounce,
-  parseVerify,
-  scoreVerify,
-  VERIFY_ITEMS,
-  PRONOUNCE_ITEMS,
-  scoreGrammar,
-  scorePronounce,
-  scoreItems,
-  type BenchAttempt,
-  type BenchResult,
-  type BenchTask,
-} from "./ai-benchmark.js";
+import { Injectable, Logger, Optional } from "@nestjs/common";
+import { parseGrammar, parsePronounce, parseVerify } from "./ai-benchmark.js";
 import { RedisService } from "../redis/redis.service.js";
 import { randomUUID } from "node:crypto";
 import { AiResultCacheService, taskKey, taskTerm } from "./ai-result-cache.service.js";
@@ -51,6 +31,36 @@ export interface AiResult {
   /** Service label / model that produced it (kept in the saved result and its Redis key). */
   service?: string;
   model?: string;
+}
+
+/** Tokens a provider reported for one call. */
+export interface AiUsage {
+  inputTokens: number;
+  outputTokens: number;
+}
+
+/** Token usage from a Gemini (`usageMetadata`), Anthropic or OpenAI-style (`usage`) answer; null when absent. */
+export function usageOf(data: Record<string, any> | null): AiUsage | null {
+  const n = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : undefined);
+  const g = data?.usageMetadata;
+  if (g) {
+    const i = n(g.promptTokenCount);
+    const o = n(g.candidatesTokenCount) ?? (n(g.totalTokenCount) !== undefined && i !== undefined ? g.totalTokenCount - i : undefined);
+    if (i !== undefined || o !== undefined) return { inputTokens: i ?? 0, outputTokens: o ?? 0 };
+  }
+  const u = data?.usage;
+  if (u) {
+    const i = n(u.input_tokens) ?? n(u.prompt_tokens);
+    const o = n(u.output_tokens) ?? n(u.completion_tokens);
+    if (i !== undefined || o !== undefined) return { inputTokens: i ?? 0, outputTokens: o ?? 0 };
+  }
+  return null;
+}
+
+/** The exact model version the provider says answered (OpenAI / Anthropic `model`, Gemini `modelVersion`). */
+export function modelVersionOf(data: Record<string, any> | null): string | null {
+  const v = data?.modelVersion ?? data?.model;
+  return typeof v === "string" && v ? v.slice(0, 200) : null;
 }
 
 interface Pending {
@@ -482,8 +492,43 @@ export class AiExampleService {
   }
 
   private async callRaw(svc: RuntimeAiService, prompt: string, image?: Buffer): Promise<string> {
+    return (await this.callRawFull(svc, prompt, image)).text;
+  }
+
+  /**
+   * One call for the evaluation benchmark (`src/eval`): the caller picks the
+   * temperature, waits for the service's rpm slot, and gets the token usage
+   * and the model version the provider reported (null when it reports none —
+   * the Antigravity CLI never does). Logged under `purpose`. Throws an
+   * `Error` with `kind` ("auth" | "rate" | "transient") and `retryAfterMs`.
+   */
+  async complete(
+    svc: RuntimeAiService,
+    prompt: string,
+    opts: { temperature: number; purpose: AiLogPurpose; words?: string[] },
+  ): Promise<{ text: string; usage: AiUsage | null; modelVersion: string | null; ms: number }> {
+    await this.pace(svc);
+    const t0 = Date.now();
+    const url = this.endpointOf(svc);
+    try {
+      const out = await this.callRawFull(svc, prompt, undefined, opts.temperature);
+      this.logCall(svc, opts.purpose, url, opts.words ?? [], prompt, t0, { ok: true, response: out.text });
+      return { ...out, ms: Date.now() - t0 };
+    } catch (err) {
+      this.logCall(svc, opts.purpose, url, opts.words ?? [], prompt, t0, { ok: false, error: (err as Error).message });
+      throw err;
+    }
+  }
+
+  private async callRawFull(
+    svc: RuntimeAiService,
+    prompt: string,
+    image?: Buffer,
+    temperature?: number,
+  ): Promise<{ text: string; usage: AiUsage | null; modelVersion: string | null }> {
     const p = svc.provider;
-    if (p.kind === "antigravity-cli") return this.callCli(svc, prompt, image);
+    if (p.kind === "antigravity-cli") return { text: await this.callCli(svc, prompt, image), usage: null, modelVersion: null };
+    const temp = temperature ?? (image ? 0 : 0.4);
     const isGemini = p.kind === "gemini";
     const isAnthropic = p.kind === "anthropic";
     const url = isGemini
@@ -508,13 +553,13 @@ export class AiExampleService {
                 : [{ text: prompt }],
             },
           ],
-          generationConfig: { responseMimeType: "application/json", temperature: image ? 0 : 0.4 },
+          generationConfig: { responseMimeType: "application/json", temperature: temp },
         }
       : isAnthropic
         ? {
             model: svc.model,
             max_tokens: 4096,
-            temperature: image ? 0 : 0.4,
+            temperature: temp,
             messages: [
               {
                 role: "user",
@@ -529,7 +574,7 @@ export class AiExampleService {
           }
         : {
             model: svc.model,
-            temperature: image ? 0 : 0.4,
+            temperature: temp,
             messages: [
               {
                 role: "user",
@@ -557,7 +602,7 @@ export class AiExampleService {
         ? (data?.content as { type?: string; text?: string }[] | undefined)?.find((b) => b.type === "text")?.text
         : data?.choices?.[0]?.message?.content;
     if (typeof text !== "string") throw new AiFailure("transient", "no text in the answer");
-    return text;
+    return { text, usage: usageOf(data), modelVersion: modelVersionOf(data) };
   }
 
   /** Throws a classified `AiFailure` for any non-2xx answer (keys are scrubbed from the text). */
@@ -1171,96 +1216,6 @@ export class AiExampleService {
       out.set(id, { ja, vi, matches: typeof row.matches === "boolean" ? row.matches : undefined });
     }
     return out;
-  }
-
-  /**
-   * Scores one service on ONE task's fixed test set (translate: 10 sentences,
-   * write: 4 words, grammar: 3 sentences, verify: 11 cards), `runs` times (default 3), combined
-   * by `aggregateRuns` (median latency, mean accuracy, failures kept on
-   * record). Stops early on a rate-limit / auth failure or two failures in a
-   * row — more calls would only burn quota. The result is stored on the
-   * service under that task, with a line in that task's history, and returned.
-   */
-  async benchmark(svc: RuntimeAiService, task: BenchTask, runs = DEFAULT_RUNS, count?: number): Promise<BenchResult> {
-    if (task !== "translate" && this.isTranslator(svc)) {
-      throw new UnprocessableEntityException("Model chỉ dịch — chỉ chấm được phần “Dịch”");
-    }
-    const n = Math.min(MAX_RUNS, Math.max(1, Math.round(runs) || DEFAULT_RUNS));
-    const attempts: BenchAttempt[] = [];
-    let lastFailure: AiFailure | undefined;
-    let inARow = 0;
-    for (let i = 0; i < n; i++) {
-      const one = await this.benchmarkOnce(svc, task, count);
-      attempts.push(one.attempt);
-      if (one.attempt.ok) {
-        inARow = 0;
-        continue;
-      }
-      lastFailure = one.failure;
-      inARow++;
-      if (one.failure!.kind !== "transient" || inARow >= 2) break;
-    }
-    const result = aggregateRuns(
-      attempts,
-      task === "grammar" ? takeItems(GRAMMAR_ITEMS, count).length : task === "pronounce" ? takeItems(PRONOUNCE_ITEMS, count).length : task === "verify" ? takeItems(VERIFY_ITEMS, count).length : takeItems(itemsOf(task), count).length,
-    );
-    // Cool the service down only when no run worked; a flaky one stays usable.
-    if (result.ok) void this.services.reportOk(svc.id);
-    else if (lastFailure) await this.services.reportFailure(svc.id, lastFailure.kind, lastFailure.message, lastFailure.retryAfterMs);
-    await this.services.saveBench(svc.id, task, result);
-    return { ...result, task };
-  }
-
-  /** One repetition of one task: a scored result, or a classified failure. */
-  private async benchmarkOnce(svc: RuntimeAiService, task: BenchTask, count?: number): Promise<{ attempt: BenchAttempt; failure?: AiFailure }> {
-    const t0 = Date.now();
-    const translator = this.isTranslator(svc);
-    let text = "";
-    try {
-      let result: BenchResult;
-      if (task === "verify") {
-        const list = takeItems(VERIFY_ITEMS, count);
-        const cards = list.map((c, i) => ({ id: i + 1, word: c.word, reading: c.reading, hanViet: "", meaning: c.readingOnly ? "" : c.meaning, ...(c.readingOnly ? { context: c.meaning } : {}) }));
-        text = await this.call(svc, this.verifyPrompt(cards), "test", cards.map((c) => c.word));
-        const answers = parseVerify(text);
-        if (answers.size === 0) throw new AiFailure("transient", "the answer could not be read");
-        result = scoreVerify(answers, Date.now() - t0, text, list);
-      } else if (task === "pronounce") {
-        const list = takeItems(PRONOUNCE_ITEMS, count);
-        const sentences = list.map((i) => i.ja);
-        text = await this.call(svc, this.pronouncePrompt(sentences), "test", sentences);
-        const answers = parsePronounce(text);
-        if (answers.size === 0) throw new AiFailure("transient", "the answer could not be read");
-        result = scorePronounce(answers, Date.now() - t0, text, list);
-      } else if (task === "grammar") {
-        const list = takeItems(GRAMMAR_ITEMS, count);
-        const sentences = list.map((i) => i.ja);
-        text = await this.call(svc, this.grammarPrompt(sentences), "test", sentences);
-        const answers = parseGrammar(text);
-        if (answers.size === 0) throw new AiFailure("transient", "the answer could not be read");
-        result = scoreGrammar(answers, Date.now() - t0, text, list);
-      } else {
-        const items = takeItems(itemsOf(task), count);
-        const batch: Pending[] = items.map((it, i) => ({ id: i + 1, task: it.task, resolve: () => undefined }));
-        let answers: Map<number, AiResult>;
-        if (translator) {
-          answers = await this.translate(svc, batch, "test");
-          text = JSON.stringify([...answers].map(([id, r]) => ({ id, vi: r.vi })), null, 1);
-        } else {
-          text = await this.call(svc, this.prompt(batch), "test", this.wordsOf(batch));
-          answers = this.parse(text, batch);
-        }
-        if (answers.size === 0) throw new AiFailure("transient", "the answer could not be read");
-        result = scoreItems(items, answers, Date.now() - t0, text, translator);
-      }
-      return { attempt: { ok: true, result: { ...result, task } } };
-    } catch (err) {
-      const failure = err instanceof AiFailure ? err : new AiFailure("transient", (err as Error).message);
-      return {
-        failure,
-        attempt: { ok: false, at: new Date().toISOString(), ms: Date.now() - t0, error: failure.message, raw: text ? text.slice(0, 6000) : undefined },
-      };
-    }
   }
 
   /**

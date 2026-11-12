@@ -88,7 +88,7 @@ export class AiServicesController {
   @Post("services/auto-sort")
   @HttpCode(HttpStatus.OK)
   @ContentAdmin()
-  @ApiOperation({ summary: "Re-order services by benchmark score (accuracy vs speed weight, minimum accuracy); for ONE task — only that task's own order changes" })
+  @ApiOperation({ summary: "Re-order services by their evaluation-benchmark score (accuracy vs speed weight, minimum accuracy); for ONE task — only that task's own order changes" })
   autoSort(@Body() body: { speedWeight?: number; minAccuracy?: number; task?: string }) {
     const task = parseTask(body?.task);
     const w = Number(body?.speedWeight);
@@ -161,14 +161,6 @@ export class AiServicesController {
   @ApiOperation({ summary: "Antigravity CLI service: forget the signed-in Google account" })
   async cliLogout(@Param("id") id: string): Promise<void> {
     await this.services.cliLogout(id);
-  }
-
-  @Post("services/:id/benchmark")
-  @HttpCode(HttpStatus.OK)
-  @ContentAdmin()
-  @ApiOperation({ summary: "Score a service on one task's fixed test set — translate, write or grammar (1–5 runs: accuracy + speed)" })
-  async benchmark(@Param("id") id: string, @Body() body: { runs?: number; task?: string; items?: number }) {
-    return this.examples.benchmark(await this.services.runtimeOf(id), parseTask(body?.task), Number(body?.runs) || undefined, Number(body?.items) || undefined);
   }
 
   @Post("services/:id/test")

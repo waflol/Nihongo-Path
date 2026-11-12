@@ -67,7 +67,7 @@ const NAV: NavItem[] = [
   {
     href: "/admin/ai",
     label: "Dịch vụ AI",
-    desc: "Thêm khoá, ưu tiên, benchmark",
+    desc: "Thêm khoá, ưu tiên, xếp hạng",
     icon: (
       <svg {...iconProps}>
         <path d="M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8zM18 15l.8 2.2L21 18l-2.2.8L18 21l-.8-2.2L15 18l2.2-.8z" />
@@ -81,6 +81,16 @@ const NAV: NavItem[] = [
     icon: (
       <svg {...iconProps}>
         <path d="M3 12h4l3-8 4 16 3-8h4" />
+      </svg>
+    ),
+  },
+  {
+    href: "/admin/ai-eval",
+    label: "Đánh giá AI",
+    desc: "Benchmark dịch vụ AI theo JLPT",
+    icon: (
+      <svg {...iconProps}>
+        <path d="M4 20V10M10 20V4M16 20v-7M22 20H2" />
       </svg>
     ),
   },

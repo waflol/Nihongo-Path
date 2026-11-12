@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { TASK_LABELS, type BenchTask } from "@/lib/ai-benchmark-score";
 import { ConfirmDialog } from "@/components/learn/confirm-dialog";
 import { AiTaskTabs } from "@/components/admin/ai-task-tabs";
-import { AiBenchmarkPanel, type Bench, type HistoryEntry } from "@/components/admin/ai-benchmark-panel";
+import Link from "next/link";
 
 interface Provider {
   id: string;
@@ -33,8 +33,8 @@ interface Service {
   keyHint: string;
   baseUrl?: string | null;
   translationOnly?: boolean;
-  benchTasks?: Partial<Record<BenchTask, Bench>>;
-  benchHistory?: Partial<Record<BenchTask, HistoryEntry[]>>;
+  /** Latest evaluation-benchmark score of each task (`/admin/ai-eval`). */
+  benchTasks?: Partial<Record<BenchTask, { ok: boolean; accuracy: number }>>;
   rpm: number;
   enabled: boolean;
   priority: number;
@@ -711,7 +711,11 @@ export function AiServicesConsole() {
       {/* Priority list — one order per task */}
       <AiTaskTabs className="mt-6" label="Thứ tự ưu tiên theo việc" value={task} onChange={setTask} />
       <p className="mt-2 text-xs text-[var(--muted-foreground)]">
-        Thứ tự ưu tiên của “{TASK_LABELS[task]}” — dùng mũi tên để đổi, hoặc chấm điểm rồi bấm “Sắp xếp” ở phần Chấm điểm bên dưới.
+        Thứ tự ưu tiên của “{TASK_LABELS[task]}” — dùng mũi tên để đổi. Thứ tự cũng tự sắp lại theo điểm mỗi khi một lần chạy ở{" "}
+        <Link href="/admin/ai-eval" className="underline">
+          Đánh giá AI
+        </Link>{" "}
+        hoàn tất (bật “cập nhật xếp hạng dịch vụ”).
         {hiddenCount > 0 && ` ${hiddenCount} dịch vụ chỉ dịch được nên không nằm trong danh sách này.`}
       </p>
       <div className="mt-3 space-y-3">
@@ -897,13 +901,6 @@ export function AiServicesConsole() {
           );
         })}
       </div>
-
-      <AiBenchmarkPanel
-        services={services.map((s) => ({ id: s.id, label: s.label, providerName: s.providerName, model: s.model, enabled: s.enabled, benchTasks: s.benchTasks, benchHistory: s.benchHistory }))}
-        onChanged={load}
-        task={task}
-        onTaskChange={setTask}
-      />
 
       {/* Add from the preset list */}
       <form onSubmit={add} className="mt-8 rounded-2xl border border-[var(--border)] bg-[var(--background-1)] p-5">

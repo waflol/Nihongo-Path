@@ -28,6 +28,8 @@ async function bootstrap() {
   app.useBodyParser("urlencoded", { extended: true, limit: "400kb" });
   // Kanji CSV restore (admin): the file carries stroke data, so it is bigger than a JSON call.
   app.useBodyParser("text", { type: "text/csv", limit: "40mb" });
+  // Evaluation dataset upload (admin): a whole JSON / JSONL dataset file.
+  app.useBodyParser("text", { type: "application/x-eval-dataset", limit: "8mb" });
   app.useBodyParser("raw", {
     type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     limit: "40mb",

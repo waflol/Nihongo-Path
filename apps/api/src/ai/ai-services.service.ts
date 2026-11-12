@@ -17,7 +17,6 @@ import {
   BENCH_TASKS,
   HISTORY_LIMIT,
   historyEntry,
-  legacyTaskResult,
   rankServices,
   type BenchHistory,
   type BenchResult,
@@ -235,12 +234,12 @@ export class AiServicesService implements OnModuleDestroy {
     return AI_PROVIDERS;
   }
 
-  /** Each task's latest result; a task never scored on its own falls back to the old combined benchmark. */
-  private benchTasksOf(d: Pick<AiServiceDocument, "bench" | "benchByTask">): AiServiceView["benchTasks"] {
+  /** Each task's latest evaluation-benchmark result (results of the retired fixed benchmark are ignored). */
+  private benchTasksOf(d: Pick<AiServiceDocument, "benchByTask">): AiServiceView["benchTasks"] {
     const out: AiServiceView["benchTasks"] = {};
     for (const t of BENCH_TASKS) {
-      const r = d.benchByTask?.[t] ?? legacyTaskResult(d.bench, t);
-      if (r) out[t] = r;
+      const r = d.benchByTask?.[t];
+      if (r?.source === "eval") out[t] = r;
     }
     return out;
   }

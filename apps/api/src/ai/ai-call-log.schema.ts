@@ -5,9 +5,9 @@ import type { HydratedDocument } from "mongoose";
  * Why the call was made: generating examples for cards, an admin test/benchmark,
  * "vocab" = per-word example activity (counts as example generation),
  * "verify" = vocabulary check (reading / Hán Việt / meaning), "ocr" = reading vocabulary from a PDF page, "translate" / "grammar" / "pronounce" =
- * the admin playground.
+ * the admin playground, "eval" / "judge" = the evaluation benchmark (candidate answer / AI judge).
  */
-export const AI_LOG_PURPOSES = ["example", "test", "vocab", "ocr", "translate", "grammar", "pronounce", "verify"] as const;
+export const AI_LOG_PURPOSES = ["example", "test", "vocab", "ocr", "translate", "grammar", "pronounce", "verify", "eval", "judge"] as const;
 export type AiLogPurpose = (typeof AI_LOG_PURPOSES)[number];
 
 /**

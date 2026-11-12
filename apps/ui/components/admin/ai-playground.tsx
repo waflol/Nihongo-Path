@@ -195,7 +195,7 @@ export function AiPlayground() {
             {usable.length === 0 && (
               <option value="">
                 {mode === "grammar"
-                  ? `Chưa có dịch vụ nào đạt benchmark (≥ ${MIN_ACCURACY}%) — chạy benchmark ở trang Dịch vụ AI`
+                  ? `Chưa có dịch vụ nào đạt ≥ ${MIN_ACCURACY} điểm “Ngữ pháp” — chạy ở trang Đánh giá AI`
                   : "Không có dịch vụ phù hợp và sẵn sàng"}
               </option>
             )}
