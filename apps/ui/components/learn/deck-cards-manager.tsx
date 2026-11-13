@@ -155,7 +155,7 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
   // Off: cards unchanged since their last check are skipped (fast). On: judge every card again.
   const [recheckForce, setRecheckForce] = useState(false);
   // The user's own pick for AI runs (meaning / reading checks, examples): one model, and cards per request.
-  const [aiServices, setAiServices] = useState<{ id: string; label: string; model: string }[]>([]);
+  const [aiServices, setAiServices] = useState<{ id: string; label: string; model: string; off?: string }[]>([]);
   const [aiService, setAiService] = useState("");
   const [aiBatch, setAiBatch] = useState("");
   const [examplesBusy, setExamplesBusy] = useState(false);
@@ -166,7 +166,14 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
     fetch("/api/flashcards/admin/ai/services", { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : []))
       .then((list: { id: string; label: string; model: string; enabled: boolean; translationOnly?: boolean; authorized?: boolean; cli?: boolean }[]) => {
-        if (live && Array.isArray(list)) setAiServices(list.filter((x) => x.enabled && !x.translationOnly && (!x.cli || x.authorized)));
+        // Keep unusable services visible (disabled, with the reason) so a missing model is explainable:
+        // CLI login state is per machine, so the same deck can differ between servers.
+        if (live && Array.isArray(list))
+          setAiServices(
+            list
+              .filter((x) => !x.translationOnly)
+              .map((x) => ({ ...x, off: !x.enabled ? "đang tắt" : x.cli && !x.authorized ? "CLI chưa đăng nhập trên server này" : undefined })),
+          );
       })
       .catch(() => undefined);
     return () => {
@@ -938,8 +945,9 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
               <select value={aiService} onChange={(e) => setAiService(e.target.value)} className={`${inputClass} !w-auto max-w-56 py-1`}>
                 <option value="">Tự động (theo ưu tiên)</option>
                 {aiServices.map((x) => (
-                  <option key={x.id} value={x.id}>
+                  <option key={x.id} value={x.id} disabled={Boolean(x.off)}>
                     {x.label && x.model && !x.label.includes(x.model) ? `${x.label} · ${x.model}` : x.label || x.model}
+                    {x.off ? ` (${x.off})` : ""}
                   </option>
                 ))}
               </select>
