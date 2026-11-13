@@ -316,6 +316,159 @@ export async function logout(serviceId: string): Promise<void> {
   await revokeLogin(serviceId).catch(() => undefined);
   await setAuthorized(serviceId, false);
   await removeTree(join(home, ".gemini"));
+  synced.delete(serviceId);
+  if (store) await store.save(serviceId, null);
+}
+
+// ── Sharing the sign-in between servers (through the database) ────────
+//
+// Without an OS keyring `agy` keeps its Google OAuth token in a file of its home. The token is not tied to the
+// machine, so the app copies that file into the database (encrypted by the store) and puts it back on any server
+// that shares the database: one authorisation serves them all. `agy` refreshes the access token in the file now
+// and then; a refreshed copy is pushed back, and a newer copy in the database (another server authorised again)
+// replaces the local one. The token never leaves the server except into the store.
+
+/** Where `agy` keeps the token when there is no keyring (relative to the service home). */
+export const TOKEN_FILE = join(".gemini", "antigravity-cli", "antigravity-oauth-token");
+const TOKEN_MAX = 16_384;
+
+export interface TokenStore {
+  /**
+   * The stored token (`null` = none) and whether one was ever stored (then `null` means "signed out elsewhere").
+   * `undefined` = the store cannot answer now (no database, wrong secret): nothing is changed.
+   */
+  load(serviceId: string): Promise<{ token: string | null; everStored: boolean } | undefined>;
+  /** Stores a token, or `null` to forget it. */
+  save(serviceId: string, token: string | null): Promise<void>;
+}
+
+let store: TokenStore | null = null;
+/** Set by the services module; `null` turns sharing off. */
+export function setTokenStore(s: TokenStore | null): void {
+  store = s;
+  synced.clear();
+  lastSync.clear();
+}
+
+/** Token text last known to be equal on disk and in the store, per service. */
+const synced = new Map<string, string>();
+/** A token `agy` rejected: never put back from the store (it would only fail again). */
+const dead = new Map<string, string>();
+const lastSync = new Map<string, number>();
+const syncing = new Map<string, Promise<void>>();
+const SYNC_EVERY_MS = 60_000;
+
+/** A token file `agy` wrote: JSON with a refresh token. Anything else is never stored or written. */
+export function isTokenText(text: string): boolean {
+  if (text.length > TOKEN_MAX) return false;
+  try {
+    const d = JSON.parse(text) as { token?: { refresh_token?: unknown } };
+    return typeof d?.token?.refresh_token === "string" && d.token.refresh_token.length > 0;
+  } catch {
+    return false;
+  }
+}
+
+/** The account a token belongs to (to tell "refreshed" from "another account"). */
+const tokenEmail = (text: string): string => {
+  try {
+    return String((JSON.parse(text) as { id_token_email?: unknown }).id_token_email ?? "");
+  } catch {
+    return "";
+  }
+};
+
+/** Reads the token file. With a separate user it is read AS that user (a planted symlink gains it nothing). */
+async function readTokenFile(serviceId: string): Promise<string | null> {
+  const file = join(homeOf(serviceId), TOKEN_FILE);
+  let text: string | null;
+  if (!runAs()) {
+    const st = await lstat(file).catch(() => null);
+    if (!st || !st.isFile() || st.size > TOKEN_MAX) return null;
+    text = await readFile(file, "utf8").catch(() => null);
+  } else {
+    if (!existsSync(file)) return null;
+    text = await new Promise<string | null>((done) => {
+      const child = spawnAs("head", ["-c", String(TOKEN_MAX + 1), "--", file], { cwd: "/", env: { PATH: process.env.PATH ?? "/usr/bin:/bin" }, stdio: ["ignore", "pipe", "ignore"], detached: true });
+      let out = "";
+      const timer = setTimeout(() => killTree(child), 15_000);
+      child.stdout.on("data", (d: Buffer) => (out += d.toString("utf8")));
+      child.on("error", () => (clearTimeout(timer), done(null)));
+      child.on("close", (code) => (clearTimeout(timer), done(code === 0 ? out : null)));
+    });
+  }
+  return text !== null && isTokenText(text) ? text : null;
+}
+
+async function writeTokenFile(serviceId: string, text: string): Promise<void> {
+  await ensureHome(serviceId);
+  await putFile(join(homeOf(serviceId), TOKEN_FILE), text);
+  await setAuthorized(serviceId, true);
+  modelCache.delete(serviceId);
+}
+
+/** Copies this server's token into the store (after a sign-in here). */
+export async function pushToken(serviceId: string): Promise<boolean> {
+  if (!store) return false;
+  const local = await readTokenFile(serviceId);
+  if (!local) return false; // kept in an OS keyring: nothing to share
+  await store.save(serviceId, local);
+  synced.set(serviceId, local);
+  dead.delete(serviceId);
+  return true;
+}
+
+/**
+ * Brings the token of this server and the store in line (at most once a minute unless `force`):
+ * nothing here → take the stored one; refreshed here → push it; changed in the store → take it;
+ * signed out elsewhere → sign out here too. A server authorised before sharing existed seeds the store.
+ */
+export function syncToken(serviceId: string, force = false): Promise<void> {
+  if (!store || destroying.has(serviceId) || sessions.has(serviceId)) return Promise.resolve(); // not during a sign-in here
+  const running = syncing.get(serviceId);
+  if (running) return running;
+  if (!force && Date.now() - (lastSync.get(serviceId) ?? 0) < SYNC_EVERY_MS) return Promise.resolve();
+  const p = doSync(serviceId).finally(() => {
+    lastSync.set(serviceId, Date.now());
+    syncing.delete(serviceId);
+  });
+  syncing.set(serviceId, p);
+  return p;
+}
+
+async function doSync(serviceId: string): Promise<void> {
+  const s = store;
+  if (!s) return;
+  const db = await s.load(serviceId);
+  if (!db) return;
+  const authorized = authStatus(serviceId).authorized;
+  const local = authorized ? await readTokenFile(serviceId) : null;
+  const last = synced.get(serviceId);
+
+  if (db.token === null) {
+    if (db.everStored && local !== null && local === last) {
+      // Signed out on another server: forget it here as well (its token was revoked there anyway).
+      await setAuthorized(serviceId, false);
+      await removeTree(join(homeOf(serviceId), TOKEN_FILE));
+      synced.delete(serviceId);
+    } else if (!db.everStored && local !== null) {
+      await s.save(serviceId, local); // authorised before sharing existed: seed the store
+      synced.set(serviceId, local);
+    }
+    return;
+  }
+  if (local === db.token) {
+    synced.set(serviceId, local);
+    return;
+  }
+  if (local !== null && last !== undefined && local !== last && db.token === last && tokenEmail(local) === tokenEmail(db.token)) {
+    await s.save(serviceId, local); // agy refreshed it here
+    synced.set(serviceId, local);
+    return;
+  }
+  if (dead.get(serviceId) === db.token) return; // the stored token was already rejected here
+  await writeTokenFile(serviceId, db.token);
+  synced.set(serviceId, db.token);
 }
 
 /**
@@ -505,6 +658,7 @@ export interface CliCall {
 export async function runAntigravityCli(call: CliCall): Promise<string> {
   const model = call.model.trim();
   if (!isValidCliModel(model)) throw new AntigravityCliFailure("auth", `tên model không hợp lệ: ${model.slice(0, 40)}`);
+  await syncToken(call.serviceId).catch(() => undefined); // a sign-in made on another server
   if (!authStatus(call.serviceId).authorized) {
     throw new AntigravityCliFailure("auth", "chưa ủy quyền tài khoản Google cho dịch vụ này — bấm “Ủy quyền tài khoản Google”");
   }
@@ -540,7 +694,11 @@ export async function runAntigravityCli(call: CliCall): Promise<string> {
       return parsed.response;
     }
     const failure = classifyFailure(code, `${parsed.error ?? ""} ${err} ${parsed.response === undefined ? out : ""}`);
-    if (failure.kind === "auth" && /chưa đăng nhập/.test(failure.message)) void setAuthorized(call.serviceId, false);
+    if (failure.kind === "auth" && /chưa đăng nhập/.test(failure.message)) {
+      const bad = synced.get(call.serviceId);
+      if (bad) dead.set(call.serviceId, bad);
+      void setAuthorized(call.serviceId, false);
+    }
     throw failure;
   } finally {
     release();
@@ -591,6 +749,7 @@ export async function checkSignedIn(serviceId: string): Promise<{ ok: boolean; m
 export async function listCliModels(serviceId: string): Promise<CliModel[] | null> {
   const hit = modelCache.get(serviceId);
   if (hit && Date.now() - hit.at < 300_000) return hit.list;
+  await syncToken(serviceId).catch(() => undefined);
   if (!authStatus(serviceId).authorized) return null;
   const r = await checkSignedIn(serviceId);
   if (!r.ok || r.models.length === 0) return null;
@@ -700,6 +859,10 @@ export async function startLogin(serviceId: string): Promise<LoginStatus> {
   const home = await ensureHome(serviceId);
   if (sessions.has(serviceId)) cancelLogin(serviceId);
   await setAuthorized(serviceId, false); // a fresh sign-in replaces the old one
+  // With a token file in place agy signs itself in and never shows the login menu (only its colour-scheme
+  // onboarding): remove it so the admin gets a link. The copy in the store stays until the new sign-in replaces it.
+  await removeTree(join(home, TOKEN_FILE));
+  synced.delete(serviceId);
 
   const proc = spawnAs("script", ["-qfec", `stty cols 4000 rows 50 2>/dev/null; exec ${shq(bin())}`, "/dev/null"], {
     cwd: join(home, "work"),
@@ -717,6 +880,12 @@ export async function startLogin(serviceId: string): Promise<LoginStatus> {
     if (!s.menuSent && s.state === "starting" && /Select login method/i.test(stripAnsi(s.buf))) {
       s.menuSent = true;
       s.proc.stdin?.write("\r"); // option 1: Google OAuth
+    }
+    // Already signed in (token in an OS keyring, say): agy goes straight to its first-run onboarding. No link
+    // will come, so check with `agy models` (the watcher below) and finish when the account really works.
+    if (s.state === "starting" && /Choose your color scheme|Signing in\.\.\./i.test(stripAnsi(s.buf))) {
+      s.state = "verifying";
+      s.verifyUntil = Date.now() + VERIFY_MS;
     }
     // The CLI says so itself when Google refuses the code ("token exchange failed … invalid_grant").
     if (s.state === "verifying" && /invalid_grant|token exchange failed/i.test(stripAnsi(s.buf))) {
@@ -761,6 +930,7 @@ export async function startLogin(serviceId: string): Promise<LoginStatus> {
           clearInterval(watch);
           await setAuthorized(serviceId, true);
           modelCache.delete(serviceId);
+          await pushToken(serviceId).catch(() => undefined); // share it with the other servers
           endSession(serviceId, s, "done");
         }
       })

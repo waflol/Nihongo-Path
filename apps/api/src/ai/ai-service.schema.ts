@@ -24,6 +24,17 @@ export class AiServiceConfig {
   @Prop({ type: String, default: "" })
   keyBox: string;
 
+  /**
+   * Antigravity CLI only: the Google OAuth token file of `agy`, encrypted (`sealSecret`), so every server that
+   * shares this database uses the same authorisation. Empty = none.
+   */
+  @Prop({ type: String, default: "" })
+  cliTokenBox: string;
+
+  /** A token was stored at least once (then an empty box means "signed out", not "never shared"). */
+  @Prop({ type: Boolean, default: false })
+  cliTokenShared: boolean;
+
   /** Latest benchmark (accuracy / speed) — see `ai-benchmark.ts`. */
   @Prop({ type: Object })
   bench?: BenchResult;

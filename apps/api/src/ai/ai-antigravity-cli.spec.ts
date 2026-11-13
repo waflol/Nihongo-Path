@@ -537,6 +537,44 @@ done`;
     expect(await listCliModels(LOGIN)).toBeNull();
   });
 
+  // Like the real agy 1.5: already signed in (token file, or keyring) → no login menu, only the colour-scheme onboarding.
+  const signedIn = `
+tok="$HOME/.gemini/antigravity-cli/antigravity-oauth-token"
+if [ "$1" = "models" ]; then
+  if [ -f "$tok" ] || [ -f "$HOME/keyring" ]; then printf '* gemini-3.8-flash (default)\\n'; exit 0; fi
+  echo "Error: Please sign in to view available models." >&2; exit 1
+fi
+echo "Welcome to the Antigravity CLI. You are currently not signed in."
+if [ -f "$tok" ] || [ -f "$HOME/keyring" ]; then echo "  Signing in..."; echo "Choose your color scheme:"; sleep 30; exit 0; fi
+echo " Select login method:"
+read -r _
+printf '\\033]8;id=x;https://accounts.google.com/o/oauth2/auth?state=1\\033\\\\\\n'
+sleep 30`;
+
+  it("authorising again removes the old token file first, so agy shows the login link (not its onboarding)", async () => {
+    cancelLogin(LOGIN);
+    process.env.ANTIGRAVITY_CLI_BIN = script("signed-in.sh", signedIn);
+    const tok = join(homeOf(LOGIN), ".gemini", "antigravity-cli", "antigravity-oauth-token");
+    mkdirSync(join(homeOf(LOGIN), ".gemini", "antigravity-cli"), { recursive: true });
+    writeFileSync(tok, "{}");
+    const st = await startLogin(LOGIN);
+    expect(st.state).toBe("awaiting_code");
+    expect(st.url).toContain("accounts.google.com");
+    expect(existsSync(tok)).toBe(false);
+    cancelLogin(LOGIN);
+  }, 20_000);
+
+  it("already signed in elsewhere than the file (keyring): the onboarding screen ends the sign-in as done", async () => {
+    process.env.ANTIGRAVITY_CLI_BIN = script("signed-in.sh", signedIn);
+    writeFileSync(join(homeOf(LOGIN), "keyring"), "x");
+    const st = await startLogin(LOGIN);
+    expect(st.state).toBe("verifying");
+    await waitFor(() => loginStatus(LOGIN).state === "done");
+    expect(loginStatus(LOGIN).state).toBe("done");
+    expect(authStatus(LOGIN).authorized).toBe(true);
+    rmSync(join(homeOf(LOGIN), "keyring"), { force: true });
+  }, 20_000);
+
   it("a code cannot be submitted when no sign-in is waiting for one", () => {
     cancelLogin(LOGIN);
     expect(() => submitLoginCode(LOGIN, "4/GOOD-CODE-123")).toThrow(AntigravityCliFailure);

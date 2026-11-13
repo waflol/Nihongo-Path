@@ -5,6 +5,7 @@ import {
   Logger,
   NotFoundException,
   OnModuleDestroy,
+  OnModuleInit,
   Optional,
   UnprocessableEntityException,
 } from "@nestjs/common";
@@ -26,7 +27,7 @@ import {
 } from "./ai-benchmark.js";
 import { fetchNvidiaCatalog, nvidiaModels } from "./ai-nvidia.js";
 import { validateBaseUrl } from "./ai-url.js";
-import { authStatus, cancelAllLogins, destroyHome, ensureHome, isValidCliModel, listCliModels, loginStatus, logout, startLogin, submitLoginCode, AntigravityCliFailure, type LoginStatus } from "./ai-antigravity-cli.js";
+import { authStatus, cancelAllLogins, destroyHome, ensureHome, isValidCliModel, listCliModels, loginStatus, logout, setTokenStore, startLogin, submitLoginCode, syncToken, AntigravityCliFailure, type LoginStatus } from "./ai-antigravity-cli.js";
 import { normaliseModels, type AiModelInfo } from "./ai-models.js";
 import type { AiServiceDocument } from "./ai-service.schema.js";
 
@@ -92,7 +93,7 @@ const STATUS_OF: Record<FailureKind, string> = { rate: "cooldown", transient: "e
  * resort after the admin's own services.
  */
 @Injectable()
-export class AiServicesService implements OnModuleDestroy {
+export class AiServicesService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(AiServicesService.name);
   private cache: { at: number; list: RuntimeAiService[] } | null = null;
   /** In-memory cooldowns (id → until); mirrored to the database for the admin page. */
@@ -274,6 +275,7 @@ export class AiServicesService implements OnModuleDestroy {
   }
 
   async list(): Promise<AiServiceView[]> {
+    await this.syncCli().catch(() => undefined);
     const docs = await this.requireModel().find().sort({ priority: 1, _id: 1 }).exec();
     const out = docs.map((d) => this.view(d));
     const env = this.envService();
@@ -519,8 +521,44 @@ export class AiServicesService implements OnModuleDestroy {
 
   // ── Antigravity CLI services: the admin authorises a Google account ─────────
 
+  /**
+   * The Google sign-in of a CLI service lives in the database (encrypted with AI_KEY_SECRET), so every server
+   * sharing it is authorised once one of them is. Needs the same AI_KEY_SECRET (or JWT_ACCESS_SECRET) everywhere.
+   */
+  onModuleInit(): void {
+    const model = this.model;
+    if (!model || !this.secret) return;
+    setTokenStore({
+      load: async (id) => {
+        const d = await model.findById(id).select("cliTokenBox cliTokenShared").lean().exec();
+        if (!d) return undefined;
+        if (!d.cliTokenBox) return { token: null, everStored: Boolean(d.cliTokenShared) };
+        const token = openSecret(d.cliTokenBox, this.secret);
+        if (token === null) {
+          this.logger.warn(`Antigravity token of ${id} cannot be decrypted: AI_KEY_SECRET differs between servers`);
+          return undefined;
+        }
+        return { token, everStored: true };
+      },
+      save: async (id, token) => {
+        await model.updateOne({ _id: id }, { $set: { cliTokenBox: token ? sealSecret(token, this.secret) : "", cliTokenShared: true } }).exec();
+      },
+    });
+    // Take over a sign-in made on another server right away (not only on the first call).
+    void this.syncCli(true).catch((e: Error) => this.logger.warn(`Antigravity token sync failed: ${e.message}`));
+  }
+
+  /** Brings every CLI service's sign-in on this server in line with the database. */
+  private async syncCli(force = false): Promise<void> {
+    if (!this.model) return;
+    const ids = AI_PROVIDERS.filter((p) => p.cli).map((p) => p.id);
+    const docs = await this.model.find({ provider: { $in: ids } }).select("_id").lean().exec();
+    await Promise.all(docs.map((d) => syncToken(String(d._id), force).catch(() => undefined)));
+  }
+
   onModuleDestroy(): void {
     cancelAllLogins();
+    setTokenStore(null);
   }
 
   /** The stored service, which must be a Antigravity CLI one. */
