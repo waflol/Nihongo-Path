@@ -41,7 +41,8 @@ export const RANKING_TASK: Record<EvalTask, BenchTask> = {
 };
 
 export const LIMITS = {
-  candidates: 6,
+  /** Services are run one after another, so more of them only makes a run longer, not heavier. */
+  candidates: 12,
   judges: 2,
   batchSize: [1, 25],
   judgeBatchSize: [1, 10],
