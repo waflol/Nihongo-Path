@@ -53,6 +53,13 @@ const PATHS: Record<string, ReactNode> = {
       <path d="m15 5 4 4" />
     </>
   ),
+  check: <path d="M20 6 9 17l-5-5" />,
+  x: (
+    <>
+      <path d="M18 6 6 18" />
+      <path d="m6 6 12 12" />
+    </>
+  ),
   list: (
     <>
       <path d="M8 6h13" />

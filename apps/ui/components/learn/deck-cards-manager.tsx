@@ -519,17 +519,21 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
                       <button
                         type="button"
                         onClick={() => void resolveIssue(card._id, it, true)}
-                        className="inline-flex items-center gap-1 rounded-lg bg-[#16a34a] px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-[#15803d] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#16a34a]"
+                        title="Áp dụng gợi ý"
+                        aria-label="Áp dụng gợi ý"
+                        className="inline-flex size-9 items-center justify-center rounded-lg bg-[#16a34a] text-white shadow-sm transition-colors hover:bg-[#15803d] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#16a34a]"
                       >
-                        ✓ Áp dụng
+                        <Icon name="check" />
                       </button>
                     )}
                     <button
                       type="button"
                       onClick={() => void resolveIssue(card._id, it, false)}
-                      className="inline-flex items-center rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-1.5 text-xs font-medium text-[var(--muted-foreground)] hover:bg-[var(--layer-hover)] hover:text-[var(--foreground)]"
+                      title="Bỏ qua cảnh báo"
+                      aria-label="Bỏ qua cảnh báo"
+                      className="inline-flex size-9 items-center justify-center rounded-lg border border-[var(--border)] bg-[var(--background)] text-[var(--muted-foreground)] transition-colors hover:bg-[var(--layer-hover)] hover:text-[var(--foreground)]"
                     >
-                      Bỏ qua
+                      <Icon name="x" />
                     </button>
                   </div>
                 )}
