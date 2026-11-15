@@ -5,12 +5,15 @@ import { useCallback, useEffect, useState } from "react";
 interface Override {
   word: string;
   reading: string;
+  readings?: string[];
+  readingMeanings?: { reading: string; meaning: string }[];
   updatedAt?: string;
 }
 
 /**
- * Words whose reading a person kept with "Bỏ qua" on an import warning: the
- * analyser now reads them that way. A wrong one can be taken back here.
+ * The learned vocabulary: words a person fixed by hand on a card, or kept with
+ * "Bỏ qua" on a warning. The analyser reads them that way and the AI check skips
+ * them by default. A wrong one can be taken back here.
  */
 export function ReadingOverridesPanel() {
   const [rows, setRows] = useState<Override[] | null>(null);
@@ -32,7 +35,7 @@ export function ReadingOverridesPanel() {
   }, [load]);
 
   async function forget(word: string) {
-    if (!window.confirm(`Bỏ cách đọc đã học của “${word}”? Máy phân tích sẽ đọc từ này theo cách của nó.`)) return;
+    if (!window.confirm(`Xóa “${word}” khỏi từ vựng đã học? Máy phân tích sẽ đọc từ này theo cách của nó và AI sẽ kiểm tra lại từ này.`)) return;
     const res = await fetch(`/api/flashcards/admin/reading-overrides/${encodeURIComponent(word)}`, { method: "DELETE" }).catch(() => null);
     if (!res || (!res.ok && res.status !== 404)) {
       setError("Không xóa được");
@@ -41,19 +44,28 @@ export function ReadingOverridesPanel() {
     void load();
   }
 
-  const shown = (rows ?? []).filter((r) => !q.trim() || r.word.includes(q.trim()) || r.reading.includes(q.trim()));
+  const term = q.trim().toLowerCase();
+  const readingsOf = (r: Override) => (r.readings && r.readings.length > 0 ? r.readings : [r.reading]);
+  const shown = (rows ?? []).filter(
+    (r) =>
+      !term ||
+      r.word.includes(term) ||
+      readingsOf(r).some((x) => x.includes(term)) ||
+      (r.readingMeanings ?? []).some((x) => x.meaning.toLowerCase().includes(term)),
+  );
 
   return (
     <div>
-      <h1 className="text-xl font-semibold text-[var(--foreground)]">Cách đọc đã học</h1>
+      <h1 className="text-xl font-semibold text-[var(--foreground)]">Từ vựng đã học</h1>
       <p className="mt-1 text-sm text-[var(--muted-foreground)]">
-        Khi bạn bấm “Bỏ qua” ở cảnh báo cách đọc, hệ thống ghi nhớ cách đọc trên thẻ là đúng và máy phân tích đọc từ đó như vậy
-        từ nay. Nếu lỡ bấm nhầm, xóa dòng tương ứng ở đây.
+        Khi bạn sửa tay cách đọc hoặc nghĩa của một thẻ, hoặc bấm “Bỏ qua” ở cảnh báo cách đọc, từ đó được lưu vào đây. Máy phân
+        tích đọc từ như vậy từ nay, và khi AI kiểm tra bộ thẻ, các từ đã học được bỏ qua (trừ khi chọn “Kiểm tra cả từ vựng đã
+        học”). Nếu lưu nhầm, xóa dòng tương ứng ở đây.
       </p>
       <input
         value={q}
         onChange={(e) => setQ(e.target.value)}
-        placeholder="Tìm từ hoặc cách đọc…"
+        placeholder="Tìm từ, cách đọc hoặc nghĩa…"
         className="mt-4 w-full max-w-sm rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
       />
       {error && <p className="mt-3 text-sm text-[#b91c1c]">{error}</p>}
@@ -68,6 +80,7 @@ export function ReadingOverridesPanel() {
               <tr>
                 <th className="px-3 py-2">Từ</th>
                 <th className="px-3 py-2">Cách đọc</th>
+                <th className="px-3 py-2">Nghĩa</th>
                 <th className="px-3 py-2">Học lúc</th>
                 <th className="px-3 py-2" />
               </tr>
@@ -76,7 +89,12 @@ export function ReadingOverridesPanel() {
               {shown.map((r) => (
                 <tr key={r.word} className="border-t border-[var(--border)]">
                   <td className="px-3 py-2 font-medium text-[var(--foreground)]">{r.word}</td>
-                  <td className="px-3 py-2">{r.reading}</td>
+                  <td className="px-3 py-2">{readingsOf(r).join(" / ")}</td>
+                  <td className="px-3 py-2 text-[var(--muted-foreground)]">
+                    {(r.readingMeanings ?? []).length > 0
+                      ? (r.readingMeanings ?? []).map((x) => (readingsOf(r).length > 1 ? `${x.reading}: ${x.meaning}` : x.meaning)).join("; ")
+                      : "—"}
+                  </td>
                   <td className="px-3 py-2 text-[var(--muted-foreground)]">
                     {r.updatedAt ? new Date(r.updatedAt).toLocaleString("vi-VN") : "—"}
                   </td>

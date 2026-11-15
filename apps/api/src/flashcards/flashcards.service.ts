@@ -52,16 +52,32 @@ export function strayReadingIssue(reading: string, stray: string, kana: string):
 }
 
 /**
- * The fields a person corrected by hand in one edit: the value changed, the field had a warning
- * before the edit, and the change is not the check's own suggestion being applied (`resolve`).
+ * The fields a person corrected by hand in one edit: the value changed and the change is not the
+ * check's own suggestion being applied (`resolve`). With or without a warning on the field.
  */
 export function userFixedFields(
   before: { reading: string; back: string; hanViet: string },
   after: { reading: string; back: string; hanViet: string },
-  warned: Set<ReviewField>,
   resolve?: ReviewField,
 ): ReviewField[] {
-  return (["reading", "back", "hanViet"] as const).filter((f) => f !== resolve && warned.has(f) && after[f].trim() !== before[f].trim());
+  return (["reading", "back", "hanViet"] as const).filter((f) => f !== resolve && after[f].trim() !== before[f].trim());
+}
+
+/**
+ * Is this card a word from the learned vocabulary — every reading on it was confirmed by a person
+ * for the word? Then the AI check leaves it alone by default. `meaningLearned` says whether the
+ * card's meaning is also one a person tied to the word (so the meaning check is skipped too).
+ */
+export function learnedVocab(
+  variants: string[],
+  confirmed: string[],
+  meaning: string,
+  meanings: { reading: string; meaning: string }[],
+  norm: (t: string) => string,
+): { reading: boolean; meaning: boolean } {
+  const reading = variants.length > 0 && variants.every((v) => confirmed.includes(v));
+  const mine = norm(meaning);
+  return { reading, meaning: reading && !!mine && meanings.some((x) => norm(x.meaning) === mine) };
 }
 
 /** Mongo clause selecting the cards with a warning of the given kind. */
@@ -947,9 +963,8 @@ export class FlashcardsService implements OnModuleInit {
       throw new ForbiddenException("Only admins modify shared-deck cards");
     }
 
-    // What the card looked like, and which fields had a warning, before this edit.
+    // What the card looked like before this edit.
     const before = { front: cardDoc.front, reading: cardDoc.reading ?? "", back: cardDoc.back ?? "", hanViet: cardDoc.hanViet ?? "" };
-    const warned = new Set((cardDoc.reviewIssues ?? []).map(reviewFieldOf));
     const front = input.front?.trim() ?? cardDoc.front;
     const back = input.back?.trim() ?? cardDoc.back;
     // An imported card may still wait for its meaning; every other card needs both faces.
@@ -989,13 +1004,15 @@ export class FlashcardsService implements OnModuleInit {
       const of = (t: string): ReviewField => (/^Hán Việt/.test(t) ? "hanViet" : /^cách đọc/.test(t) ? "reading" : "back");
       cardDoc.reviewIssues = (cardDoc.reviewIssues ?? []).filter((t) => of(t) !== input.resolve);
     }
-    // A person corrected a warned field by hand (not by applying the check's own suggestion): the check
-    // leaves that field alone from now on, and a corrected reading is remembered for the word everywhere.
-    const fixedNow = userFixedFields(before, { reading: cardDoc.reading ?? "", back: cardDoc.back ?? "", hanViet: cardDoc.hanViet ?? "" }, warned, input.resolve);
+    // A person corrected a field by hand (not by applying the check's own suggestion): the check leaves
+    // that field alone from now on, and the word (reading + meaning) goes into the learned vocabulary,
+    // which the AI check skips by default in every deck.
+    const fixedNow = userFixedFields(before, { reading: cardDoc.reading ?? "", back: cardDoc.back ?? "", hanViet: cardDoc.hanViet ?? "" }, input.resolve);
     const keep = front === before.front ? (cardDoc.userFixed ?? []) : [];
     if (fixedNow.length > 0 || keep.length !== (cardDoc.userFixed ?? []).length) cardDoc.userFixed = [...new Set([...keep, ...fixedNow])];
-    if (fixedNow.includes("reading") && cardDoc.reading) {
-      for (const v of readingVariants(cardDoc.reading)) void this.morph?.learn(cardDoc.front, v, cardDoc.back);
+    const editedWord = front !== before.front || fixedNow.includes("reading") || fixedNow.includes("back");
+    if (editedWord && cardDoc.reading) {
+      for (const v of readingVariants(splitStrayReading(cardDoc.reading).kana)) void this.morph?.learn(cardDoc.front, v, cardDoc.back);
     }
     cardDoc.dedupeKey = key;
     await cardDoc.save();
@@ -1139,6 +1156,7 @@ export class FlashcardsService implements OnModuleInit {
     force = false,
     batchSize = 10,
     ids?: string[],
+    includeLearned = false,
   ) {
     const deck = await this.getDeck(caller, deckId);
     if (deck.shared && !this.isAdmin(caller)) throw new ForbiddenException("Shared decks are admin-managed");
@@ -1150,7 +1168,7 @@ export class FlashcardsService implements OnModuleInit {
     if (other) throw new ConflictException("Đang có một lần kiểm tra khác chạy trên máy chủ — thử lại khi nó xong");
     const job = { deckId: key, owner: caller.sub, title: deck.title, field, status: "running" as "running" | "paused" | "done" | "error", done: 0, total: 0, flagged: 0, changed: 0, recent: [] as { stt: number; word: string; oldHanViet: string; newHanViet: string }[], recentFlags: [] as { stt: number; word: string; field: "reading" | "back"; issue: string }[], error: undefined as string | undefined };
     this.rechecks.set(key, job);
-    void this.runRecheck(job, deck._id, verify, field, force, batchSize, ids?.filter((i) => Types.ObjectId.isValid(i))).catch((e: unknown) => {
+    void this.runRecheck(job, deck._id, verify, field, force, batchSize, ids?.filter((i) => Types.ObjectId.isValid(i)), includeLearned).catch((e: unknown) => {
       job.status = "error";
       job.error = e instanceof Error ? e.message : "Kiểm tra thất bại";
     });
@@ -1175,6 +1193,8 @@ export class FlashcardsService implements OnModuleInit {
     force = false,
     batchSize = 10,
     ids?: string[],
+    /** Also judge words from the learned vocabulary (skipped by default). */
+    includeLearned = false,
   ): Promise<void> {
     await this.ensureKanjiTable();
     const wants = (f: ReviewField) => only === "all" || only === f || (only === "readingBack" && f !== "hanViet");
@@ -1261,14 +1281,19 @@ export class FlashcardsService implements OnModuleInit {
       const { kana: reading, stray } = splitStrayReading(rawReading);
       // A field a person corrected by hand after a warning is theirs: the check leaves it alone.
       const handFixed = (f: ReviewField) => (c.userFixed ?? []).includes(f);
+      // A word from the learned vocabulary (a person fixed or kept it on some card) is skipped by default.
+      const learned =
+        includeLearned || stray || !this.morph
+          ? { reading: false, meaning: false }
+          : learnedVocab(readingVariants(reading), await this.morph.confirmedReadings(word), c.back ?? "", await this.morph.readingMeanings(word), hvNorm);
       const bHash = fingerprint(word, c.back ?? "");
       const p: Plan = {
         c,
         rHash,
         bHash,
         // A reading with stray words is judged again on every run (older runs let it through), until it is fixed.
-        judgeReading: wants("reading") && !handFixed("reading") && (force || c.readingChecked !== rHash || !!stray),
-        judgeBack: wants("back") && !handFixed("back") && (force || c.backChecked !== bHash),
+        judgeReading: wants("reading") && !handFixed("reading") && !learned.reading && (force || c.readingChecked !== rHash || !!stray),
+        judgeBack: wants("back") && !handFixed("back") && !learned.meaning && (force || c.backChecked !== bHash),
         askReading: [],
       };
       if (p.judgeReading && stray) p.strayIssue = strayReadingIssue(rawReading, stray, reading);

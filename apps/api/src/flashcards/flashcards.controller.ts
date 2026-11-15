@@ -66,6 +66,8 @@ class RecheckQuery {
   @IsOptional() @IsIn(["hanViet", "reading", "back", "readingBack"]) field?: "hanViet" | "reading" | "back" | "readingBack";
   /** "1" / "true": judge every card again, even those whose word, reading and meaning are unchanged since the last check. */
   @IsOptional() @IsIn(["1", "true", "0", "false"]) force?: string;
+  /** "1" / "true": also judge words from the learned vocabulary (a person fixed or kept them); skipped by default. */
+  @IsOptional() @IsIn(["1", "true", "0", "false"]) learned?: string;
   /** Ask only this AI service (its id from the admin list); the usual priority order when omitted. */
   @IsOptional() @IsString() serviceId?: string;
   /** Cards per AI request (1–50, default 10). */
@@ -423,7 +425,7 @@ export class FlashcardsController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: "Re-check Hán Việt, reading or meaning (`field`, all when omitted) over the whole deck → “Cần xem xét” warnings" })
   recheck(@CurrentUser() caller: AuthUser, @Param("id") id: string, @Query() query: RecheckQuery, @Body() body: RecheckBodyDto) {
-    return this.flashcards.startRecheck(caller, id, (items) => this.ai.verifyCards(items, query.serviceId || undefined), query.field ?? "all", query.force === "1" || query.force === "true", query.batch ?? 10, body?.ids);
+    return this.flashcards.startRecheck(caller, id, (items) => this.ai.verifyCards(items, query.serviceId || undefined), query.field ?? "all", query.force === "1" || query.force === "true", query.batch ?? 10, body?.ids, query.learned === "1" || query.learned === "true");
   }
 
   @Get("decks/:id/han-viet-log")

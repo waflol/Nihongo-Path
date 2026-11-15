@@ -126,12 +126,12 @@ export class ReadingService {
   }
 
   /** Every word a person fixed the reading of, newest first (admin list). */
-  async listOverrides(): Promise<{ word: string; reading: string; readings: string[]; updatedAt?: Date }[]> {
+  async listOverrides(): Promise<{ word: string; reading: string; readings: string[]; readingMeanings: { reading: string; meaning: string }[]; updatedAt?: Date }[]> {
     const rows = await this.conn?.collection("reading_overrides").find({}).sort({ updatedAt: -1 }).toArray();
     const m = await this.loadOverrides();
     return (rows ?? []).map((r) => {
       const readings = m.get(String(r.word)) ?? (r.reading ? [String(r.reading)] : []);
-      return { word: String(r.word), reading: readings[0] ?? "", readings, updatedAt: r.updatedAt as Date | undefined };
+      return { word: String(r.word), reading: readings[0] ?? "", readings, readingMeanings: this.meanings.get(String(r.word)) ?? [], updatedAt: r.updatedAt as Date | undefined };
     });
   }
 

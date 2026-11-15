@@ -3,7 +3,7 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { ContentAdmin } from "../auth/decorators/roles.decorator.js";
 import { ReadingService } from "./reading.service.js";
 
-/** Admin view of the readings the analyser learned from "Bỏ qua" (so a wrong one can be taken back). */
+/** Admin view of the learned vocabulary — words a person fixed by hand or kept with "Bỏ qua" (so a wrong one can be taken back). */
 @ApiTags("flashcards")
 @ApiBearerAuth()
 @Controller("flashcards/admin/reading-overrides")

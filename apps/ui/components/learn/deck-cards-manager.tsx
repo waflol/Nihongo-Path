@@ -154,6 +154,8 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
   const [recheckMsg, setRecheckMsg] = useState<string | null>(null);
   // Off: cards unchanged since their last check are skipped (fast). On: judge every card again.
   const [recheckForce, setRecheckForce] = useState(false);
+  // Off (default): words from the learned vocabulary (fixed by hand / kept) are skipped. On: judge them too.
+  const [recheckLearned, setRecheckLearned] = useState(false);
   // The user's own pick for AI runs (meaning / reading checks, examples): one model, and cards per request.
   const [aiServices, setAiServices] = useState<{ id: string; label: string; model: string; off?: string }[]>([]);
   const [aiService, setAiService] = useState("");
@@ -203,7 +205,7 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
     const ai = aiQuery();
     try {
       const useIds = !allMatching && selected.size > 0;
-      const res = await fetch(`/api/flashcards/decks/${deckId}/recheck?field=${field}${recheckForce || useIds ? "&force=1" : ""}${ai ? `&${ai}` : ""}`, {
+      const res = await fetch(`/api/flashcards/decks/${deckId}/recheck?field=${field}${recheckForce || useIds ? "&force=1" : ""}${recheckLearned ? "&learned=1" : ""}${ai ? `&${ai}` : ""}`, {
         method: "POST",
         ...(useIds ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: [...selected] }) } : {}),
       });
@@ -930,6 +932,10 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
           <label className="flex items-center gap-1.5 text-xs text-[var(--muted-foreground)]" title="Bỏ chọn: chỉ kiểm tra thẻ mới hoặc thẻ đã sửa từ lần kiểm tra trước (nhanh hơn)">
             <input type="checkbox" checked={recheckForce} onChange={(e) => setRecheckForce(e.target.checked)} />
             Kiểm tra lại cả thẻ đã kiểm tra
+          </label>
+          <label className="flex items-center gap-1.5 text-xs text-[var(--muted-foreground)]" title="Bỏ chọn: bỏ qua các từ trong “Từ vựng đã học” (đã sửa tay hoặc đã Bỏ qua cảnh báo)">
+            <input type="checkbox" checked={recheckLearned} onChange={(e) => setRecheckLearned(e.target.checked)} />
+            Kiểm tra cả từ vựng đã học
           </label>
           {data && data.missingExamples > 0 && (
             <button type="button" className={btn} disabled={examplesBusy} onClick={() => void generateExamples()} title="Tạo ví dụ cho những thẻ chưa có (Tatoeba; không có thì nhờ AI)">
