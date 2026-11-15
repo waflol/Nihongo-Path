@@ -41,8 +41,6 @@ export const RANKING_TASK: Record<EvalTask, BenchTask> = {
 };
 
 export const LIMITS = {
-  /** Services are run one after another, so more of them only makes a run longer, not heavier. */
-  candidates: 12,
   judges: 2,
   batchSize: [1, 25],
   judgeBatchSize: [1, 10],
@@ -237,7 +235,7 @@ export class EvalService implements OnModuleInit, OnApplicationShutdown {
     const cases = await this.store.listCases(key, this.normaliseFilter(input.filter));
     const byTask: Record<string, number> = {};
     for (const c of cases) byTask[c.task] = (byTask[c.task] ?? 0) + 1;
-    const cands = clampInt(input.candidates, [1, LIMITS.candidates], 1);
+    const cands = Math.max(1, Math.floor(Number(input.candidates)) || 1);
     const reps = clampInt(input.repeats, LIMITS.repeats, 1);
     const bs = clampInt(input.batchSize, LIMITS.batchSize, 5);
     const jbs = clampInt(input.judgeBatchSize, LIMITS.judgeBatchSize, 5);
@@ -272,9 +270,9 @@ export class EvalService implements OnModuleInit, OnApplicationShutdown {
   async createRun(input: CreateRunInput, by: string): Promise<RunDoc> {
     const key = String(input.datasetKey ?? "");
     if (!(await this.datasetModel.exists({ key }))) throw new BadRequestException("Chọn bộ dữ liệu đã nhập");
-    const rawCands = (input.candidates ?? []).slice(0, LIMITS.candidates + 1);
+    // No cap on how many services: they run one after another, so more of them only makes a run longer.
+    const rawCands = input.candidates ?? [];
     if (rawCands.length === 0) throw new BadRequestException("Chọn ít nhất 1 dịch vụ để chấm");
-    if (rawCands.length > LIMITS.candidates) throw new BadRequestException(`Tối đa ${LIMITS.candidates} dịch vụ mỗi lần chạy`);
     const candidates = await Promise.all(rawCands.map((c, i) => this.ref(c, `Dịch vụ #${i + 1}`)));
     const rawJudges = input.judges ?? [];
     if (rawJudges.length !== LIMITS.judges) throw new BadRequestException("Cần chọn đúng 2 AI chấm");

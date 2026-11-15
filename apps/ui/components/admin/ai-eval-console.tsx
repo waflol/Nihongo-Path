@@ -1037,7 +1037,7 @@ interface Suggested<T> {
 }
 
 /** Mirrors the server's LIMITS (apps/api/src/eval/eval.service.ts). */
-const LIMIT = { batch: 25, judge: 10, temp: 1.5, cap: 1000, candidates: 12 };
+const LIMIT = { batch: 25, judge: 10, temp: 1.5, cap: 1000 };
 /** Below this many cases per service a run is small enough to need no cap (prompt iteration). */
 const QUICK_RUN_CASES = 200;
 /** Preferred batch sizes: model calls stay short enough that few items get dropped. */
@@ -1369,13 +1369,13 @@ function NewRunTab({ services, datasets, onCreated, onNeedDataset }: { services:
             </div>
           ))}
           <div className="flex flex-wrap gap-2">
-            <button type="button" className={btn} disabled={candidates.length >= LIMIT.candidates} onClick={() => setCandidates([...candidates, { serviceId: "", model: "" }])}>
+            <button type="button" className={btn} onClick={() => setCandidates([...candidates, { serviceId: "", model: "" }])}>
               + Thêm dịch vụ
             </button>
             <button
               type="button"
               className={btn}
-              onClick={() => setCandidates(usable.filter((s) => s.enabled).slice(0, LIMIT.candidates).map((s) => ({ serviceId: s.id, model: "" })))}
+              onClick={() => setCandidates(usable.filter((s) => s.enabled).map((s) => ({ serviceId: s.id, model: "" })))}
             >
               Chọn mọi dịch vụ đang bật
             </button>
