@@ -1159,7 +1159,8 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
                           />
                         </td>
                       )}
-                      <td className="px-3 py-2 text-xs text-[var(--muted-foreground)]">{(page - 1) * PAGE_SIZE + i + 1}</td>
+                      {/* Same STT as the card view: the card's own position in the source list, else its place in the list. */}
+                      <td className="px-3 py-2 text-xs text-[var(--muted-foreground)]">{card.order && card.order > 0 ? card.order : (page - 1) * PAGE_SIZE + i + 1}</td>
                       <td className="px-3 py-2 text-base font-semibold text-[var(--foreground)]">
                         {card.front}
                         {note && <span className="ml-2 align-middle text-xs text-[#b45309] dark:text-[#fbbf24]" title="Có cảnh báo cần xem xét">⚠</span>}
@@ -1195,8 +1196,14 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
                       {canWrite && (
                         <td className="px-3 py-2">
                           <div className="flex items-center justify-end gap-1.5">
-                            <button type="button" onClick={() => setEditingId(card._id)} className={btn}>
-                              Sửa
+                            <button
+                              type="button"
+                              onClick={() => setEditingId(card._id)}
+                              title="Sửa thẻ"
+                              aria-label="Sửa thẻ"
+                              className="inline-flex size-9 items-center justify-center rounded-lg border border-[color-mix(in_srgb,var(--primary)_45%,transparent)] bg-[color-mix(in_srgb,var(--primary)_10%,transparent)] text-[var(--primary)] transition-colors hover:border-[var(--primary)] hover:bg-[color-mix(in_srgb,var(--primary)_20%,transparent)]"
+                            >
+                              <Icon name="pencil" />
                             </button>
                             <button
                               type="button"
@@ -1265,8 +1272,14 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
                 actions={
                   canWrite ? (
                     <>
-                      <button type="button" onClick={() => setEditingId(card._id)} className={btn}>
-                        Sửa
+                      <button
+                        type="button"
+                        onClick={() => setEditingId(card._id)}
+                        title="Sửa thẻ"
+                        aria-label="Sửa thẻ"
+                        className="inline-flex size-9 items-center justify-center rounded-lg border border-[color-mix(in_srgb,var(--primary)_45%,transparent)] bg-[color-mix(in_srgb,var(--primary)_10%,transparent)] text-[var(--primary)] transition-colors hover:border-[var(--primary)] hover:bg-[color-mix(in_srgb,var(--primary)_20%,transparent)]"
+                      >
+                        <Icon name="pencil" />
                       </button>
                       <button
                         type="button"
