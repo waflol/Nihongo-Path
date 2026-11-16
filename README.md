@@ -89,20 +89,19 @@ pm2 restart ecosystem.config.cjs
 
 ### Lưu ý về ngrok
 
-- **Link đổi mỗi lần ngrok restart.** Tài khoản free có 1 domain tĩnh (xem dashboard ngrok, mục Domains).
-  Thêm `--url=<ten>.ngrok-free.app` vào `args` của process `ngrok` để giữ link cố định.
+- **Link cố định theo tài khoản.** ngrok tự dùng domain dev của tài khoản (theo authtoken đã cấu hình),
+  nên restart không đổi link. Điều này quan trọng với PWA, vì app đã cài gắn với domain lúc cài
+  ([kế hoạch PWA](docs/plans/plan-pwa.md)). Đổi sang authtoken của tài khoản khác thì link cũng đổi.
 - **Gói free chỉ cho chạy 1 ngrok cùng lúc.** Nếu còn một ngrok mở tay ở terminal khác, process
   trong pm2 sẽ báo lỗi `ERR_NGROK_108` và restart liên tục. Kiểm tra bằng `pgrep -a ngrok`.
-- **Gọi API qua link ngrok hiện chưa chạy được.** UI gọi API theo `NEXT_PUBLIC_API_URL=http://localhost:3000`.
-  Khi người khác mở link ngrok, trình duyệt của họ sẽ gọi vào `localhost` trên máy của họ, nên UI hiện nhưng
-  không có dữ liệu và không đăng nhập được. Muốn dùng được qua ngrok, cần proxy API qua Next.js (rewrites)
-  hoặc mở thêm tunnel cho API và đặt lại `NEXT_PUBLIC_API_URL` / `WEB_ORIGIN`.
+- **Chỉ cần tunnel cổng UI.** Trình duyệt không gọi API trực tiếp: mọi request đi qua Route Handler
+  `apps/ui/app/api/*`, rồi Next server gọi `NEXT_PUBLIC_API_URL` (localhost:3000) ở phía server.
 - Nếu dùng Google Sign-In, thêm link ngrok vào mục Authorized JavaScript origins trong Google Console.
 
 ## Tài liệu
 
 - [Kiến trúc](docs/architecture.md) · [Database](docs/database.md) · [Hướng dẫn dev](docs/development.md) · [Luồng nhập thẻ](docs/import-flow.md)
 - Quyết định: [ADR SRS](docs/adr/ADR-srs.md) · [ADR Auth](docs/adr/ADR-auth-provider.md)
-- Kế hoạch tính năng: [Kanji](docs/plans/plan-kanji.md) · [Mobile iOS/Android](docs/plans/plan-mobile.md) · [Antigravity CLI (Google AI Pro)](docs/plans/plan-antigravity-cli.md) · [Tăng tốc kiểm tra cách đọc](docs/plans/plan-reading-check.md)
+- Kế hoạch tính năng: [Kanji](docs/plans/plan-kanji.md) · [Mobile iOS/Android](docs/plans/plan-mobile.md) · [PWA (cài web như app)](docs/plans/plan-pwa.md) · [Antigravity CLI (Google AI Pro)](docs/plans/plan-antigravity-cli.md) · [Tăng tốc kiểm tra cách đọc](docs/plans/plan-reading-check.md)
 - [Pháp lý Việt Nam & Điều khoản Sử dụng](docs/legal-vietnam-and-terms.md)
 - Lộ trình tổng: [Kế hoạch](docs/IMPLEMENTATION_PLAN.md) · [Checklist](docs/IMPLEMENTATION_CHECKLIST.md) · [Câu hỏi mở](docs/OPEN_QUESTIONS.md) · [Đặc tả gốc](docs/claude_japanese_learning_platform_spec_preline.md)

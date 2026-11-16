@@ -15,6 +15,7 @@ import { buildSrsModule } from "./srs/srs.module.js";
 import { buildImportModule } from "./import/import.module.js";
 import { buildLogsModule } from "./logs/logs.module.js";
 import { buildEvalModule } from "./eval/eval.module.js";
+import { buildNotificationsModule } from "./notifications/notifications.module.js";
 
 /**
  * NOTE: the very first import (`./bootstrap/env.js`) loads `.env` /
@@ -54,6 +55,8 @@ import { buildEvalModule } from "./eval/eval.module.js";
     // Admin request-log viewer (GET /admin/logs).
     buildLogsModule(),
     buildEvalModule(),
+    // Web Push review reminders (docs/plans/plan-pwa.md, P2): needs VAPID keys.
+    buildNotificationsModule(),
   ],
   controllers: [AppController],
   providers: [AppService],

@@ -14,8 +14,17 @@ export const ACCENTS = [
   { id: "fuji", label: "Fuji", color: "#9333ea" },
 ] as const;
 
+/** Browser/status-bar color per theme — equals the navbar background (`--navbar`). */
+const THEME_COLORS = { light: "#ffffff", dark: "#0b0d12" } as const;
+
+function syncThemeColor(theme: "light" | "dark") {
+  document
+    .querySelector('meta[name="theme-color"]')
+    ?.setAttribute("content", THEME_COLORS[theme]);
+}
+
 /** Inline, pre-paint script: apply the saved (or system) theme with no flash. */
-export const themeInitScript = `(function(){try{var t=localStorage.getItem("${STORAGE_KEY}");if(!t){t=window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light"}document.documentElement.dataset.theme=t;var a=localStorage.getItem("${ACCENT_KEY}");if(a&&a!=="indigo")document.documentElement.dataset.accent=a}catch(e){}})();`;
+export const themeInitScript = `(function(){try{var t=localStorage.getItem("${STORAGE_KEY}");if(!t){t=window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light"}document.documentElement.dataset.theme=t;var m=document.querySelector('meta[name="theme-color"]');if(m)m.setAttribute("content",t==="dark"?"${THEME_COLORS.dark}":"${THEME_COLORS.light}");var a=localStorage.getItem("${ACCENT_KEY}");if(a&&a!=="indigo")document.documentElement.dataset.accent=a}catch(e){}})();`;
 
 function subscribe(onChange: () => void) {
   const observer = new MutationObserver(onChange);
@@ -36,6 +45,7 @@ export function ThemeToggle({ className = "" }: { className?: string }) {
   function toggle() {
     const next = dark ? "light" : "dark";
     document.documentElement.dataset.theme = next;
+    syncThemeColor(next);
     try {
       localStorage.setItem(STORAGE_KEY, next);
     } catch {

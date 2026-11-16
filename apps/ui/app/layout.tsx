@@ -3,6 +3,7 @@ import { ImportJobTracker } from "@/components/admin/import-job-tracker";
 import { MaziiSyncTracker } from "@/components/admin/mazii-sync-tracker";
 import { ExampleJobTracker } from "@/components/learn/example-job-tracker";
 import type { Metadata } from "next";
+import { ServiceWorkerRegister } from "@/components/pwa/service-worker-register";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { ClientIpv4Reporter } from "@/components/client-ipv4-reporter";
@@ -45,6 +46,13 @@ export const metadata: Metadata = {
     index: true,
     follow: true,
   },
+  // Installed to the iOS home screen (Safari → "Thêm vào MH chính"), the app
+  // opens full-screen. The manifest (app/manifest.ts) covers Android/Chrome.
+  appleWebApp: {
+    capable: true,
+    title: siteConfig.name,
+    statusBarStyle: "default",
+  },
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
@@ -55,12 +63,17 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <head>
+        {/* Status-bar color; kept in sync with the light/dark theme by themeInitScript + ThemeToggle. */}
+        <meta name="theme-color" content="#ffffff" />
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
+        {/* PWA manifest with cookies, so it passes ngrok's warning page (app/app.webmanifest/route.ts). */}
+        <link rel="manifest" href="/app.webmanifest" crossOrigin="use-credentials" />
       </head>
       <body className="flex min-h-full flex-col bg-[var(--background)] font-sans text-[var(--foreground)]">
         <SiteHeader />
         <main className="flex flex-1 flex-col">{children}</main>
         <ClientIpv4Reporter />
+        <ServiceWorkerRegister />
         <div className="fixed bottom-4 right-4 z-50 flex w-80 max-w-[calc(100vw-2rem)] flex-col gap-2">
           <ImportJobTracker />
           <MaziiSyncTracker />

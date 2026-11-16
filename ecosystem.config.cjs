@@ -21,8 +21,9 @@ module.exports = {
       autorestart: true,
     },
     {
-      // Public tunnel to the UI (port 3001). Add `--url=<your-domain>.ngrok-free.app`
-      // to args for a fixed URL; otherwise the URL changes on every restart.
+      // Public tunnel to the UI (port 3001). With no --url, ngrok uses the
+      // account's own dev domain (the authtoken picks it), so the URL stays
+      // the same across restarts.
       name: "ngrok",
       script: "ngrok",
       args: "http 3001 --log stdout",

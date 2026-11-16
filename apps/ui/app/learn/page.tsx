@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { ProgressPanel } from "@/components/learn/progress-panel";
+import { InstallAppCard } from "@/components/pwa/install-app-card";
+import { PushReminderCard } from "@/components/pwa/push-reminder-card";
 
 export const metadata: Metadata = {
   title: "Khu học tập",
@@ -96,6 +98,12 @@ export default function LearnPage() {
       </div>
 
       <ProgressPanel />
+
+      {/* PWA (docs/plans/plan-pwa.md, P1/P2): install + daily reminder. */}
+      <div className="mt-8 grid gap-4 sm:grid-cols-2">
+        <InstallAppCard />
+        <PushReminderCard />
+      </div>
     </div>
   );
 }
