@@ -10,6 +10,7 @@ import { AiExampleService, lostKanji } from "../ai/ai-example.service.js";
 import {
   Optional,
   Injectable,
+  Logger,
   UnprocessableEntityException,
   ConflictException,
   NotFoundException,
@@ -31,6 +32,7 @@ import {
   UnsupportedFormatError,
   type Table,
 } from "./parsers/types.js";
+import { isHiraganaWord, isKatakanaWord, normalizeWord, stripNa, stripNaReading, toHiragana, toKatakana } from "./normalize-word.js";
 import { parseCsv } from "./parsers/csv.js";
 import { parseXlsx } from "./parsers/xlsx.js";
 import { ExampleSuggestService } from "../flashcards/example-suggest.service.js";
@@ -88,7 +90,7 @@ export interface ColumnMapping {
   order?: string;
 }
 
-type Pos = "verb" | "noun" | "adjective" | "phrase" | "";
+type Pos = "verb" | "noun" | "adjective" | "adjective-na" | "phrase" | "";
 
 /** Accepts English, Vietnamese, Japanese and short forms. */
 function normalizePos(raw: string | undefined): Pos | null {
@@ -96,7 +98,8 @@ function normalizePos(raw: string | undefined): Pos | null {
   if (!v) return null;
   if (/^(verb|v|động từ|dong tu|động|動詞)$/.test(v)) return "verb";
   if (/^(noun|n|danh từ|danh tu|danh|名詞)$/.test(v)) return "noun";
-  if (/^(adjective|adj|a|tính từ|tinh tu|tính|形容詞|形容動詞)$/.test(v)) return "adjective";
+  if (/^(adjective-na|na-adjective|adj-na|na|tính từ な|tính từ na|tính từ -na|tinh tu na|形容動詞)$/.test(v)) return "adjective-na";
+  if (/^(adjective|adjective-i|i-adjective|adj-i|adj|a|i|tính từ|tính từ い|tính từ i|tinh tu|tính|形容詞)$/.test(v)) return "adjective";
   if (/^(phrase|expr|expression|idiom|cụm từ|cum tu|cụm|thành ngữ|慣用句|連語|句)$/.test(v)) return "phrase";
   return null;
 }
@@ -270,6 +273,8 @@ function pagesOf(table: Table): PdfJob["pages"] {
 
 @Injectable()
 export class ImportService implements OnApplicationBootstrap {
+  private readonly log = new Logger(ImportService.name);
+
   /** Hard cap on data rows per import file (the row-count twin of T-P3-11). */
   static readonly MAX_ROWS = 10000;
 
@@ -1071,6 +1076,10 @@ export class ImportService implements OnApplicationBootstrap {
     front: string,
   ): Promise<{ reading: string; partOfSpeech: Pos; examples: CardExample[]; hanViet: string; order?: number }> {
     let reading = mapping.reading ? (row[mapping.reading] ?? "").trim() : "";
+    // A katakana word's reading is katakana too.
+    if (reading && isKatakanaWord(front)) reading = toKatakana(reading);
+    // A hiragana word (no kanji) reads in hiragana.
+    else if (reading && isHiraganaWord(front)) reading = toHiragana(reading);
     let pos: Pos = (mapping.partOfSpeech ? normalizePos(row[mapping.partOfSpeech]) : null) ?? "";
     // A blank reading: reuse the one already in the database, else ask the AI, else the analyser.
     if (!reading && KANJI_RE.test(front)) reading = (await this.knownOrAiReading(front)) ?? "";
@@ -1391,12 +1400,27 @@ export class ImportService implements OnApplicationBootstrap {
    * while the reading starts with the rest "られる) せまる". Hand the tail back and
    * keep only the reading proper (what follows the closing bracket).
    */
+  /** Note a word the check changed on its own, so it can be traced in the logs. */
+  private logWordFix(kind: string, from: string, to: string): void {
+    this.log.log(`Chuẩn hóa từ vựng [${kind}]: “${from}” → “${to}”`);
+  }
+
   private repairSplitCells(table: Table, mapping: ColumnMapping | undefined): void {
     if (mapping?.front) {
       // PDF text often puts a space between characters (人 見 知 り): not part of the word.
-      const JA = "\\u3000-\\u30ff\\u4e00-\\u9fff\\uff00-\\uffef";
-      const gap = new RegExp(`(?<=[${JA}])\\s+(?=[${JA}])`, "g");
-      for (const row of table.rows) if (row[mapping.front]) row[mapping.front] = row[mapping.front].replace(gap, "");
+      for (const row of table.rows) {
+        if (!row[mapping.front]) continue;
+        const before = row[mapping.front];
+        let front = normalizeWord(before);
+        if (front !== before) this.logWordFix("khoảng trắng", before, front);
+        // A な-adjective is stored without its な (静かな → 静か).
+        if (mapping.partOfSpeech && normalizePos(row[mapping.partOfSpeech]) === "adjective-na") {
+          const bare = stripNa(front);
+          if (bare !== front) this.logWordFix("bỏ な (cột từ loại)", front, bare);
+          front = bare;
+        }
+        row[mapping.front] = front;
+      }
     }
     if (!mapping?.reading || !mapping.back) return;
     for (const row of table.rows) {
@@ -1526,6 +1550,19 @@ export class ImportService implements OnApplicationBootstrap {
     task?: ImportTask,
     useAi = true,
   ): Promise<(Awaited<ReturnType<ImportService["extras"]>> | null)[]> {
+    // A な-adjective is stored without its な: drop it first, so the reading and Hán Việt lookups see the bare word.
+    for (const row of table.rows) {
+      const raw = (row[mapping.front] ?? "").trim();
+      if (!/な[)）]?$/.test(raw) || [...raw].length < 2) continue;
+      let pos: Pos | null = mapping.partOfSpeech ? normalizePos(row[mapping.partOfSpeech]) : null;
+      if (!pos) pos = (await this.morph.analyze(raw).catch(() => null))?.partOfSpeech ?? null;
+      if (pos === "adjective-na") {
+        const bare = stripNa(raw);
+        if (bare !== raw) this.logWordFix("bỏ な (tính từ な tự nhận)", raw, bare);
+        row[mapping.front] = bare;
+        if (mapping.reading && row[mapping.reading]) row[mapping.reading] = stripNaReading(row[mapping.reading]);
+      }
+    }
     // Readings the file does not give: look them up (database, then AI) word by word, with progress.
     const words = new Set<string>();
     for (const row of table.rows) {

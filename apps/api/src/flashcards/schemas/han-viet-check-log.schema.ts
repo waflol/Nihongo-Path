@@ -27,6 +27,8 @@ export class HanVietCheckLog {
   /** Latest phát âm / nghĩa checks: the cards flagged "cần xem xét" with the warning text. */
   @Prop({ type: Object }) reading?: Record<string, unknown>;
   @Prop({ type: Object }) back?: Record<string, unknown>;
+  /** Words the check tidied on its own (stray spaces, な of a な-adjective), one entry each. */
+  @Prop({ type: Object }) normalize?: Record<string, unknown>;
 }
 
 export type HanVietCheckLogDocument = HydratedDocument<HanVietCheckLog>;

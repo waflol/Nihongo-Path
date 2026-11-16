@@ -2,14 +2,23 @@
 
 import { useEffect, useRef } from "react";
 
-export type PartOfSpeech = "verb" | "noun" | "adjective" | "phrase";
+/** `adjective` is the い-adjective (the name predates the split); `adjective-na` is the な-adjective. */
+export type PartOfSpeech = "verb" | "noun" | "adjective" | "adjective-na" | "phrase";
 
 export const POS_LABEL: Record<PartOfSpeech, string> = {
   verb: "Động từ",
   noun: "Danh từ",
-  adjective: "Tính từ",
+  adjective: "Tính từ い",
+  "adjective-na": "Tính từ な",
   phrase: "Cụm từ",
 };
+
+/** A な-adjective is shown without its な (静かな → 静か). */
+export function displayFront(front: string, pos?: string): string {
+  if (pos !== "adjective-na") return front;
+  const w = front.replace(/[(（]\s*な\s*[)）]$/, "");
+  return [...w].length > 1 && w.endsWith("な") ? w.slice(0, -1) : w;
+}
 
 const inputClass =
   "block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:border-[var(--primary-focus)] focus:outline-none focus:ring-1 focus:ring-[var(--primary-focus)]";
@@ -116,6 +125,7 @@ export function ReadingFields({
           <option value="verb">{POS_LABEL.verb}</option>
           <option value="noun">{POS_LABEL.noun}</option>
           <option value="adjective">{POS_LABEL.adjective}</option>
+          <option value="adjective-na">{POS_LABEL["adjective-na"]}</option>
           <option value="phrase">{POS_LABEL.phrase}</option>
         </select>
       </label>
@@ -125,11 +135,12 @@ export function ReadingFields({
 
 /** Small coloured chip for a part of speech. */
 export function PosChip({ pos }: { pos?: string }) {
-  if (pos !== "verb" && pos !== "noun" && pos !== "adjective" && pos !== "phrase") return null;
+  if (pos !== "verb" && pos !== "noun" && pos !== "adjective" && pos !== "adjective-na" && pos !== "phrase") return null;
   const tone = {
     verb: "bg-[#dbeafe] text-[#1d4ed8] dark:bg-[#172554] dark:text-[#93c5fd]",
     noun: "bg-[#dcfce7] text-[#15803d] dark:bg-[#052e16] dark:text-[#86efac]",
     adjective: "bg-[#fef3c7] text-[#b45309] dark:bg-[#422006] dark:text-[#fcd34d]",
+    "adjective-na": "bg-[#ffe4e6] text-[#be123c] dark:bg-[#4c0519] dark:text-[#fda4af]",
     phrase: "bg-[#f3e8ff] text-[#7e22ce] dark:bg-[#3b0764] dark:text-[#d8b4fe]",
   }[pos];
   return (

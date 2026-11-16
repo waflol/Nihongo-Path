@@ -27,6 +27,7 @@ import {
 } from "./schemas/card.schema.js";
 import { CONTENT_ADMIN } from "../common/roles.js";
 import type { AuthUser } from "../auth/auth.types.js";
+import { isHiraganaWord, isKatakanaWord, normalizeWord, stripNa, stripNaReading, toHiragana, toKatakana } from "../import/normalize-word.js";
 import { cardDedupeKey, cardDedupeKeyForCopy } from "./dedupe.js";
 import { ExampleSuggestService } from "./example-suggest.service.js";
 import { AiResultCacheService } from "../ai/ai-result-cache.service.js";
@@ -116,7 +117,7 @@ export interface CardWriteInput {
   reading?: string;
   image?: string;
   imageCredit?: string;
-  partOfSpeech?: "verb" | "noun" | "adjective" | "phrase" | "";
+  partOfSpeech?: "verb" | "noun" | "adjective" | "adjective-na" | "phrase" | "";
   examples?: CardExample[];
   tags?: string[];
   /** `manual` (default) or `saved` — provenance only; never `import` here. */
@@ -934,7 +935,7 @@ export class FlashcardsService implements OnModuleInit {
       reading?: string;
       image?: string;
       imageCredit?: string;
-      partOfSpeech?: "verb" | "noun" | "adjective" | "phrase" | "";
+      partOfSpeech?: "verb" | "noun" | "adjective" | "adjective-na" | "phrase" | "";
       examples?: CardExample[];
       tags?: string[];
       /** true = an admin looked at the import warnings: clear them. */
@@ -1110,11 +1111,11 @@ export class FlashcardsService implements OnModuleInit {
   async hanVietLog(caller: AuthUser, deckId: string) {
     const deck = await this.getDeck(caller, deckId);
     const doc = await this.hvLog?.findOne({ deck: deck._id }).lean().exec();
-    const sub = (k: "reading" | "back") => {
+    const sub = (k: "reading" | "back" | "normalize") => {
       const d = (doc as unknown as Record<string, { startedAt: number; finishedAt?: number; total: number; finished: boolean; flags: unknown[] } | undefined> | null)?.[k];
       return d ? { ran: true, ...d } : { ran: false, finished: false, total: 0, startedAt: 0, flags: [] };
     };
-    const base = { deckId: String(deck._id), title: deck.title, reading: sub("reading"), back: sub("back") };
+    const base = { deckId: String(deck._id), title: deck.title, reading: sub("reading"), back: sub("back"), normalize: sub("normalize") };
     if (!doc) return { ...base, ran: false, finished: false, total: 0, startedAt: 0, changes: [] };
     return { ...base, ran: !!doc.startedAt, finished: doc.finished, total: doc.total, startedAt: doc.startedAt, finishedAt: doc.finishedAt, changes: doc.changes };
   }
@@ -1201,7 +1202,7 @@ export class FlashcardsService implements OnModuleInit {
     // Only what the re-check needs: the heavy fields (examples, image) stay in the database.
     const cards = await this.card
       .find({ deck: deckOid, ...(ids && ids.length > 0 ? { _id: { $in: ids.map((i) => new Types.ObjectId(i)) } } : {}) })
-      .select("front reading back hanViet reviewIssues order readingChecked backChecked userFixed")
+      .select("front reading back hanViet reviewIssues order readingChecked backChecked userFixed partOfSpeech dedupeKey")
       .sort({ order: 1, _id: 1 })
       .limit(3000)
       .exec();
@@ -1209,10 +1210,74 @@ export class FlashcardsService implements OnModuleInit {
     const changes: { stt: number; word: string; oldHanViet: string; newHanViet: string }[] = [];
     const startedAt = Date.now();
     const flags: { reading: { stt: number; word: string; issue: string }[]; back: { stt: number; word: string; issue: string }[] } = { reading: [], back: [] };
+    // "Kiểm tra từ vựng" also tidies the word itself: stray spaces and the な of a な-adjective.
+    const doNormalize = only !== "hanViet";
+    const normFlags: { stt: number; word: string; issue: string }[] = [];
+    const usedKeys = new Set<string>();
+    if (doNormalize) for (const x of await this.card.find({ deck: deckOid }).select("dedupeKey").lean().exec()) if (x.dedupeKey) usedKeys.add(x.dedupeKey);
+    const normOps: Parameters<Model<FlashcardDocument>["bulkWrite"]>[0] = [];
+    const flushNorm = async () => {
+      if (normOps.length === 0) return;
+      await this.card.bulkWrite(normOps.splice(0), { ordered: false }).catch(() => null);
+    };
+    const normalizeCard = async (c: (typeof cards)[number]) => {
+      const before = c.front;
+      let next = normalizeWord(before);
+      const notes: string[] = [];
+      if (next !== before.trim()) notes.push("bỏ khoảng trắng");
+      let pos = c.partOfSpeech ?? "";
+      if (/な[)）]?$/.test(next) && [...next].length > 1 && (pos === "" || pos === "adjective" || pos === "adjective-na")) {
+        // An い-adjective never ends in な: a な there means a な-adjective written with its particle.
+        const isNa = pos !== "" || (this.morph ? (await this.morph.analyze(next).catch(() => null))?.partOfSpeech === "adjective-na" : false);
+        if (isNa) {
+          const bare = stripNa(next);
+          if (bare !== next) notes.push("bỏ な");
+          next = bare;
+          pos = "adjective-na";
+        }
+      }
+      // A な-adjective's reading drops its な too (フレッシュな → フレッシュ), or it never matches the word.
+      const reading = c.reading ?? "";
+      let nextReading = pos === "adjective-na" && !/な$/.test(next) ? stripNaReading(reading) : reading;
+      if (nextReading !== reading) notes.push("bỏ な ở cách đọc");
+      // A katakana word reads as itself: its reading is katakana too (らっきー → ラッキー).
+      if (nextReading && isKatakanaWord(clean(next)) && toKatakana(nextReading) !== nextReading) {
+        nextReading = toKatakana(nextReading);
+        notes.push("cách đọc sang katakana");
+      }
+      // A hiragana word (no kanji) reads in hiragana (キレイ → きれい).
+      if (nextReading && isHiraganaWord(clean(next)) && toHiragana(nextReading) !== nextReading) {
+        nextReading = toHiragana(nextReading);
+        notes.push("cách đọc sang hiragana");
+      }
+      if (next === before && pos === (c.partOfSpeech ?? "") && nextReading === reading) return;
+      const stt = c.order ?? cards.indexOf(c) + 1;
+      const key = cardDedupeKey(next, c.back ?? "", nextReading);
+      if (key !== c.dedupeKey && usedKeys.has(key)) {
+        normFlags.push({ stt, word: clean(before), issue: `“${before}” → “${next}” (${notes.join(", ")}): trùng một thẻ khác trong bộ, chưa sửa` });
+        return;
+      }
+      const set: Record<string, unknown> = { front: next };
+      if (nextReading !== reading) set.reading = nextReading;
+      if (pos !== (c.partOfSpeech ?? "")) set.partOfSpeech = pos;
+      if (key !== c.dedupeKey) {
+        set.dedupeKey = key;
+        usedKeys.delete(c.dedupeKey ?? "");
+        usedKeys.add(key);
+      }
+      normOps.push({ updateOne: { filter: { _id: c._id }, update: { $set: set } } });
+      c.front = next;
+      c.reading = nextReading;
+      c.partOfSpeech = pos as typeof c.partOfSpeech;
+      c.dedupeKey = key;
+      normFlags.push({ stt, word: clean(next), issue: `“${before}” → “${next}”${nextReading !== reading ? ` · cách đọc “${reading}” → “${nextReading}”` : ""} (${notes.join(", ") || "từ loại tính từ な"})` });
+      if (normOps.length >= 100) await flushNorm();
+    };
     const saveLog = async (finished: boolean) => {
       if (!this.hvLog) return;
       const set: Record<string, unknown> = {};
       if (wants("hanViet")) Object.assign(set, { startedAt, total: cards.length, finished, finishedAt: finished ? Date.now() : undefined, changes: [...changes].sort((x, y) => x.stt - y.stt) });
+      if (doNormalize) set.normalize = { startedAt, total: cards.length, finished, finishedAt: finished ? Date.now() : undefined, flags: [...normFlags].sort((x, y) => x.stt - y.stt) };
       for (const f of ["reading", "back"] as const) {
         if (wants(f)) set[f] = { startedAt, total: cards.length, finished, finishedAt: finished ? Date.now() : undefined, flags: [...flags[f]].sort((x, y) => x.stt - y.stt) };
       }
@@ -1273,6 +1338,7 @@ export class FlashcardsService implements OnModuleInit {
         await tick();
         if (!(await gate())) return;
       }
+      if (doNormalize) await normalizeCard(c);
       const rawReading = c.reading ?? "";
       const word = clean(c.front);
       const rHash = fingerprint(word, rawReading);
@@ -1332,6 +1398,9 @@ export class FlashcardsService implements OnModuleInit {
       }
       plans.push(p);
     }
+
+    await flushNorm();
+    if (doNormalize) await saveLog(false);
 
     /** Stage 3: turn a card's local + AI verdicts into the warnings and fixes to store. */
     const apply = (p: Plan, r: { reading?: string; hanViet?: string; meaning?: string } | undefined) => {

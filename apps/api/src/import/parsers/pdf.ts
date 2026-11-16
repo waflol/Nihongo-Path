@@ -1,4 +1,5 @@
 import type { OcrRow, Table } from "./types.js";
+import { normalizeWord } from "../normalize-word.js";
 import { EmptyTableError, UnsupportedFormatError, sanitizeHeaderCell } from "./types.js";
 
 /**
@@ -218,7 +219,7 @@ export function splitVariants(row: OcrRow): OcrRow[] {
 
 /** Assemble the import table from what each page yielded. */
 export function tableFromOcrPages(raw: (OcrRow[] | null)[]): Table {
-  const pages = raw.map((list) => (list ? list.flatMap(splitVariants) : list));
+  const pages = raw.map((list) => (list ? list.map((r) => ({ ...r, word: normalizeWord(r.word) })).flatMap(splitVariants) : list));
   const rows: Record<string, string>[] = [];
   let auto = 0;
   // Entries sharing a printed number (variants of one word) or lacking one

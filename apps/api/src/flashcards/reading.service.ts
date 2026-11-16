@@ -5,7 +5,8 @@ import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import kuromoji from "kuromoji";
 
-export const PARTS_OF_SPEECH = ["verb", "noun", "adjective", "phrase"] as const;
+/** `adjective` is the い-adjective (the name predates the split); `adjective-na` is the な-adjective. */
+export const PARTS_OF_SPEECH = ["verb", "noun", "adjective", "adjective-na", "phrase"] as const;
 export type PartOfSpeech = (typeof PARTS_OF_SPEECH)[number];
 
 export interface ReadingResult {
@@ -25,7 +26,8 @@ export interface ReadingResult {
 /** Map an IPADIC token to the three parts of speech the app distinguishes. */
 export function tokenPos(t: kuromoji.IpadicFeatures): PartOfSpeech | null {
   if (t.pos === "動詞") return "verb";
-  if (t.pos === "形容詞" || t.pos_detail_1 === "形容動詞語幹") return "adjective";
+  if (t.pos_detail_1 === "形容動詞語幹") return "adjective-na";
+  if (t.pos === "形容詞") return "adjective";
   if (t.pos === "名詞" || t.pos === "副詞") return "noun";
   return null;
 }

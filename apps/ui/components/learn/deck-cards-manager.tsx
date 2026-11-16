@@ -8,7 +8,7 @@ import { Fragment, useCallback, useEffect, useState, type FormEvent } from "reac
 import { CardTile, HanVietToggle } from "@/components/learn/card-tile";
 import { CardEditForm } from "@/components/learn/card-edit-form";
 import { ExampleFields, cleanExampleInputs, type ExampleInput } from "@/components/learn/example-fields";
-import { ReadingFields, type PartOfSpeech } from "@/components/learn/reading-fields";
+import { POS_LABEL, ReadingFields, displayFront, type PartOfSpeech } from "@/components/learn/reading-fields";
 import { ImageField } from "@/components/learn/image-field";
 import { Icon } from "@/components/learn/icons";
 import { RECHECK_PROGRESS_EVENT, RECHECK_STARTED_EVENT } from "@/components/learn/recheck-tracker";
@@ -1166,13 +1166,13 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
                       {/* Same STT as the card view: the card's own position in the source list, else its place in the list. */}
                       <td className="px-3 py-2 text-xs text-[var(--muted-foreground)]">{card.order && card.order > 0 ? card.order : (page - 1) * PAGE_SIZE + i + 1}</td>
                       <td className="px-3 py-2 text-base font-semibold text-[var(--foreground)]">
-                        {card.front}
+                        {displayFront(card.front, card.partOfSpeech)}
                         {note && <span className="ml-2 align-middle text-xs text-[#b45309] dark:text-[#fbbf24]" title="Có cảnh báo cần xem xét">⚠</span>}
                       </td>
                       <td className="px-3 py-2 text-[var(--foreground)]">{card.reading ?? ""}</td>
                       {showHanViet && <td className="px-3 py-2 text-[var(--foreground)]">{card.hanViet ?? ""}</td>}
                       <td className="px-3 py-2 text-[var(--foreground)]">{card.back}</td>
-                      <td className="px-3 py-2 text-xs text-[var(--muted-foreground)]">{card.partOfSpeech ?? ""}</td>
+                      <td className="px-3 py-2 text-xs text-[var(--muted-foreground)]">{card.partOfSpeech ? (POS_LABEL[card.partOfSpeech as PartOfSpeech] ?? card.partOfSpeech) : ""}</td>
                       <td className="max-w-64 px-3 py-2 text-xs text-[var(--muted-foreground)]">
                         {card.examples && card.examples.length > 0 ? (
                           <span title={card.examples.map((e) => e.sentence).join("\n")} className="line-clamp-2">

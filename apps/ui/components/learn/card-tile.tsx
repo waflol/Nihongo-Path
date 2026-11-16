@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { isJlptLevel, LevelBadge } from "@/components/learn/level-select";
 import { hanViet } from "@/lib/han-viet";
 import { Furigana } from "@/components/learn/furigana";
-import { PosChip } from "@/components/learn/reading-fields";
+import { PosChip, displayFront } from "@/components/learn/reading-fields";
 
 export interface TileCard {
   _id: string;
@@ -28,6 +28,7 @@ const ACCENT: Record<string, string> = {
   verb: "bg-[#3b82f6]",
   noun: "bg-[#22c55e]",
   adjective: "bg-[#f59e0b]",
+  "adjective-na": "bg-[#e11d48]",
   phrase: "bg-[#a855f7]",
 };
 
@@ -95,7 +96,7 @@ export function CardTile({
           <div className="flex flex-wrap items-end gap-x-3 gap-y-1">
             <div className="min-w-0">
               <p lang="ja" className="break-words text-2xl font-bold leading-tight text-[var(--foreground)]">
-                <Furigana front={card.front} reading={card.reading} />
+                <Furigana front={displayFront(card.front, card.partOfSpeech)} reading={card.reading} />
               </p>
               {hv ? (
                 <p className="mt-0.5 text-[11px] font-semibold tracking-[0.14em] text-[var(--primary)]">

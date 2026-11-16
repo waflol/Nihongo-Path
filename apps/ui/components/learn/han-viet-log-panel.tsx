@@ -18,6 +18,7 @@ interface HanVietLog {
   changes: { stt: number; word: string; oldHanViet: string; newHanViet: string }[];
   reading: FlagLog;
   back: FlagLog;
+  normalize?: FlagLog;
 }
 
 interface FlagLog {
@@ -54,6 +55,7 @@ function CheckLogPanel({ deckId, mode }: { deckId: string; mode: "learn" | "admi
   const [log, setLog] = useState<HanVietLog | null>(null);
   const [error, setError] = useState(false);
   const [search, setSearch] = useState("");
+  const [kindFilter, setKindFilter] = useState<"all" | "Phát âm" | "Nghĩa" | "Chuẩn hóa">("all");
   const back = `${mode === "admin" ? "/admin/decks" : "/learn/decks"}/${deckId}`;
 
   const [job, setJob] = useState<Job | null>(null);
@@ -95,10 +97,11 @@ function CheckLogPanel({ deckId, mode }: { deckId: string; mode: "learn" | "admi
   // Reading + meaning: merge the two flag logs of the latest run(s) into one list.
   const fl = useMemo(() => {
     if (!flagMode || !log) return null;
-    const parts = [log.reading, log.back].filter((p) => p?.ran);
+    const parts = [log.reading, log.back, log.normalize].filter((p): p is FlagLog => !!p?.ran);
     const flags = [
       ...(log.reading?.flags ?? []).map((f) => ({ ...f, kind: "Phát âm" })),
       ...(log.back?.flags ?? []).map((f) => ({ ...f, kind: "Nghĩa" })),
+      ...(log.normalize?.flags ?? []).map((f) => ({ ...f, kind: "Chuẩn hóa" })),
     ].sort((a, b) => a.stt - b.stt);
     return {
       ran: parts.length > 0,
@@ -117,8 +120,9 @@ function CheckLogPanel({ deckId, mode }: { deckId: string; mode: "learn" | "admi
   }, [log, search]);
   const flagRows = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return (fl?.flags ?? []).filter((c) => !q || [String(c.stt), c.word, c.issue].some((v) => v.toLowerCase().includes(q)));
-  }, [fl, search]);
+    return (fl?.flags ?? []).filter((c) => (kindFilter === "all" || c.kind === kindFilter) && (!q || [String(c.stt), c.word, c.issue].some((v) => v.toLowerCase().includes(q))));
+  }, [fl, search, kindFilter]);
+  const kindCount = (k: string) => (fl?.flags ?? []).filter((c) => c.kind === k).length;
   const meta = { hanViet: { title: "Log kiểm tra Hán tự", glyph: "漢", cmd: "Kiểm tra Hán tự" }, readingBack: { title: "Log kiểm tra từ vựng", glyph: "音", cmd: "Kiểm tra từ vựng" } }[field];
   const ranAny = flagMode ? !!fl?.ran : !!log?.ran;
   const finishedAny = flagMode ? !!fl?.finished : !!log?.finished;
@@ -164,7 +168,7 @@ function CheckLogPanel({ deckId, mode }: { deckId: string; mode: "learn" | "admi
         <div>
           <h1 className="text-2xl font-semibold tracking-tight text-[var(--foreground)]">{meta.title}</h1>
           <p className="mt-0.5 max-w-3xl text-sm text-[var(--muted-foreground)]">
-            {log ? `${log.title} · ` : ""}{flagMode ? "Những từ cần xem xét ở lần kiểm tra gần nhất." : "Những từ được cập nhật Hán Việt ở lần kiểm tra gần nhất, đối chiếu với dữ liệu Kanji admin."}
+            {log ? `${log.title} · ` : ""}{flagMode ? "Những từ cần xem xét và những từ được tự chuẩn hóa (khoảng trắng, bỏ な) ở lần kiểm tra gần nhất." : "Những từ được cập nhật Hán Việt ở lần kiểm tra gần nhất, đối chiếu với dữ liệu Kanji admin."}
           </p>
         </div>
       </div>
@@ -237,7 +241,23 @@ function CheckLogPanel({ deckId, mode }: { deckId: string; mode: "learn" | "admi
           </section>
 
           <div className="mt-5 flex flex-wrap items-center gap-2">
-            <span className="rounded-full border border-[var(--primary)] bg-[var(--primary)] px-3.5 py-1.5 text-xs font-semibold text-white">Tất cả ({count})</span>
+            {flagMode ? (
+              <label className="flex items-center gap-2 text-xs text-[var(--muted-foreground)]">
+                Loại
+                <select
+                  value={kindFilter}
+                  onChange={(e) => setKindFilter(e.target.value as typeof kindFilter)}
+                  className="rounded-full border border-[var(--border)] bg-[var(--background-1)] px-3 py-1.5 text-xs font-semibold text-[var(--foreground)]"
+                >
+                  <option value="all">Tất cả ({count})</option>
+                  <option value="Phát âm">Phát âm ({kindCount("Phát âm")})</option>
+                  <option value="Nghĩa">Nghĩa ({kindCount("Nghĩa")})</option>
+                  <option value="Chuẩn hóa">Chuẩn hóa từ vựng ({kindCount("Chuẩn hóa")})</option>
+                </select>
+              </label>
+            ) : (
+              <span className="rounded-full border border-[var(--primary)] bg-[var(--primary)] px-3.5 py-1.5 text-xs font-semibold text-white">Tất cả ({count})</span>
+            )}
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -253,8 +273,8 @@ function CheckLogPanel({ deckId, mode }: { deckId: string; mode: "learn" | "admi
                   <tr>
                     <th className="w-20 px-4 py-2.5 font-medium">STT</th>
                     <th className="px-3 py-2.5 font-medium">Từ</th>
-                    <th className="w-24 px-3 py-2.5 font-medium">Loại</th>
-                    <th className="px-3 py-2.5 font-medium">Cảnh báo</th>
+                    <th className="w-28 px-3 py-2.5 font-medium">Loại</th>
+                    <th className="px-3 py-2.5 font-medium">Cảnh báo / thay đổi</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -270,7 +290,7 @@ function CheckLogPanel({ deckId, mode }: { deckId: string; mode: "learn" | "admi
                       <td className="px-4 py-2 tabular-nums text-[var(--muted-foreground)]">{c.stt}</td>
                       <td className="px-3 py-2 text-base font-semibold text-[var(--foreground)]">{c.word}</td>
                       <td className="px-3 py-2 text-[var(--muted-foreground)]">{c.kind}</td>
-                      <td className="px-3 py-2 text-[#b45309] dark:text-[#fbbf24]">{c.issue}</td>
+                      <td className={`px-3 py-2 ${c.kind === "Chuẩn hóa" ? "text-[#15803d] dark:text-[#86efac]" : "text-[#b45309] dark:text-[#fbbf24]"}`}>{c.issue}</td>
                     </tr>
                   ))}
                 </tbody>

@@ -4,7 +4,7 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { seededShuffle } from "./quiz-utils";
-import { PosChip } from "@/components/learn/reading-fields";
+import { PosChip, displayFront } from "@/components/learn/reading-fields";
 import { ConfirmDialog } from "@/components/learn/confirm-dialog";
 import { CardReportDialog } from "@/components/learn/card-report-dialog";
 import { SentenceFurigana } from "@/components/learn/furigana";
@@ -971,7 +971,7 @@ function StudySessionInner({ mode }: { mode: "learn" | "review" }) {
                 next card's answer) and plays the short entrance. */}
             <LearnCard
               key={`${current.id}-${current.relearn ? "r" : "n"}`}
-              front={current.front}
+              front={displayFront(current.front, current.partOfSpeech)}
               back={current.back}
               reading={current.reading}
               image={current.image}
