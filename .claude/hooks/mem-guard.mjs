@@ -1,9 +1,9 @@
 // PreToolUse guard: refuse to run a command when the machine has less than
-// MIN_FREE_MB of available RAM (default 1024). Works on Linux and Windows.
+// MIN_FREE_MB of available RAM (default 100). Works on Linux and Windows.
 import { readFileSync } from 'node:fs';
 import os from 'node:os';
 
-const MIN_FREE_MB = Number(process.env.CLAUDE_MIN_FREE_MB) || 1024;
+const MIN_FREE_MB = Number(process.env.CLAUDE_MIN_FREE_MB) || 100;
 
 function availableMb() {
   if (process.platform === 'linux') {
