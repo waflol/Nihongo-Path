@@ -21,6 +21,33 @@ interface AccountMenuProps {
    * logout action) is reachable on small screens.
    */
   className?: string;
+  /**
+   * `dropdown` (default): avatar button + floating menu, for the desktop header.
+   * `inline`: the same content as a plain block list, for the mobile
+   * off-canvas drawer — a floating menu there opened off-screen and covered
+   * the page, because the drawer is narrow and its trigger sits at the edge.
+   */
+  variant?: "dropdown" | "inline";
+  /** Called after any link/logout is used (the drawer closes itself with it). */
+  onNavigate?: () => void;
+}
+
+/** Admin shortcuts shown to ADMIN / SUPER_ADMIN, in order. */
+const ADMIN_LINKS = [
+  { href: "/admin", label: "Khu quản trị", icon: "M4 4h16v16H4zM4 10h16M10 4v16" },
+  { href: "/admin/content", label: "Quản trị nội dung", icon: "M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z" },
+  { href: "/admin/decks", label: "Bộ thẻ chia sẻ", icon: "M4 5h16v14H4zM4 9h16M8 5v14" },
+  { href: "/admin/import", label: "Nhập hàng loạt", icon: "M12 3v12m0 0l-4-4m4 4l4-4M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2" },
+] as const;
+
+const LOGOUT_ICON = "M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9";
+
+function MenuIcon({ d }: { d: string }) {
+  return (
+    <svg aria-hidden="true" className="size-4 shrink-0 text-[var(--muted-foreground)]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+      <path d={d} />
+    </svg>
+  );
 }
 
 /**
@@ -30,7 +57,11 @@ interface AccountMenuProps {
  * The dropdown is plain React state (click toggles; outside click / Escape
  * close it).
  */
-export function AccountMenu({ className = "hidden md:inline-flex" }: AccountMenuProps) {
+export function AccountMenu({
+  className = "hidden md:inline-flex",
+  variant = "dropdown",
+  onNavigate,
+}: AccountMenuProps) {
   const router = useRouter();
   const [status, setStatus] = useState<"loading" | "ready">("loading");
   const [user, setUser] = useState<SessionUser | null>(null);
@@ -75,13 +106,17 @@ export function AccountMenu({ className = "hidden md:inline-flex" }: AccountMenu
 
   async function logout() {
     setOpen(false);
+    onNavigate?.();
     await fetch("/api/auth/logout", { method: "POST" }).catch(() => undefined);
     setUser(null);
     router.push("/");
     router.refresh();
   }
 
+  const inline = variant === "inline";
+
   if (status === "loading") {
+    if (inline) return null;
     return (
       <span className={`items-center px-3 py-1.5 text-sm text-[var(--muted-foreground)] ${className}`}>
         Đang tải…
@@ -90,6 +125,17 @@ export function AccountMenu({ className = "hidden md:inline-flex" }: AccountMenu
   }
 
   if (!user) {
+    if (inline) {
+      return (
+        <Link
+          href="/login"
+          onClick={onNavigate}
+          className={`flex min-h-11 w-full items-center justify-center rounded-lg border border-[var(--border)] px-4 text-sm font-semibold text-[var(--layer-foreground)] hover:bg-[var(--layer-hover)] ${className}`}
+        >
+          Đăng nhập
+        </Link>
+      );
+    }
     return (
       <Link
         href="/login"
@@ -103,6 +149,55 @@ export function AccountMenu({ className = "hidden md:inline-flex" }: AccountMenu
   const label = user.displayName || user.email || "Tài khoản";
   const isAdmin = user.role === "ADMIN" || user.role === "SUPER_ADMIN";
   const initial = label.trim().charAt(0).toUpperCase() || "T";
+
+  const badge = isAdmin && (
+    <span className="rounded-full bg-[var(--primary-100)] px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--primary-700)]">
+      {user.role === "SUPER_ADMIN" ? "Super" : "Admin"}
+    </span>
+  );
+
+  if (inline) {
+    const rowClass =
+      "flex min-h-11 w-full items-center gap-3 rounded-lg px-3 text-left text-sm text-[var(--layer-foreground)] hover:bg-[var(--layer-hover)] active:bg-[var(--layer-hover)]";
+    return (
+      <div className={`flex w-full flex-col ${className}`}>
+        <div className="flex items-center gap-3 rounded-xl bg-[var(--layer-hover)] px-3 py-3">
+          <span
+            aria-hidden="true"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--primary)] text-sm font-semibold text-[var(--primary-foreground)]"
+          >
+            {initial}
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="flex min-w-0 items-center gap-1.5 text-sm font-semibold text-[var(--layer-foreground)]">
+              <span className="truncate">{label}</span>
+              {badge}
+            </p>
+            {user.email && user.email !== label && (
+              <p className="truncate text-xs text-[var(--muted-foreground)]">{user.email}</p>
+            )}
+          </div>
+        </div>
+        <ul className="mt-1 flex flex-col">
+          {isAdmin &&
+            ADMIN_LINKS.map((item) => (
+              <li key={item.href}>
+                <Link href={item.href} onClick={onNavigate} className={rowClass}>
+                  <MenuIcon d={item.icon} />
+                  {item.label}
+                </Link>
+              </li>
+            ))}
+          <li>
+            <button type="button" onClick={logout} className={`${rowClass} font-medium`}>
+              <MenuIcon d={LOGOUT_ICON} />
+              Đăng xuất
+            </button>
+          </li>
+        </ul>
+      </div>
+    );
+  }
 
   return (
     <div ref={rootRef} className={`relative ${className}`}>
@@ -152,11 +247,7 @@ export function AccountMenu({ className = "hidden md:inline-flex" }: AccountMenu
           <div className="min-w-0">
             <p className="flex items-center gap-1.5 truncate text-sm font-semibold text-[var(--dropdown-item-foreground)]">
               {label}
-              {isAdmin && (
-                <span className="rounded-full bg-[var(--primary-100)] px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--primary-700)]">
-                  {user.role === "SUPER_ADMIN" ? "Super" : "Admin"}
-                </span>
-              )}
+              {badge}
             </p>
             <p className="truncate text-xs text-[var(--muted-foreground)]">
               {user.email || user.id}
@@ -165,71 +256,29 @@ export function AccountMenu({ className = "hidden md:inline-flex" }: AccountMenu
         </div>
 
         <ul className="py-1">
-          {isAdmin && (
-            <li className="relative flex cursor-pointer items-center gap-2.5 px-3 py-2 text-sm text-[var(--dropdown-item-foreground)] hover:bg-[var(--dropdown-item-hover)] focus:bg-[var(--dropdown-item-focus)] active:bg-[var(--dropdown-item-active)]">
-              <Link
-                onClick={() => setOpen(false)}
-                href="/admin"
-                className="flex w-full items-center gap-2.5 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--dropdown-item-focus)]"
+          {isAdmin &&
+            ADMIN_LINKS.map((item) => (
+              <li
+                key={item.href}
+                className="relative flex cursor-pointer items-center gap-2.5 px-3 py-2 text-sm text-[var(--dropdown-item-foreground)] hover:bg-[var(--dropdown-item-hover)] focus:bg-[var(--dropdown-item-focus)] active:bg-[var(--dropdown-item-active)]"
               >
-                <svg aria-hidden="true" className="size-4 shrink-0 text-[var(--muted-foreground)]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M4 4h16v16H4zM4 10h16M10 4v16" />
-                </svg>
-                Khu quản trị
-              </Link>
-            </li>
-          )}
-          {isAdmin && (
-            <li className="relative flex cursor-pointer items-center gap-2.5 px-3 py-2 text-sm text-[var(--dropdown-item-foreground)] hover:bg-[var(--dropdown-item-hover)] focus:bg-[var(--dropdown-item-focus)] active:bg-[var(--dropdown-item-active)]">
-              <Link
-                onClick={() => setOpen(false)}
-                href="/admin/content"
-                className="flex w-full items-center gap-2.5 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--dropdown-item-focus)]"
-              >
-                <svg aria-hidden="true" className="size-4 shrink-0 text-[var(--muted-foreground)]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z" />
-                </svg>
-                Quản trị nội dung
-              </Link>
-            </li>
-          )}
-          {isAdmin && (
-            <li className="relative flex cursor-pointer items-center gap-2.5 px-3 py-2 text-sm text-[var(--dropdown-item-foreground)] hover:bg-[var(--dropdown-item-hover)] focus:bg-[var(--dropdown-item-focus)] active:bg-[var(--dropdown-item-active)]">
-              <Link
-                onClick={() => setOpen(false)}
-                href="/admin/decks"
-                className="flex w-full items-center gap-2.5 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--dropdown-item-focus)]"
-              >
-                <svg aria-hidden="true" className="size-4 shrink-0 text-[var(--muted-foreground)]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M4 5h16v14H4zM4 9h16M8 5v14" />
-                </svg>
-                Bộ thẻ chia sẻ
-              </Link>
-            </li>
-          )}
-          {isAdmin && (
-            <li className="relative flex cursor-pointer items-center gap-2.5 px-3 py-2 text-sm text-[var(--dropdown-item-foreground)] hover:bg-[var(--dropdown-item-hover)] focus:bg-[var(--dropdown-item-focus)] active:bg-[var(--dropdown-item-active)]">
-              <Link
-                onClick={() => setOpen(false)}
-                href="/admin/import"
-                className="flex w-full items-center gap-2.5 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--dropdown-item-focus)]"
-              >
-                <svg aria-hidden="true" className="size-4 shrink-0 text-[var(--muted-foreground)]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M12 3v12m0 0l-4-4m4 4l4-4M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2" />
-                </svg>
-                Nhập hàng loạt
-              </Link>
-            </li>
-          )}
+                <Link
+                  onClick={() => setOpen(false)}
+                  href={item.href}
+                  className="flex w-full items-center gap-2.5 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--dropdown-item-focus)]"
+                >
+                  <MenuIcon d={item.icon} />
+                  {item.label}
+                </Link>
+              </li>
+            ))}
           <li className="relative flex cursor-pointer items-center gap-2.5 px-3 py-2 text-sm font-medium text-[var(--dropdown-item-foreground)] hover:bg-[var(--dropdown-item-hover)] focus:bg-[var(--dropdown-item-focus)] active:bg-[var(--dropdown-item-active)]">
             <button
               type="button"
               onClick={logout}
               className="flex w-full items-center gap-2.5 rounded-md text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--dropdown-item-focus)]"
             >
-              <svg aria-hidden="true" className="size-4 shrink-0 text-[var(--muted-foreground)]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" />
-              </svg>
+              <MenuIcon d={LOGOUT_ICON} />
               Đăng xuất
             </button>
           </li>

@@ -26,7 +26,13 @@ export function SiteHeader() {
       if (e.key === "Escape") setOpen(false);
     };
     document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
+    // Keep the page behind the drawer from scrolling under the finger.
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prevOverflow;
+    };
   }, [open]);
 
   return (
@@ -104,13 +110,13 @@ export function SiteHeader() {
       <div
         onClick={() => setOpen(false)}
         aria-hidden="true"
-        className={`fixed inset-0 z-40 bg-black/40 transition-opacity duration-300 md:hidden ${
+        className={`fixed inset-0 z-40 bg-black/50 transition-opacity duration-300 md:hidden ${
           open ? "opacity-100" : "pointer-events-none opacity-0"
         }`}
       />
       <div
         id="mobile-nav"
-        className={`fixed inset-y-0 right-0 z-50 w-72 max-w-[80%] transform bg-[var(--layer)] border-l border-[var(--border)] p-4 shadow-xl transition-transform duration-300 ease-out md:hidden ${
+        className={`fixed inset-y-0 right-0 z-50 flex w-[min(20rem,88vw)] transform flex-col overflow-y-auto overscroll-contain border-l border-[var(--border)] bg-[var(--layer)] px-4 pt-4 shadow-xl transition-transform duration-300 ease-out pb-[max(1rem,env(safe-area-inset-bottom))] md:hidden ${
           open ? "translate-x-0" : "invisible translate-x-full"
         }`}
         role="dialog"
@@ -118,14 +124,14 @@ export function SiteHeader() {
         aria-labelledby="mobile-nav-label"
       >
         <div className="flex items-center justify-between border-b border-[var(--border)] pb-3">
-          <span id="mobile-nav-label" className="text-sm font-semibold text-[var(--foreground)]">
+          <span id="mobile-nav-label" className="text-base font-semibold text-[var(--foreground)]">
             Menu
           </span>
           <button
             type="button"
             onClick={() => setOpen(false)}
             aria-label="Đóng menu"
-            className="rounded-lg p-1.5 text-[var(--muted-foreground)] hover:bg-[var(--layer-hover)]"
+            className="inline-flex h-10 w-10 items-center justify-center rounded-lg text-[var(--muted-foreground)] hover:bg-[var(--layer-hover)]"
           >
             <svg
               xmlns="http://www.w3.org/2000/svg"
@@ -140,29 +146,31 @@ export function SiteHeader() {
             </svg>
           </button>
         </div>
+
         <nav aria-label="Điều hướng chính di động" className="mt-3 flex flex-col gap-1">
           {navLinks.map((link) => (
             <Link
               onClick={() => setOpen(false)}
               key={link.href}
               href={link.href}
-              className="rounded-lg px-3 py-2 text-sm font-medium text-[var(--layer-foreground)] hover:bg-[var(--layer-hover)]"
+              className="flex min-h-11 items-center rounded-lg px-3 text-base font-medium text-[var(--layer-foreground)] hover:bg-[var(--layer-hover)]"
             >
               {link.label}
             </Link>
           ))}
-          {/* Account area (login / user + logout) on mobile too */}
-          <div className="mt-2 flex items-center">
-            <AccountMenu className="inline-flex" />
-          </div>
           <Link
-              onClick={() => setOpen(false)}
+            onClick={() => setOpen(false)}
             href="/learn"
-            className="mt-2 rounded-lg bg-[var(--primary)] px-4 py-2 text-center text-sm font-semibold text-[var(--primary-foreground)] hover:bg-[var(--primary-hover)]"
+            className="mt-2 flex min-h-11 items-center justify-center rounded-lg bg-[var(--primary)] px-4 text-sm font-semibold text-[var(--primary-foreground)] hover:bg-[var(--primary-hover)]"
           >
             Bắt đầu học
           </Link>
         </nav>
+
+        {/* Account area pinned to the bottom: a plain list, not a dropdown. */}
+        <div className="mt-auto border-t border-[var(--border)] pt-4">
+          <AccountMenu variant="inline" className="flex" onNavigate={() => setOpen(false)} />
+        </div>
       </div>
     </header>
   );
