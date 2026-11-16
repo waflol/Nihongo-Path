@@ -22,6 +22,8 @@ function availableMb() {
 const LIGHT = new Set([
   'cd', 'git', 'free', 'ps', 'top', 'ls', 'cat', 'head', 'tail', 'grep', 'rg', 'wc', 'pwd', 'echo',
   'kill', 'pkill', 'killall', 'df', 'du', 'uptime', 'vmstat', 'tasklist', 'taskkill', 'wmic',
+  // Process manager: stopping services is how RAM gets freed (pm2 stop/ls/logs).
+  'pm2',
 ]);
 
 function isLight(command) {
