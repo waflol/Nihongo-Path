@@ -32,6 +32,7 @@ Mỗi file là một issue (ID `NP-nnn`); nguồn gốc và tiến độ tổng 
 | [NP-110](./NP-110.md) | off-roadmap | - | Quản lý admin: tạo admin, đặt lại mật khẩu, trạng thái |
 | [NP-111](./NP-111.md) | off-roadmap | - | Điều khoản & bảo mật, đồng ý khi đăng ký (/terms, /privacy) |
 | [NP-112](./NP-112.md) | off-roadmap | - | Triển khai pm2 + ngrok, mem-guard RAM |
+| [NP-113](./NP-113.md) | off-roadmap | - | Giám sát máy chủ (RAM, ổ đĩa, CPU) cho admin |
 | [NP-401](./NP-401.md) | blocked | P4 | Schema câu hỏi/đề/attempt, tách đáp án khỏi payload (P4-EXAM-01…03, P4-SEC-01) |
 | [NP-402](./NP-402.md) | todo | P4 | API làm bài: bắt đầu/nộp, hết giờ phía server, xáo trộn, chấm điểm (P4-EXAM-04…06) |
 | [NP-403](./NP-403.md) | todo | P4 | Xem lại lỗi + thống kê (P4-EXAM-07/08, P4-UI-02) |

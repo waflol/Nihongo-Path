@@ -313,7 +313,7 @@ chặn route, CRUD nội dung. Test case: `T-P2-01` … `T-P2-10`.
 > cache kết quả AI, Redis console, chỉ mục Tatoeba cục bộ, Kanji Jōyō 2136 (xem `docs/plans/plan-kanji.md`),
 > luyện thi 問題 (`exercise_questions`, `/learn/exam`), báo lỗi thẻ (`cardreports`, `/admin/reports`), cảnh báo xem xét thẻ nhập (`reviewIssues`, tự điền/sửa Hán Việt từ `packages/shared/han-viet.json`),
 > cho phép nhập từ để trống nghĩa (+ AI gợi ý nghĩa), lưu nháp wizard nhập qua IndexedDB, huỷ job PDF,
-> quản lý thẻ trong deck, giới hạn thẻ mới/ngày, thống kê tiến độ, ôn chéo deck, điều khoản & bảo mật (`/terms`, `/privacy`). Xem `architecture.md` §8.
+> giám sát máy chủ `/admin/system` (CPU/RAM/ổ đĩa + biểu đồ), quản lý thẻ trong deck, giới hạn thẻ mới/ngày, thống kê tiến độ, ôn chéo deck, điều khoản & bảo mật (`/terms`, `/privacy`). Xem `architecture.md` §8.
 > Thao tác tay trong trình duyệt cho P3-UI-02/04/05 (build xanh + API đã
 > verify live, nhưng chưa bấm chuột) — sẽ bổ sung khi có môi trường
 > duyệt; **không tick `[x]` cho tới khi đó**.

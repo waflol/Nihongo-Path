@@ -214,6 +214,7 @@ Chỉ hoạt động khi có `MONGODB_URL`. Truy vấn qua `GET /admin/logs*` (A
 | `auditlogs` | Thao tác ghi (không phải GET) trên route có `@Roles` | `{createdAt: -1}`, `{actor: 1}` | 365 ngày |
 | `blockedips` | IP bị chặn, thủ công hoặc tự động | `{ip: 1}` **unique** | theo `expiresAt`; không có = vĩnh viễn |
 | `allowedips` | IP không bao giờ bị chặn | `{ip: 1}` **unique** | — |
+| `system_samples` | Mẫu CPU / RAM / ổ đĩa (% dùng) của máy chạy API, 5 phút một mẫu: `{at, cpu, ram, disk?}`. Giao diện `/admin/system`, `GET /admin/system/history` trả trung bình theo bucket | `{at: 1}` | 400 ngày |
 
 Chi tiết từng loại:
 

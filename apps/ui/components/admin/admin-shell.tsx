@@ -157,6 +157,18 @@ const NAV: NavItem[] = [
     ),
   },
   {
+    href: "/admin/system",
+    label: "Máy chủ",
+    desc: "Theo dõi RAM, ổ đĩa, CPU",
+    icon: (
+      <svg {...iconProps}>
+        <rect x="3" y="4" width="18" height="6" rx="1.5" />
+        <rect x="3" y="14" width="18" height="6" rx="1.5" />
+        <path d="M7 7h.01M7 17h.01" />
+      </svg>
+    ),
+  },
+  {
     href: "/admin/logs",
     label: "Nhật ký hệ thống",
     desc: "Theo dõi request tới backend",

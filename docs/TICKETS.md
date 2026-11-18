@@ -77,6 +77,7 @@ Có commit, chưa nằm trong checklist; cần bổ sung tiêu chí nghiệm thu
 | NP-110 | Quản lý admin: tạo admin, đặt lại mật khẩu, trạng thái | `admin-users.service.ts` | Xem NP-024 |
 | NP-111 | Điều khoản & bảo mật, đồng ý khi đăng ký (`/terms`, `/privacy`) | `docs/legal-vietnam-and-terms.md` | Rà soát pháp lý bởi người có chuyên môn |
 | NP-112 | Triển khai pm2 + ngrok, `mem-guard` RAM | `b96aafb`, `ecosystem.config.cjs` | Chạy bản build production thay vì dev |
+| NP-113 | Giám sát máy chủ: RAM, ổ đĩa, CPU + biểu đồ + bộ lọc 1 giờ/6 giờ/ngày/tuần/tháng/năm, lưu mẫu 5 phút (`/admin/system`) | `apps/api/src/system/`, `system-monitor.tsx` | Chưa chạy với Mongo thật / bấm thử trình duyệt, chưa test; RAM chưa trừ cache Linux |
 
 ## 5. Backlog theo phase (⬜ / ⏸)
 

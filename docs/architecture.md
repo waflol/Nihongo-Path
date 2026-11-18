@@ -80,6 +80,7 @@ Dùng pnpm workspace thuần (không turborepo): đủ cho 2 app + 1 package. C�
 | `ai` | `/flashcards/admin/ai` | Dịch vụ AI do admin quản lý — chi tiết §3.6 |
 | `redis` | `/admin/redis` | Kết nối tuỳ chọn + console quản trị |
 | `logs` | `/admin/logs` | Log request / ứng dụng / audit, thống kê truy cập, chặn IP |
+| `system` | `/admin/system/stats`, `/admin/system/history` | CPU, RAM, ổ đĩa của máy chạy API (`node:os`, `fs.statfs`); ghi mẫu 5 phút vào `system_samples` (TTL 400 ngày); chỉ ADMIN/SUPER_ADMIN |
 | `health` | `/health` | Liveness (`/health`), readiness (`/health/ready`, ping Mongo) |
 | `config`, `database`, `bootstrap`, `common` | — | Validate env, kết nối Mongo, nạp `.env`, tiện ích dùng chung (roles, mã hoá khoá, rate limit) |
 
@@ -200,7 +201,7 @@ Thiết kế ban đầu dùng Preline 5; đã gỡ hẳn (dropdown, modal, off-c
 |---|---|
 | Công khai | `/`, `/login`, `/register`, `/terms`, `/privacy` |
 | Học viên | `/learn` (tiến độ), `/learn/decks`, `/learn/decks/[id]` (quản lý thẻ), `/learn/decks/[id]/log` (log Hán Việt), `/learn/study` (học từ mới), `/learn/review` (ôn từ đến hạn), `/learn/import`, `/learn/exercises` (luyện từ), `/learn/exam` (luyện thi), `/learn/kanji`, `/learn/kanji/[char]` |
-| Admin | `/admin/login`; trong `/admin/(panel)`: tổng quan, `content`, `decks`, `decks/[id]`, `decks/[id]/log`, `import`, `reading-overrides`, `users`, `kanji`, `kanji/mazii-log`, `ai`, `ai-activity`, `ai-playground`, `reports`, `redis`, `logs` |
+| Admin | `/admin/login`; trong `/admin/(panel)`: tổng quan, `content`, `decks`, `decks/[id]`, `decks/[id]/log`, `import`, `reading-overrides`, `users`, `kanji`, `kanji/mazii-log`, `ai`, `ai-activity`, `ai-playground`, `reports`, `redis`, `logs`, `system` |
 
 Học viên nhập file vào deck cá nhân của mình; chỉ ADMIN / SUPER_ADMIN nhập được vào deck chia sẻ.
 

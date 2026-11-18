@@ -14,6 +14,7 @@ import { buildFlashcardsModule } from "./flashcards/flashcards.module.js";
 import { buildSrsModule } from "./srs/srs.module.js";
 import { buildImportModule } from "./import/import.module.js";
 import { buildLogsModule } from "./logs/logs.module.js";
+import { buildSystemModule } from "./system/system.module.js";
 import { buildEvalModule } from "./eval/eval.module.js";
 import { buildNotificationsModule } from "./notifications/notifications.module.js";
 
@@ -54,6 +55,8 @@ import { buildNotificationsModule } from "./notifications/notifications.module.j
     buildImportModule(),
     // Admin request-log viewer (GET /admin/logs).
     buildLogsModule(),
+    // Admin server monitor (GET /admin/system/stats).
+    buildSystemModule(),
     buildEvalModule(),
     // Web Push review reminders (docs/plans/plan-pwa.md, P2): needs VAPID keys.
     buildNotificationsModule(),
