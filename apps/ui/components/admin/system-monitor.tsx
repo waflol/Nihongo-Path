@@ -104,7 +104,6 @@ function HistoryChart() {
   useEffect(() => {
     let alive = true;
     async function load() {
-      if (document.hidden) return;
       const res = await fetch(`/api/admin/system?range=${range}`, { cache: "no-store" }).catch(() => null);
       if (!alive) return;
       if (!res || !res.ok) {
@@ -115,7 +114,9 @@ function HistoryChart() {
       setFailed(false);
     }
     void load();
-    const t = window.setInterval(() => void load(), HISTORY_REFRESH_MS);
+    const t = window.setInterval(() => {
+      if (!document.hidden) void load();
+    }, HISTORY_REFRESH_MS);
     return () => {
       alive = false;
       window.clearInterval(t);
@@ -127,14 +128,16 @@ function HistoryChart() {
   const windowMs = RANGES.find((r) => r.id === (data?.range ?? range))!.windowMs;
   const points = data?.points ?? [];
   const end = points.length ? points[points.length - 1].t : 0;
-  const start = end - windowMs;
+  // The axis starts at the first sample when the range is only partly filled, so a young history still fills the chart.
+  const start = points.length ? Math.max(end - windowMs, points[0].t) : 0;
+  const span = end - start;
   const W = 640;
   const H = 220;
   const L = 34;
   const R = 8;
   const T = 10;
   const B = 22;
-  const x = (t: number) => L + Math.min(1, Math.max(0, (t - start) / windowMs)) * (W - L - R);
+  const x = (t: number) => L + (span > 0 ? Math.min(1, Math.max(0, (t - start) / span)) : 1) * (W - L - R);
   const y = (v: number) => T + (1 - Math.min(100, Math.max(0, v)) / 100) * (H - T - B);
   const last = points[points.length - 1];
   return (
@@ -194,6 +197,10 @@ function HistoryChart() {
         ))}
         {SERIES.filter((s) => !hidden.has(s.key)).map((s) => {
           const pts = points.flatMap((p) => (p[s.key] == null ? [] : [`${x(p.t).toFixed(1)},${y(p[s.key] as number).toFixed(1)}`]));
+          if (pts.length === 1) {
+            const [cx, cy] = pts[0].split(",");
+            return <circle key={s.key} cx={cx} cy={cy} r={3} fill={s.color} />;
+          }
           if (pts.length < 2) return null;
           return <polyline key={s.key} points={pts.join(" ")} fill="none" stroke={s.color} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />;
         })}
@@ -225,7 +232,6 @@ export function SystemMonitor() {
   useEffect(() => {
     let alive = true;
     async function load() {
-      if (document.hidden) return;
       const res = await fetch("/api/admin/system", { cache: "no-store" }).catch(() => null);
       if (!alive) return;
       if (!res || !res.ok) {
@@ -237,7 +243,9 @@ export function SystemMonitor() {
       setError(null);
     }
     void load();
-    const t = window.setInterval(() => void load(), INTERVAL_MS);
+    const t = window.setInterval(() => {
+      if (!document.hidden) void load();
+    }, INTERVAL_MS);
     return () => {
       alive = false;
       window.clearInterval(t);

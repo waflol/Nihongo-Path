@@ -204,6 +204,10 @@ Không bắt buộc. Thiếu AI thì ví dụ chỉ lấy từ Tatoeba và nhậ
 
 Cần `MONGODB_URL`. Admin xem ở `/admin/logs`: các tab Request, Log ứng dụng & lỗi, Thao tác admin, Truy cập & chặn IP. Lọc theo Ngày / Tuần / Tháng hoặc ngày cụ thể; nút **Xuất CSV** theo bộ lọc hiện tại, tối đa 10.000 dòng.
 
+### Giám sát máy chủ
+
+Admin xem CPU, RAM, ổ đĩa của máy chạy API ở `/admin/system` (số đo làm mới 5 giây). Biểu đồ lọc theo 1 giờ / 6 giờ / Ngày / Tuần / Tháng / Năm; lịch sử cần `MONGODB_URL` vì API ghi một mẫu mỗi 5 phút vào `system_samples` (tự xoá sau 400 ngày). Lịch sử chỉ có từ lúc API chạy; khi API tắt biểu đồ sẽ hở đoạn đó. RAM tính theo `os.freemem()` nên chưa trừ cache của Linux.
+
 | Biến | Mặc định | Ý nghĩa |
 |---|---|---|
 | `TRUST_PROXY` | tắt | Lấy IP thật từ `X-Forwarded-For`: `true`, số hop (`1`) hoặc tên subnet (`loopback`) |
