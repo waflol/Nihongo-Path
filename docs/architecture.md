@@ -72,7 +72,7 @@ Dùng pnpm workspace thuần (không turborepo): đủ cho 2 app + 1 package. C�
 | Module | Tiền tố route | Vai trò |
 |---|---|---|
 | `auth` | `/auth` | Đăng nhập email / Google, JWT access + refresh xoay vòng, tạo admin từ env khi khởi động |
-| `users` | `/users`, `/admin/users` | Hồ sơ; vai trò USER / ADMIN / SUPER_ADMIN; SUPER_ADMIN tạo tài khoản ADMIN, đặt lại mật khẩu (đăng xuất mọi nơi) |
+| `users` | `/users`, `/admin/users` | Hồ sơ (`GET/PATCH /users/me`); **xóa tài khoản tự phục vụ `DELETE /users/me`** (`AccountDeletionService`, xem [database.md §9](./database.md#9-xoá-tài-khoản)); vai trò USER / ADMIN / SUPER_ADMIN; SUPER_ADMIN tạo tài khoản ADMIN, đặt lại mật khẩu (đăng xuất mọi nơi) |
 | `content` | (gốc), `/kanji`, `/admin/kanji` | Giáo trình, bài, từ vựng, ngữ pháp, kanji Jōyō — chi tiết §3.3 |
 | `flashcards` | `/flashcards` | Deck, thẻ, cảnh báo xem xét, ví dụ, câu luyện thi — chi tiết §3.4 |
 | `import` | `/flashcards/import` | Nhập CSV / XLSX / PDF — xem [import-flow.md](./import-flow.md) |
@@ -199,7 +199,8 @@ Thiết kế ban đầu dùng Preline 5; đã gỡ hẳn (dropdown, modal, off-c
 
 | Nhóm | Route |
 |---|---|
-| Công khai | `/`, `/login`, `/register`, `/terms`, `/privacy` |
+| Công khai | `/`, `/login`, `/register`, `/terms`, `/privacy` (cả hai dùng `LegalShell`; danh tính vận hành lấy từ `app/legal.ts`) |
+| Tài khoản | `/account` (thông tin + khối **Xóa tài khoản**; không hiện cho SUPER_ADMIN), gateway `/api/account` |
 | Học viên | `/learn` (tiến độ), `/learn/decks`, `/learn/decks/[id]` (quản lý thẻ), `/learn/decks/[id]/log` (log Hán Việt), `/learn/study` (học từ mới), `/learn/review` (ôn từ đến hạn), `/learn/import`, `/learn/exercises` (luyện từ), `/learn/exam` (luyện thi), `/learn/kanji`, `/learn/kanji/[char]` |
 | Admin | `/admin/login`; trong `/admin/(panel)`: tổng quan, `content`, `decks`, `decks/[id]`, `decks/[id]/log`, `import`, `reading-overrides`, `users`, `kanji`, `kanji/mazii-log`, `ai`, `ai-activity`, `ai-playground`, `reports`, `redis`, `logs`, `system` |
 

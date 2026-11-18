@@ -251,3 +251,19 @@ Chưa quyết định (thuộc chủ sản phẩm, xem [OPEN_QUESTIONS.md](./OPE
 - Nhà cung cấp thanh toán, tiền tệ, chính sách hoàn tiền.
 - Giới hạn media (500 MB / 60 phút / 1080p / 30 ngày chỉ là giá trị thử nghiệm).
 - RPO / RTO (gợi ý 24h / 8h, chưa cam kết).
+
+## 9. Xoá tài khoản
+
+`DELETE /users/me` (`apps/api/src/users/account-deletion.service.ts`) — quyền xoá theo Luật BVDLCN 91/2025/QH15, App Store 5.1.1(v), Google Play Data Deletion. Body: `{confirm: "XOA TAI KHOAN", password?}`; tài khoản có `passwordHash` bắt buộc gửi đúng mật khẩu (tài khoản chỉ Google chỉ cần cụm xác nhận).
+
+**Chặn SUPER_ADMIN:** vai trò đọc từ DB (không tin claim token) → 403. Gateway UI `app/api/account/route.ts` chặn lần nữa; trang `/account` không render nút. SUPER_ADMIN chỉ bị gỡ bởi người vận hành có quyền DB.
+
+| Collection | Xử lý |
+|---|---|
+| `flashcarddecks` (personal, `user` = người xoá) | xoá; kèm `flashcards` của deck, `usercardprogresses` + `cardreports` trỏ vào các thẻ đó (kể cả của người khác), `hanvietchecklogs` của deck |
+| `usercardprogresses`, `studysessions`, `cardreports`, `pushsubscriptions` | xoá theo `user` |
+| `pdfjobs` (`user` là string), `pdfjobpages` | xoá, kèm file gốc trên đĩa (`filePath`) |
+| `authsessions`, `authaccounts`, `users` | xoá (cuối cùng) |
+| `auditlogs.actor`, `requestlogs.user` | **ẩn danh** (`$unset`), không xoá — còn giá trị bảo mật, tự hết hạn theo TTL (365 / 30 ngày) |
+
+Deck chia sẻ (`shared: true`) không bị đụng. Kết quả trả về số bản ghi đã xoá theo từng nhóm. Không dùng transaction nhưng các bước đều idempotent và `users` bị xoá **cuối cùng**: lỗi giữa chừng thì user còn nguyên, bấm xoá lại là chạy tiếp. Test: `account-deletion.service.spec.ts`; đã chạy thật qua API + gateway UI với tài khoản USER (xoá 1 deck, 3 thẻ). Chưa test sống ca SUPER_ADMIN (chỉ test đơn vị).

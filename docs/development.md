@@ -98,6 +98,10 @@ Thiếu các biến JWT thì API vẫn khởi động, nhưng các endpoint xác
 | `NEXT_PUBLIC_API_URL` | `http://localhost:3000` | Địa chỉ API |
 | `NEXT_PUBLIC_SITE_URL` | trống | Chỉ đặt khi đã có domain production (dùng cho canonical / SEO) |
 | `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | trống | Trùng `GOOGLE_CLIENT_ID` của API. Trống → không hiện nút Google, đăng nhập email vẫn dùng được |
+| `NEXT_PUBLIC_LEGAL_OPERATOR` | trống | Tên tổ chức/cá nhân vận hành, hiện ở `/terms` Điều 9 và `/privacy` Mục 8 (Nghị định 147/2024 buộc công bố chủ quản). Trống → trang hiện dòng "đang cập nhật", không in placeholder |
+| `NEXT_PUBLIC_LEGAL_TAX_CODE` | trống | Mã số doanh nghiệp / thuế / hộ kinh doanh |
+| `NEXT_PUBLIC_LEGAL_ADDRESS` | trống | Địa chỉ liên hệ tại Việt Nam |
+| `NEXT_PUBLIC_LEGAL_EMAIL` | trống | Email tiếp nhận yêu cầu dữ liệu cá nhân và khiếu nại bản quyền; điền trước khi mở đăng ký rộng hoặc thu phí |
 | `ALLOWED_DEV_ORIGINS` | trống | Host / IP ngoài localhost được tải tài nguyên dev của Next (HMR), phân tách bằng dấu phẩy. `next.config.ts` đọc vào `allowedDevOrigins`; restart `next dev` sau khi đổi |
 
 > Biến `NEXT_PUBLIC_*` nằm trong bundle trình duyệt — không đặt secret vào đây.
