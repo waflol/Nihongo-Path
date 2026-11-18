@@ -8,7 +8,7 @@ import { Fragment, useCallback, useEffect, useState, type FormEvent } from "reac
 import { CardTile, HanVietToggle } from "@/components/learn/card-tile";
 import { CardEditForm } from "@/components/learn/card-edit-form";
 import { ExampleFields, cleanExampleInputs, type ExampleInput } from "@/components/learn/example-fields";
-import { POS_LABEL, ReadingFields, displayFront, type PartOfSpeech } from "@/components/learn/reading-fields";
+import { ReadingFields, buildParts, displayFront, posText, type PartOfSpeech } from "@/components/learn/reading-fields";
 import { ImageField } from "@/components/learn/image-field";
 import { Icon } from "@/components/learn/icons";
 import { RECHECK_PROGRESS_EVENT, RECHECK_STARTED_EVENT } from "@/components/learn/recheck-tracker";
@@ -43,6 +43,8 @@ interface PageCard {
   image?: string;
   imageCredit?: string;
   partOfSpeech?: string;
+  partsOfSpeech?: string[];
+  note?: string;
   hanViet?: string;
   examples?: { sentence: string; translation?: string; source?: string }[];
   tags?: string[];
@@ -88,6 +90,8 @@ const emptyForm = {
   image: "",
   imageCredit: "",
   partOfSpeech: "" as PartOfSpeech | "",
+  extraParts: [] as string[],
+  note: "",
   examples: [{ sentence: "", translation: "" }] as ExampleInput[],
   tags: "",
 };
@@ -113,6 +117,7 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
   const [qInput, setQInput] = useState("");
   const [q, setQ] = useState("");
   const [tag, setTag] = useState("");
+  const [pos, setPos] = useState("");
   const [missing, setMissing] = useState(false);
   const [review, setReview] = useState<"" | ReviewField>("");
 
@@ -274,6 +279,7 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
       if (q) params.set("q", q);
       if (tag) params.set("tag", tag);
       if (missing) params.set("missing", "1");
+      if (pos) params.set("pos", pos);
       if (review) params.set("review", review);
       if (focusCard) params.set("card", focusCard);
       const res = await fetch(`/api/flashcards/decks/${deckId}/cards/page?${params}`, {
@@ -290,7 +296,7 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
     return () => {
       off = true;
     };
-  }, [deckId, page, q, tag, missing, review, focusCard, version]);
+  }, [deckId, page, q, tag, missing, pos, review, focusCard, version]);
 
   async function openInfo() {
     if (!deck) return;
@@ -430,7 +436,7 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
       body: JSON.stringify({
         field: review,
         action,
-        ...(useIds ? { ids: [...selected] } : { filter: { q: q || undefined, tag: tag || undefined, missing: missing || undefined } }),
+        ...(useIds ? { ids: [...selected] } : { filter: { q: q || undefined, tag: tag || undefined, missing: missing || undefined, pos: pos || undefined } }),
       }),
     }).catch(() => null);
     setBulkBusy(false);
@@ -478,7 +484,7 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
                     <span className="rounded-md bg-[#f59e0b]/20 px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-[#b45309] dark:text-[#fbbf24]">
                       {FIELD_LABEL[it.field]}
                     </span>
-                    <span className="text-xs text-[var(--muted-foreground)]">{it.text.replace(/ → đã tự sửa thành .*$/, "").replace(/ \(AI gợi ý: .*\)$/, "")}</span>
+                    <span className="text-xs text-[var(--muted-foreground)]">{it.text.replace(/ → đã tự sửa thành .*$/, "").replace(/ \((?:AI|Mazii) gợi ý: .*\)$/, "")}</span>
                   </div>
                   {it.fix && (
                     <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
@@ -571,7 +577,8 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
     );
   };
 
-  function setFilter(next: { tag?: string; missing?: boolean; review?: "" | ReviewField }) {
+  function setFilter(next: { tag?: string; missing?: boolean; pos?: string; review?: "" | ReviewField }) {
+    if (next.pos !== undefined) setPos(next.pos);
     if (next.tag !== undefined) setTag(next.tag);
     if (next.missing !== undefined) setMissing(next.missing);
     if (next.review !== undefined) setReview(next.review);
@@ -609,7 +616,7 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         ...(allMatching
-          ? { filter: { q: q || undefined, tag: tag || undefined, missing: missing || undefined } }
+          ? { filter: { q: q || undefined, tag: tag || undefined, missing: missing || undefined, pos: pos || undefined } }
           : { ids: [...selected] }),
         [op]: tags,
       }),
@@ -642,6 +649,8 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
         image: form.image,
         imageCredit: form.imageCredit,
         partOfSpeech: form.partOfSpeech,
+        partsOfSpeech: buildParts(form.partOfSpeech, form.extraParts),
+        note: form.note.trim() || undefined,
         examples: cleanExampleInputs(form.examples),
         tags: form.tags ? splitTags(form.tags) : undefined,
         origin: "manual",
@@ -841,7 +850,18 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
               partOfSpeech={form.partOfSpeech}
               onReading={(reading) => setForm((f) => ({ ...f, reading }))}
               onPartOfSpeech={(partOfSpeech) => setForm((f) => ({ ...f, partOfSpeech }))}
+              extraParts={form.extraParts}
+              onExtraParts={(extraParts) => setForm((f) => ({ ...f, extraParts }))}
             />
+            <label className="block text-sm sm:col-span-2">
+              <span className="text-[var(--muted-foreground)]">Ghi chú / từ đồng nghĩa (tuỳ chọn)</span>
+              <input
+                value={form.note}
+                onChange={(e) => setForm((f) => ({ ...f, note: e.target.value }))}
+                className={`mt-1 ${inputClass}`}
+                placeholder="vd: 加える"
+              />
+            </label>
             <ImageField
               key={`img-${formKey}`}
               term={form.front}
@@ -897,6 +917,16 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
           >
             Chưa có ví dụ{data ? ` (${data.missingExamples})` : ""}
           </button>
+          <select value={pos} onChange={(e) => setFilter({ pos: e.target.value })} aria-label="Lọc theo từ loại" className={btn}>
+            <option value="">Mọi từ loại</option>
+            <option value="verb">Động từ</option>
+            <option value="noun">Danh từ</option>
+            <option value="noun-suru">Danh từ + する</option>
+            <option value="adjective">Tính từ い</option>
+            <option value="adjective-na">Tính từ な</option>
+            <option value="adverb">Trạng từ</option>
+            <option value="phrase">Cụm từ</option>
+          </select>
           {CHECKS.map(({ field, warnLabel }) => {
             const n = data?.needsReviewBy?.[field] ?? 0;
             if (n === 0 && review !== field) return null;
@@ -1050,7 +1080,7 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
             </button>
           )}
           <span className="text-[var(--muted-foreground)]">
-            {total} thẻ{q || tag || missing || review ? " khớp bộ lọc" : ""}
+            {total} thẻ{q || tag || missing || pos || review ? " khớp bộ lọc" : ""}
           </span>
         </div>
       )}
@@ -1092,7 +1122,7 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
         {loading && !data && <p className="text-sm text-[var(--muted-foreground)]">Đang tải thẻ…</p>}
         {!loading && items.length === 0 && (
           <p className="rounded-2xl border border-dashed border-[var(--border)] p-8 text-center text-sm text-[var(--muted-foreground)]">
-            {q || tag || missing || review ? "Không có thẻ nào khớp bộ lọc." : "Bộ này chưa có thẻ."}
+            {q || tag || missing || pos || review ? "Không có thẻ nào khớp bộ lọc." : "Bộ này chưa có thẻ."}
           </p>
         )}
         {view === "table" && items.length > 0 && (
@@ -1172,7 +1202,7 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
                       <td className="px-3 py-2 text-[var(--foreground)]">{card.reading ?? ""}</td>
                       {showHanViet && <td className="px-3 py-2 text-[var(--foreground)]">{card.hanViet ?? ""}</td>}
                       <td className="px-3 py-2 text-[var(--foreground)]">{card.back}</td>
-                      <td className="px-3 py-2 text-xs text-[var(--muted-foreground)]">{card.partOfSpeech ? (POS_LABEL[card.partOfSpeech as PartOfSpeech] ?? card.partOfSpeech) : ""}</td>
+                      <td className="px-3 py-2 text-xs text-[var(--muted-foreground)]">{posText(card.partOfSpeech, card.partsOfSpeech)}</td>
                       <td className="max-w-64 px-3 py-2 text-xs text-[var(--muted-foreground)]">
                         {card.examples && card.examples.length > 0 ? (
                           <span title={card.examples.map((e) => e.sentence).join("\n")} className="line-clamp-2">

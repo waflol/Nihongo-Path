@@ -39,6 +39,10 @@ export interface CardQueueItem {
   image?: string;
   imageCredit?: string;
   partOfSpeech?: string;
+  /** Every part of speech, first = primary; `noun-suru` = a noun that takes する. */
+  partsOfSpeech?: string[];
+  /** Explanation that followed the word in the source. */
+  note?: string;
   /** Âm Hán Việt stored on the card (else the UI derives it). */
   hanViet?: string;
   examples?: { sentence: string; translation?: string }[];
@@ -342,6 +346,8 @@ export class SrsService {
             image: c.image || undefined,
             imageCredit: c.imageCredit || undefined,
             partOfSpeech: c.partOfSpeech || undefined,
+            partsOfSpeech: c.partsOfSpeech?.length ? c.partsOfSpeech : undefined,
+            note: c.note || undefined,
             hanViet: c.hanViet || undefined,
             examples: c.examples?.length
               ? c.examples.map((e) => ({ sentence: e.sentence, translation: e.translation }))

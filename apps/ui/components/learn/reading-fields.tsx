@@ -3,15 +3,33 @@
 import { useEffect, useRef } from "react";
 
 /** `adjective` is the い-adjective (the name predates the split); `adjective-na` is the な-adjective. */
-export type PartOfSpeech = "verb" | "noun" | "adjective" | "adjective-na" | "phrase";
+export type PartOfSpeech = "verb" | "noun" | "adjective" | "adjective-na" | "adverb" | "phrase";
 
 export const POS_LABEL: Record<PartOfSpeech, string> = {
   verb: "Động từ",
   noun: "Danh từ",
   adjective: "Tính từ い",
   "adjective-na": "Tính từ な",
+  adverb: "Trạng từ",
   phrase: "Cụm từ",
 };
+
+/** `noun-suru` = a noun that also takes する (乱暴, 売り買い); it is a use of a noun, not a part of speech. */
+export const SURU_LABEL = "+ する";
+
+/** The primary part of speech + the extra ones, deduped; する always comes after its noun. */
+export function buildParts(pos: PartOfSpeech | "", extra: string[]): string[] {
+  const out: string[] = [];
+  for (const p of [pos, ...extra]) if (p && !out.includes(p)) out.push(p);
+  if (out.includes("noun-suru") && !out.includes("noun")) out.splice(out.indexOf("noun-suru"), 0, "noun");
+  return out;
+}
+
+/** "Tính từ な · Danh từ · + する" for a card with several parts of speech. */
+export function posText(pos?: string, parts?: string[]): string {
+  const list = parts && parts.length > 0 ? parts : pos ? [pos] : [];
+  return list.map((p) => (p === "noun-suru" ? SURU_LABEL : (POS_LABEL[p as PartOfSpeech] ?? p))).join(" · ");
+}
 
 /** A な-adjective is shown without its な (静かな → 静か). */
 export function displayFront(front: string, pos?: string): string {
@@ -41,6 +59,8 @@ export function ReadingFields({
   partOfSpeech,
   onReading,
   onPartOfSpeech,
+  extraParts,
+  onExtraParts,
   autoOnMount = true,
 }: {
   front: string;
@@ -48,6 +68,9 @@ export function ReadingFields({
   partOfSpeech: PartOfSpeech | "";
   onReading: (v: string) => void;
   onPartOfSpeech: (v: PartOfSpeech | "") => void;
+  /** Other parts of speech the word also has (incl. `noun-suru`); omit to hide the checkboxes. */
+  extraParts?: string[];
+  onExtraParts?: (v: string[]) => void;
   /** `false` when editing: keep the saved values until the front changes. */
   autoOnMount?: boolean;
 }) {
@@ -114,33 +137,82 @@ export function ReadingFields({
       <label className="block text-sm">
         <span className="text-[var(--muted-foreground)]">Từ loại</span>
         <select
-          value={partOfSpeech}
+          value={partOfSpeech === "noun" && (extraParts ?? []).includes("noun-suru") ? "noun-suru" : partOfSpeech}
           onChange={(e) => {
             posTouched.current = true;
-            onPartOfSpeech(e.target.value as PartOfSpeech | "");
+            const v = e.target.value;
+            // "Danh từ + する" = a noun that also takes する: primary noun + the する flag.
+            const rest = (extraParts ?? []).filter((x) => x !== "noun-suru");
+            if (v === "noun-suru") {
+              onPartOfSpeech("noun");
+              onExtraParts?.([...rest, "noun-suru"]);
+            } else {
+              onPartOfSpeech(v as PartOfSpeech | "");
+              onExtraParts?.(rest);
+            }
           }}
           className={`mt-1 ${inputClass}`}
         >
           <option value="">— Không phân loại —</option>
           <option value="verb">{POS_LABEL.verb}</option>
           <option value="noun">{POS_LABEL.noun}</option>
+          <option value="noun-suru">{POS_LABEL.noun} {SURU_LABEL}</option>
           <option value="adjective">{POS_LABEL.adjective}</option>
           <option value="adjective-na">{POS_LABEL["adjective-na"]}</option>
+          <option value="adverb">{POS_LABEL.adverb}</option>
           <option value="phrase">{POS_LABEL.phrase}</option>
         </select>
       </label>
+      {onExtraParts && (
+        <fieldset className="text-sm">
+          <legend className="text-[var(--muted-foreground)]">Còn là (nếu từ có nhiều loại)</legend>
+          <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1">
+            {(["verb", "noun", "adjective", "adjective-na", "adverb", "phrase", "noun-suru"] as const)
+              .filter((p) => p !== partOfSpeech)
+              .map((p) => (
+                <label key={p} className="inline-flex items-center gap-1.5 text-[var(--foreground)]">
+                  <input
+                    type="checkbox"
+                    checked={(extraParts ?? []).includes(p)}
+                    onChange={(e) => onExtraParts(e.target.checked ? [...(extraParts ?? []), p] : (extraParts ?? []).filter((x) => x !== p))}
+                  />
+                  {p === "noun-suru" ? "Danh từ đi với する" : POS_LABEL[p]}
+                </label>
+              ))}
+          </div>
+        </fieldset>
+      )}
     </>
+  );
+}
+
+/** One chip per part of speech of a card (falls back to the primary one); `noun-suru` shows as "+ する". */
+export function PosChips({ pos, parts }: { pos?: string; parts?: string[] }) {
+  const list = parts && parts.length > 0 ? parts : pos ? [pos] : [];
+  return (
+    <span className="inline-flex flex-wrap gap-1">
+      {list.map((p) =>
+        p === "noun-suru" ? (
+          <span key={p} className="inline-block rounded-full bg-[#e0e7ff] px-2 py-0.5 text-[10px] font-semibold tracking-wide text-[#4338ca] dark:bg-[#1e1b4b] dark:text-[#a5b4fc]">
+            {SURU_LABEL}
+          </span>
+        ) : (
+          <PosChip key={p} pos={p} />
+        ),
+      )}
+    </span>
   );
 }
 
 /** Small coloured chip for a part of speech. */
 export function PosChip({ pos }: { pos?: string }) {
-  if (pos !== "verb" && pos !== "noun" && pos !== "adjective" && pos !== "adjective-na" && pos !== "phrase") return null;
+  if (pos !== "verb" && pos !== "noun" && pos !== "adjective" && pos !== "adjective-na" && pos !== "adverb" && pos !== "phrase") return null;
   const tone = {
     verb: "bg-[#dbeafe] text-[#1d4ed8] dark:bg-[#172554] dark:text-[#93c5fd]",
     noun: "bg-[#dcfce7] text-[#15803d] dark:bg-[#052e16] dark:text-[#86efac]",
     adjective: "bg-[#fef3c7] text-[#b45309] dark:bg-[#422006] dark:text-[#fcd34d]",
     "adjective-na": "bg-[#ffe4e6] text-[#be123c] dark:bg-[#4c0519] dark:text-[#fda4af]",
+    adverb: "bg-[#cffafe] text-[#0e7490] dark:bg-[#083344] dark:text-[#67e8f9]",
     phrase: "bg-[#f3e8ff] text-[#7e22ce] dark:bg-[#3b0764] dark:text-[#d8b4fe]",
   }[pos];
   return (

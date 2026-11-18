@@ -28,6 +28,9 @@ import {
 import { CONTENT_ADMIN } from "../common/roles.js";
 import type { AuthUser } from "../auth/auth.types.js";
 import { isHiraganaWord, isKatakanaWord, normalizeWord, stripNa, stripNaReading, toHiragana, toKatakana } from "../import/normalize-word.js";
+import { derivePartsOfSpeech, primaryPos } from "../import/parts-of-speech.js";
+import { readingOfTokens, splitVariants, splitWordNote } from "../import/word-note.js";
+import { fetchMaziiWord, type MaziiWord } from "../import/mazii-word.js";
 import { cardDedupeKey, cardDedupeKeyForCopy } from "./dedupe.js";
 import { ExampleSuggestService } from "./example-suggest.service.js";
 import { AiResultCacheService } from "../ai/ai-result-cache.service.js";
@@ -117,7 +120,9 @@ export interface CardWriteInput {
   reading?: string;
   image?: string;
   imageCredit?: string;
-  partOfSpeech?: "verb" | "noun" | "adjective" | "adjective-na" | "phrase" | "";
+  partOfSpeech?: "verb" | "noun" | "adjective" | "adjective-na" | "adverb" | "phrase" | "";
+  partsOfSpeech?: string[];
+  note?: string;
   examples?: CardExample[];
   tags?: string[];
   /** `manual` (default) or `saved` — provenance only; never `import` here. */
@@ -205,7 +210,7 @@ export class FlashcardsService implements OnModuleInit {
       const field: ReviewField = /^Hán Việt/.test(text) ? "hanViet" : /^cách đọc/.test(text) ? "reading" : "back";
       let fix: string | undefined;
       // A warning written by the AI's check carries its own suggestion.
-      const aiRaw = /\(AI gợi ý: (.+)\)$/.exec(text)?.[1];
+      const aiRaw = /\((?:AI|Mazii) gợi ý: (.+)\)$/.exec(text)?.[1];
       // Older warnings may carry the ký spelling: show it as kí, like everywhere else.
       const ai = aiRaw && field === "hanViet" ? harmonizeHanViet(c.front, aiRaw) : aiRaw;
       if (ai) {
@@ -219,7 +224,7 @@ export class FlashcardsService implements OnModuleInit {
         // Vietnamese words in the reading: the fix is the reading without them.
         const kana = splitStrayReading(c.reading).kana;
         if (kana) fix = kana;
-      } else if (field === "reading" && this.morph) {
+      } else if (field === "reading" && this.morph && !/có thể từ đúng là|Mazii có “/.test(text)) {
         try {
           const a = await this.morph.analyze(c.front.replace(WORD_NOTE_RE, ""));
           // The card's reading is one this word is known to have (人気 = にんき / ひとけ): nothing to warn about.
@@ -492,7 +497,7 @@ export class FlashcardsService implements OnModuleInit {
   /** Mongo filter for the card-manager list: text search, one tag, "no example". */
   private cardFilter(
     deckId: string,
-    f: { q?: string; tag?: string; missing?: boolean; card?: string; review?: ReviewFilter },
+    f: { q?: string; tag?: string; missing?: boolean; pos?: string; card?: string; review?: ReviewFilter },
   ): Record<string, unknown> {
     const filter: Record<string, unknown> = { deck: new Types.ObjectId(deckId) };
     if (f.card && Types.ObjectId.isValid(f.card)) filter._id = new Types.ObjectId(f.card);
@@ -503,6 +508,8 @@ export class FlashcardsService implements OnModuleInit {
     }
     if (f.tag) filter.tags = f.tag;
     if (f.missing) filter.examples = { $size: 0 };
+    // A part of speech: the primary one or any of the extra ones (`noun-suru` lives only in the list).
+    if (f.pos) filter.$and = [f.pos === "noun-suru" ? { partsOfSpeech: "noun-suru" } : { $or: [{ partOfSpeech: f.pos }, { partsOfSpeech: f.pos }] }];
     if (f.review) Object.assign(filter, reviewClause(f.review));
     return filter;
   }
@@ -515,7 +522,7 @@ export class FlashcardsService implements OnModuleInit {
   async pageCards(
     caller: AuthUser,
     deckId: string,
-    opts: { page: number; pageSize: number; q?: string; tag?: string; missing?: boolean; card?: string; review?: ReviewFilter },
+    opts: { page: number; pageSize: number; q?: string; tag?: string; missing?: boolean; pos?: string; card?: string; review?: ReviewFilter },
   ): Promise<{
     items: FlashcardDocument[];
     total: number;
@@ -600,7 +607,7 @@ export class FlashcardsService implements OnModuleInit {
     await this.getDeck(caller, deckId);
     const empty = await this.card
       .find({ deck: new Types.ObjectId(deckId), examples: { $size: 0 } })
-      .select("front back reading")
+      .select("front back reading partsOfSpeech")
       .sort({ order: 1, _id: 1 })
       .lean()
       .exec();
@@ -621,7 +628,7 @@ export class FlashcardsService implements OnModuleInit {
         let reason = "";
         let usable = false;
         if (a.kind === "write") {
-          const check = await this.exampleSuggest.checkAiSentence(a.term, c.reading, a.ja ?? "");
+          const check = await this.exampleSuggest.checkAiSentence(a.term, c.reading, a.ja ?? "", (c.partsOfSpeech ?? []).includes("noun-suru"));
           usable = check.ok;
           reason = check.reason;
         } else if (a.matches === false) {
@@ -665,7 +672,7 @@ export class FlashcardsService implements OnModuleInit {
       field: ReviewField;
       action: "apply" | "dismiss";
       ids?: string[];
-      filter?: { q?: string; tag?: string; missing?: boolean };
+      filter?: { q?: string; tag?: string; missing?: boolean; pos?: string };
     },
   ): Promise<{ matched: number; applied: number; dismissed: number; skipped: number }> {
     const deck = await this.getDeck(caller, deckId);
@@ -723,7 +730,7 @@ export class FlashcardsService implements OnModuleInit {
     deckId: string,
     input: {
       ids?: string[];
-      filter?: { q?: string; tag?: string; missing?: boolean };
+      filter?: { q?: string; tag?: string; missing?: boolean; pos?: string };
       add?: string[];
       remove?: string[];
     },
@@ -795,6 +802,7 @@ export class FlashcardsService implements OnModuleInit {
         meaning: input.back,
         reading: input.reading,
         partOfSpeech: input.partOfSpeech,
+        suru: input.partsOfSpeech?.includes("noun-suru"),
       });
       if (suggestion) {
         examples = [
@@ -810,6 +818,8 @@ export class FlashcardsService implements OnModuleInit {
       image: input.image ?? "",
       imageCredit: input.imageCredit?.trim() ?? "",
       partOfSpeech: input.partOfSpeech ?? "",
+      partsOfSpeech: input.partsOfSpeech ?? [],
+      note: input.note?.trim() ?? "",
       examples,
       tags: input.tags ?? [],
       origin: input.origin ?? "manual",
@@ -824,6 +834,7 @@ export class FlashcardsService implements OnModuleInit {
           meaning: input.back,
           reading: input.reading,
           partOfSpeech: input.partOfSpeech,
+          suru: input.partsOfSpeech?.includes("noun-suru"),
         })
         .then((hit) =>
           hit
@@ -935,7 +946,9 @@ export class FlashcardsService implements OnModuleInit {
       reading?: string;
       image?: string;
       imageCredit?: string;
-      partOfSpeech?: "verb" | "noun" | "adjective" | "adjective-na" | "phrase" | "";
+      partOfSpeech?: "verb" | "noun" | "adjective" | "adjective-na" | "adverb" | "phrase" | "";
+      partsOfSpeech?: string[];
+      note?: string;
       examples?: CardExample[];
       tags?: string[];
       /** true = an admin looked at the import warnings: clear them. */
@@ -989,6 +1002,12 @@ export class FlashcardsService implements OnModuleInit {
     if (input.image !== undefined) cardDoc.image = input.image;
     if (input.imageCredit !== undefined) cardDoc.imageCredit = input.imageCredit.trim();
     if (input.partOfSpeech !== undefined) cardDoc.partOfSpeech = input.partOfSpeech;
+    if (input.partsOfSpeech !== undefined) {
+      cardDoc.partsOfSpeech = input.partsOfSpeech;
+      // The primary part of speech follows the list unless it was sent too.
+      if (input.partOfSpeech === undefined && input.partsOfSpeech.length > 0) cardDoc.partOfSpeech = primaryPos(input.partsOfSpeech);
+    }
+    if (input.note !== undefined) cardDoc.note = input.note.trim();
     if (input.examples !== undefined) cardDoc.examples = cleanExamples(input.examples);
     if (input.tags !== undefined) cardDoc.tags = input.tags;
     // Fixing the meaning / reading, or an explicit "reviewed", closes the import warnings.
@@ -1202,7 +1221,7 @@ export class FlashcardsService implements OnModuleInit {
     // Only what the re-check needs: the heavy fields (examples, image) stay in the database.
     const cards = await this.card
       .find({ deck: deckOid, ...(ids && ids.length > 0 ? { _id: { $in: ids.map((i) => new Types.ObjectId(i)) } } : {}) })
-      .select("front reading back hanViet reviewIssues order readingChecked backChecked userFixed partOfSpeech dedupeKey")
+      .select("front reading back hanViet reviewIssues order readingChecked backChecked userFixed partOfSpeech partsOfSpeech note kind origin tags dedupeKey")
       .sort({ order: 1, _id: 1 })
       .limit(3000)
       .exec();
@@ -1212,6 +1231,8 @@ export class FlashcardsService implements OnModuleInit {
     const flags: { reading: { stt: number; word: string; issue: string }[]; back: { stt: number; word: string; issue: string }[] } = { reading: [], back: [] };
     // "Kiểm tra từ vựng" also tidies the word itself: stray spaces and the な of a な-adjective.
     const doNormalize = only !== "hanViet";
+    // "Kiểm tra từ vựng": part of speech, reading and meaning come from Mazii (not the AI).
+    const useMazii = only === "readingBack";
     const normFlags: { stt: number; word: string; issue: string }[] = [];
     const usedKeys = new Set<string>();
     if (doNormalize) for (const x of await this.card.find({ deck: deckOid }).select("dedupeKey").lean().exec()) if (x.dedupeKey) usedKeys.add(x.dedupeKey);
@@ -1225,6 +1246,33 @@ export class FlashcardsService implements OnModuleInit {
       let next = normalizeWord(before);
       const notes: string[] = [];
       if (next !== before.trim()) notes.push("bỏ khoảng trắng");
+      // A collocation followed by its explanation (`成績が上がる(=よくなる)`): the reading marks where the word ends.
+      let note = c.note ?? "";
+      let splitFrom: string | null = null;
+      // Several words / phrases in one cell (味がつく・味をつける): the first stays on this card, the rest become cards of their own.
+      const origReading = c.reading ?? "";
+      let srcReading = origReading;
+      const extra: { front: string; reading: string }[] = [];
+      const variants = this.morph ? splitVariants(next, origReading) : null;
+      if (variants) {
+        splitFrom = next;
+        next = variants[0].front;
+        srcReading = variants[0].reading;
+        extra.push(...variants.slice(1));
+        notes.push(`tách ${variants.length} từ trong một ô`);
+      }
+      if (this.morph) {
+        const morph = this.morph;
+        const r = await splitWordNote(next, srcReading, async (t) => readingOfTokens(await morph.tokens(t))).catch(() => null);
+        if (r?.review) {
+          normFlags.push({ stt: c.order ?? cards.indexOf(c) + 1, word: clean(next), issue: `${r.review}: “${next}”` });
+        } else if (r && r.word !== next) {
+          splitFrom ??= next;
+          next = r.word;
+          note = r.note || note;
+          notes.push("tách ghi chú ra khỏi từ");
+        }
+      }
       let pos = c.partOfSpeech ?? "";
       if (/な[)）]?$/.test(next) && [...next].length > 1 && (pos === "" || pos === "adjective" || pos === "adjective-na")) {
         // An い-adjective never ends in な: a な there means a な-adjective written with its particle.
@@ -1236,9 +1284,20 @@ export class FlashcardsService implements OnModuleInit {
           pos = "adjective-na";
         }
       }
+      // A noun that takes する (誤解, 乱暴) or doubles as a な-adjective: learn it from the analyser.
+      let parts = c.partsOfSpeech ?? [];
+      if (parts.length === 0 && this.morph) {
+        const toks = await this.morph.tokens(clean(next)).catch(() => null);
+        const found = toks ? derivePartsOfSpeech(next, pos, toks) : null;
+        if (found) {
+          parts = found;
+          if (!pos) pos = primaryPos(found);
+          notes.push(found.includes("noun-suru") ? "thêm từ loại: danh từ + する" : "thêm từ loại: tính từ な");
+        }
+      }
       // A な-adjective's reading drops its な too (フレッシュな → フレッシュ), or it never matches the word.
-      const reading = c.reading ?? "";
-      let nextReading = pos === "adjective-na" && !/な$/.test(next) ? stripNaReading(reading) : reading;
+      const reading = origReading;
+      let nextReading = pos === "adjective-na" && !/な$/.test(next) ? stripNaReading(srcReading) : srcReading;
       if (nextReading !== reading) notes.push("bỏ な ở cách đọc");
       // A katakana word reads as itself: its reading is katakana too (らっきー → ラッキー).
       if (nextReading && isKatakanaWord(clean(next)) && toKatakana(nextReading) !== nextReading) {
@@ -1250,7 +1309,7 @@ export class FlashcardsService implements OnModuleInit {
         nextReading = toHiragana(nextReading);
         notes.push("cách đọc sang hiragana");
       }
-      if (next === before && pos === (c.partOfSpeech ?? "") && nextReading === reading) return;
+      if (next === before && pos === (c.partOfSpeech ?? "") && nextReading === reading && parts.length === (c.partsOfSpeech ?? []).length && note === (c.note ?? "")) return;
       const stt = c.order ?? cards.indexOf(c) + 1;
       const key = cardDedupeKey(next, c.back ?? "", nextReading);
       if (key !== c.dedupeKey && usedKeys.has(key)) {
@@ -1260,15 +1319,57 @@ export class FlashcardsService implements OnModuleInit {
       const set: Record<string, unknown> = { front: next };
       if (nextReading !== reading) set.reading = nextReading;
       if (pos !== (c.partOfSpeech ?? "")) set.partOfSpeech = pos;
+      if (parts.length !== (c.partsOfSpeech ?? []).length) set.partsOfSpeech = parts;
+      if (note !== (c.note ?? "")) set.note = note;
+      // The Hán Việt was read from the word + its note: read it again from the word alone.
+      if (splitFrom && !(c.userFixed ?? []).includes("hanViet")) {
+        const hv = suggestHanViet(next);
+        if (hv) set.hanViet = harmonizeHanViet(next, hv);
+      }
       if (key !== c.dedupeKey) {
         set.dedupeKey = key;
         usedKeys.delete(c.dedupeKey ?? "");
         usedKeys.add(key);
       }
       normOps.push({ updateOne: { filter: { _id: c._id }, update: { $set: set } } });
+      // The other words of the cell: a new card each (same STT, meaning copied from this card for a person to adjust).
+      for (const v of extra) {
+        const r2 = this.morph ? await splitWordNote(v.front, v.reading, async (t) => readingOfTokens(await this.morph!.tokens(t))).catch(() => null) : null;
+        const w2 = r2 && !r2.review ? r2.word : v.front;
+        const n2 = r2 && !r2.review ? r2.note : "";
+        const key2 = cardDedupeKey(w2, c.back ?? "", v.reading);
+        if (usedKeys.has(key2)) {
+          normFlags.push({ stt, word: clean(w2), issue: `“${w2}” (tách từ “${before}”): trùng một thẻ khác trong bộ, chưa tạo thẻ` });
+          continue;
+        }
+        usedKeys.add(key2);
+        const hv2 = suggestHanViet(w2);
+        normOps.push({
+          insertOne: {
+            document: {
+              deck: deckOid,
+              kind: c.kind ?? "CUSTOM",
+              origin: c.origin ?? "import",
+              front: w2,
+              back: c.back ?? "",
+              reading: v.reading,
+              note: n2,
+              partOfSpeech: pos,
+              hanViet: hv2 ? harmonizeHanViet(w2, hv2) : "",
+              order: c.order,
+              tags: c.tags ?? [],
+              reviewIssues: ["nghĩa chép từ thẻ gốc khi tách thẻ, cần kiểm tra"],
+              dedupeKey: key2,
+            },
+          },
+        } as never);
+        normFlags.push({ stt, word: clean(w2), issue: `tách từ “${before}” → thẻ mới “${w2}”${n2 ? ` (đồng nghĩa: ${n2})` : ""}` });
+      }
       c.front = next;
       c.reading = nextReading;
       c.partOfSpeech = pos as typeof c.partOfSpeech;
+      c.partsOfSpeech = parts;
+      c.note = note;
       c.dedupeKey = key;
       normFlags.push({ stt, word: clean(next), issue: `“${before}” → “${next}”${nextReading !== reading ? ` · cách đọc “${reading}” → “${nextReading}”` : ""} (${notes.join(", ") || "từ loại tính từ な"})` });
       if (normOps.length >= 100) await flushNorm();
@@ -1286,6 +1387,8 @@ export class FlashcardsService implements OnModuleInit {
     await saveLog(false);
 
     const clean = (t: string) => t.replace(WORD_NOTE_RE, "").trim();
+    // The word to look up on Mazii: an optional part in brackets (てきぱき「と」, 勉強（する）) is not part of the headword.
+    const maziiKey = (t: string) => clean(t).replace(/[「『（(][^」』）)]*[」』）)]/g, "").replace(/[〜～~]/g, "").trim() || clean(t);
     const fingerprint = (a: string, b: string) => createHash("sha1").update(`${a}|${b}`).digest("base64url").slice(0, 12);
     const tick = () => new Promise<void>((r) => setImmediate(r)); // let the API serve requests between chunks
     const gate = async () => {
@@ -1329,6 +1432,10 @@ export class FlashcardsService implements OnModuleInit {
       strayIssue?: string;
       /** A reading valid for the word but tied to another meaning (from what people confirmed). */
       readingClash?: string;
+      /** Mazii's entry for the word: `null` = Mazii does not have it, `undefined` = not looked up (or Mazii unreachable). */
+      mazii?: MaziiWord | null;
+      /** Not on Mazii as written, but its reading is a longer word that starts with it (怒鳴 → 怒鳴る). */
+      maziiHint?: string;
     };
 
     // Stage 1 (local, no AI): decide per card what is judged, skipping what a past run already judged unchanged.
@@ -1358,8 +1465,8 @@ export class FlashcardsService implements OnModuleInit {
         rHash,
         bHash,
         // A reading with stray words is judged again on every run (older runs let it through), until it is fixed.
-        judgeReading: wants("reading") && !handFixed("reading") && !learned.reading && (force || c.readingChecked !== rHash || !!stray),
-        judgeBack: wants("back") && !handFixed("back") && !learned.meaning && (force || c.backChecked !== bHash),
+        judgeReading: wants("reading") && !handFixed("reading") && (useMazii || (!learned.reading && (force || c.readingChecked !== rHash || !!stray))),
+        judgeBack: wants("back") && !handFixed("back") && (useMazii || (!learned.meaning && (force || c.backChecked !== bHash))),
         askReading: [],
       };
       if (p.judgeReading && stray) p.strayIssue = strayReadingIssue(rawReading, stray, reading);
@@ -1396,14 +1503,79 @@ export class FlashcardsService implements OnModuleInit {
           if (owner && owner.reading !== only1 && !rm.some((x) => x.reading === only1 && hvNorm(x.meaning) === mine)) p.readingClash = `cách đọc “${only1}” đúng với từ nhưng có vẻ thuộc nghĩa khác (gợi ý: ${owner.reading})`;
         }
       }
+      if (useMazii) {
+        p.askReading = [];
+        p.readingClash = undefined;
+      }
       plans.push(p);
     }
 
     await flushNorm();
     if (doNormalize) await saveLog(false);
 
+    // Stage 1b: look every word up on Mazii (a few at a time; a word repeats in a deck).
+    if (useMazii) {
+      const words = [...new Set(plans.map((p) => maziiKey(p.c.front)).filter(Boolean))];
+      const found = new Map<string, MaziiWord | null>();
+      let cursor = 0;
+      let streak = 0;
+      let down = false;
+      const lookup = async () => {
+        while (!down) {
+          if (!(await gate())) return;
+          const w = words[cursor++];
+          if (w === undefined) return;
+          try {
+            found.set(w, await fetchMaziiWord(w));
+            streak = 0;
+          } catch {
+            // Unreachable ≠ not found: the card is left as it is. Ten failures in a row = Mazii is down.
+            if (++streak >= 10) down = true;
+          }
+        }
+      };
+      await Promise.all(Array.from({ length: 4 }, () => lookup()));
+      if (job.cancelled) return;
+      if (down) {
+        job.status = "error";
+        job.error = "Không kết nối được Mazii — thử lại sau";
+        return;
+      }
+      for (const p of plans) p.mazii = found.get(maziiKey(p.c.front));
+      // A word Mazii does not have: see whether it is a cut-short word (怒鳴 for 怒鳴る), a misspelt kana word (たます for だます)
+      // or a word with an extra particle (永遠に for 永遠), and say what the right one probably is.
+      for (const p of plans) {
+        const w = maziiKey(p.c.front);
+        if (p.mazii !== null || job.cancelled) continue;
+        const kana = readingVariants(splitStrayReading(p.c.reading ?? "").kana.replace(/[\s・]/g, ""))[0];
+        if (kana && /\p{Script=Han}/u.test(w)) {
+          const hit = await fetchMaziiWord(kana).catch(() => null);
+          if (hit?.headword && hit.headword !== w && hit.headword.startsWith(w)) {
+            p.maziiHint = `có thể từ đúng là “${hit.headword}” (thiếu đuôi?)`;
+            continue;
+          }          // Same reading, a different word that shares a character with this one (人で for 人手).
+          if (hit?.headword && hit.headword !== w && hit.readings.some((r) => readingVariants(r).includes(kana)) && [...w].some((ch) => /\p{Script=Han}/u.test(ch) && hit.headword!.includes(ch))) {
+            p.maziiHint = `có thể từ đúng là “${hit.headword}” (cùng cách đọc ${kana}, sai chữ?)`;
+            continue;
+          }
+        }
+        if (kana && /^[\p{Script=Hiragana}\p{Script=Katakana}ー]+$/u.test(w) && readingVariants(w)[0] !== kana) {
+          const hit = await fetchMaziiWord(kana).catch(() => null);
+          if (hit && hit.readings.some((r) => readingVariants(r).includes(kana))) {
+            p.maziiHint = `có thể từ đúng là “${kana}”${hit.headword && hit.headword !== kana ? ` (${hit.headword})` : ""} (sai chính tả?)`;
+            continue;
+          }
+        }
+        const stem = w.match(/^(.*\p{Script=Han}.*?)(に|と|な|の|で|を|が|は)$/u)?.[1];
+        if (stem) {
+          const hit = await fetchMaziiWord(stem).catch(() => null);
+          if (hit) p.maziiHint = `Mazii có “${stem}”, không có “${w}” — có thể bỏ “${w.slice(stem.length)}”`;
+        }
+      }
+    }
+
     /** Stage 3: turn a card's local + AI verdicts into the warnings and fixes to store. */
-    const apply = (p: Plan, r: { reading?: string; hanViet?: string; meaning?: string } | undefined) => {
+    const apply = async (p: Plan, r: { reading?: string; hanViet?: string; meaning?: string } | undefined) => {
       const c = p.c;
       const out: string[] = [];
       const reading = c.reading ?? "";
@@ -1428,8 +1600,53 @@ export class FlashcardsService implements OnModuleInit {
       // The warnings this run re-judges for this card (an import warning about a meaning is not one of them).
       const rejudged = (t: string) => {
         const f = reviewFieldOf(t);
-        return f === "hanViet" ? wants("hanViet") : f === "reading" ? p.judgeReading : p.judgeBack && /\(AI gợi ý: /.test(t);
+        return f === "hanViet" ? wants("hanViet") : f === "reading" ? p.judgeReading : p.judgeBack && /\((?:AI|Mazii) gợi ý: |Mazii/.test(t);
       };
+      // Mazii: part of speech is taken as is; reading and meaning are checked, and filled in when blank.
+      const maziiSet: Record<string, unknown> = {};
+      if (useMazii && p.mazii !== undefined) {
+        const m = p.mazii;
+        const stt = c.order ?? cards.indexOf(c) + 1;
+        const w = maziiKey(c.front);
+        const said: string[] = [];
+        if (m === null) {
+          if (p.judgeReading || p.judgeBack) {
+            const guess = this.morph && /\p{Script=Han}/u.test(w) ? (await this.morph.analyze(w).catch(() => null))?.reading : "";
+            out.push(`cách đọc “${reading}”: không tra được “${w}” trên Mazii${p.maziiHint ? ` — ${p.maziiHint}` : ""}, cần cập nhật cách đọc, từ loại và nghĩa thủ công${guess && !p.maziiHint ? ` (gợi ý: ${guess})` : ""}`);
+          }
+        } else {
+          const cur = c.partsOfSpeech ?? [];
+          if (m.parts.length > 0 && !(m.parts.length === cur.length && m.parts.every((x, i) => cur[i] === x))) {
+            maziiSet.partsOfSpeech = m.parts;
+            maziiSet.partOfSpeech = primaryPos(m.parts);
+            said.push(`từ loại ${m.parts.join(" + ")}`);
+          }
+          const kataWord = /^[\p{Script=Katakana}ー・\s]+$/u.test(w);
+          if (p.judgeReading && !kataWord && m.readings.length > 0) {
+            const mine = readingVariants(splitStrayReading(reading).kana);
+            const theirs = m.readings.flatMap((r) => readingVariants(r));
+            if (mine.length === 0) {
+              maziiSet.reading = m.readings[0];
+              said.push(`cách đọc ${m.readings[0]}`);
+            } else if (!mine.some((v) => theirs.includes(v))) {
+              out.push(`cách đọc “${reading}” có thể chưa đúng (Mazii gợi ý: ${m.readings.join("、")})`);
+            }
+          }
+          if (p.judgeBack && m.means.length > 0) {
+            const stop = new Set(["su", "cai", "viec", "nguoi", "mot", "cac", "nhung", "de", "va", "la", "co", "khong", "duoc", "cua", "thi", "ma"]);
+            const toks = (t: string) => hvNorm(t).split(/[^a-z0-9]+/).filter((x) => x.length >= 2 && !stop.has(x));
+            const suggested = m.means.slice(0, 2).join("; ");
+            if (!meaning.trim()) {
+              maziiSet.back = suggested;
+              said.push("nghĩa");
+            } else {
+              const theirs = new Set(m.means.flatMap(toks));
+              if (!toks(meaning).some((x) => theirs.has(x))) out.push(`nghĩa “${meaning}” có thể chưa sát (Mazii gợi ý: ${suggested})`);
+            }
+          }
+          if (said.length > 0) normFlags.push({ stt, word: w, issue: `cập nhật từ Mazii: ${said.join(", ")}` });
+        }
+      }
       const kept = (c.reviewIssues ?? []).filter((t) => !rejudged(t));
       const next = [...kept, ...out.filter((t) => !kept.some((k) => reviewFieldOf(k) === reviewFieldOf(t)))];
       if (out.length > 0) job.flagged++;
@@ -1449,20 +1666,21 @@ export class FlashcardsService implements OnModuleInit {
       const set: Record<string, unknown> = {};
       if (next.join("\n") !== (c.reviewIssues ?? []).join("\n")) set.reviewIssues = next;
       if (fixedHv !== null) set.hanViet = fixedHv;
+      Object.assign(set, maziiSet);
       if (p.judgeReading && c.readingChecked !== p.rHash) set.readingChecked = p.rHash;
       if (p.judgeBack && c.backChecked !== p.bHash) set.backChecked = p.bHash;
       return Object.keys(set).length > 0 ? { updateOne: { filter: { _id: c._id }, update: { $set: set } } } : null;
     };
 
     const flush = async (batch: Plan[], got?: Map<number, { reading?: string; hanViet?: string; meaning?: string }>) => {
-      const ops = batch.map((p, n) => apply(p, got?.get(n + 1))).filter((o) => o !== null);
+      const ops = (await Promise.all(batch.map((p, n) => apply(p, got?.get(n + 1))))).filter((o) => o !== null);
       if (ops.length > 0) await this.card.bulkWrite(ops);
       job.done += batch.length;
       if (changes.length > 0 || flags.reading.length > 0 || flags.back.length > 0) await saveLog(false);
     };
 
     // Stage 2a: cards the AI is not needed for are finished at once, in bulk.
-    const needsAi = (p: Plan) => p.askReading.length > 0 || (p.judgeBack && !!p.c.back);
+    const needsAi = (p: Plan) => !useMazii && (p.askReading.length > 0 || (p.judgeBack && !!p.c.back));
     const local = plans.filter((p) => !needsAi(p));
     for (let i = 0; i < local.length; i += 100) {
       if (!(await gate())) return;

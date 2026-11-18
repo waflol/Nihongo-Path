@@ -116,17 +116,19 @@ export function iAdjectiveForms(term: string): string[] {
  * part of speech); when unknown, both verb and adjective forms are tried.
  * Nouns and な-adjectives return only the word itself.
  */
-export function conjugatedForms(term: string, pos: "verb" | "noun" | "adjective" | "adjective-na" | "phrase" | null): string[] {
+export function conjugatedForms(term: string, pos: "verb" | "noun" | "adjective" | "adjective-na" | "adverb" | "phrase" | null, suru = false): string[] {
   const t = term.trim();
   if (!t) return [];
+  // A noun that takes する (乱暴 → 乱暴します, 乱暴された …) also counts as its する-verb.
+  if (suru) return [...new Set([...conjugatedForms(t, pos), ...verbForms(t + "する")])];
   if (pos === "adjective-na") return [t];
   if (pos === "verb") return verbForms(t);
   if (pos === "adjective") return iAdjectiveForms(t);
-  if (pos === "noun") return [t];
+  if (pos === "noun" || pos === "adverb") return [t];
   return [...new Set([...verbForms(t), ...iAdjectiveForms(t)])];
 }
 
 /** True when `sentence` contains the word in any grammatical form (long enough to mean something). */
-export function sentenceUsesForm(sentence: string, term: string, pos: "verb" | "noun" | "adjective" | "adjective-na" | "phrase" | null): boolean {
-  return conjugatedForms(term, pos).some((f) => [...f].length >= 2 && sentence.includes(f));
+export function sentenceUsesForm(sentence: string, term: string, pos: "verb" | "noun" | "adjective" | "adjective-na" | "adverb" | "phrase" | null, suru = false): boolean {
+  return conjugatedForms(term, pos, suru).some((f) => [...f].length >= 2 && sentence.includes(f));
 }

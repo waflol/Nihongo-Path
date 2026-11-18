@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { sentenceUsesForm } from "./japanese-forms.js";
+import { conjugatedForms, sentenceUsesForm } from "./japanese-forms.js";
 
 const v = (s: string, t: string) => sentenceUsesForm(s, t, "verb");
 const a = (s: string, t: string) => sentenceUsesForm(s, t, "adjective");
@@ -42,5 +42,13 @@ describe("adjective forms", () => {
 
   it("rejects another adjective", () => {
     expect(a("安くない。", "高い")).toBe(false);
+  });
+});
+
+describe("nouns that take する", () => {
+  it("乱暴 gains its する-verb forms only when flagged", () => {
+    expect(conjugatedForms("乱暴", "noun", true)).toEqual(expect.arrayContaining(["乱暴", "乱暴します", "乱暴され", "乱暴する"]));
+    expect(conjugatedForms("乱暴", "noun")).toEqual(["乱暴"]);
+    expect(sentenceUsesForm("子どもに乱暴します。", "乱暴", "adjective-na", true)).toBe(true);
   });
 });

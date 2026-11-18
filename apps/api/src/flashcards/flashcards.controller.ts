@@ -29,6 +29,7 @@ import { CurrentUser } from "../auth/decorators/current-user.decorator.js";
 import type { AuthUser } from "../auth/auth.types.js";
 import { FlashcardsService } from "./flashcards.service.js";
 import { ReadingService } from "./reading.service.js";
+import { PART_TAGS } from "../import/parts-of-speech.js";
 import { ImageSuggestService } from "./image-suggest.service.js";
 import {
   CreateCardDto,
@@ -59,6 +60,7 @@ class PageCardsQuery {
   @IsOptional() @IsString() missing?: string;
   @IsOptional() @IsString() card?: string;
   @IsOptional() @IsString() review?: string;
+  @IsOptional() @IsIn(PART_TAGS) pos?: string;
 }
 
 /** Which kind of warning a whole-deck re-check judges (all three when omitted). */
@@ -83,6 +85,7 @@ class CardFilterDto {
   @IsOptional() @IsString() q?: string;
   @IsOptional() @IsString() tag?: string;
   @IsOptional() missing?: boolean;
+  @IsOptional() @IsIn(PART_TAGS) pos?: string;
 }
 
 class SynonymQuizDto {
@@ -406,6 +409,7 @@ export class FlashcardsController {
       q: query.q,
       tag: query.tag,
       missing: query.missing === "1" || query.missing === "true",
+      pos: query.pos,
       card: query.card,
       review: query.review === "hanViet" || query.review === "reading" || query.review === "back" ? query.review : query.review === "1" || query.review === "true" ? "all" : undefined,
     });

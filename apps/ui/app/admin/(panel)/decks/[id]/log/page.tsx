@@ -4,11 +4,15 @@ import { HanVietLogPanel } from "@/components/learn/han-viet-log-panel";
 
 export const metadata: Metadata = { title: "Log kiểm tra", robots: { index: false, follow: false } };
 
-export default async function AdminHanVietLogPage({ params }: { params: Promise<{ id: string }> }) {
+async function Panel({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  return <HanVietLogPanel deckId={id} mode="admin" />;
+}
+
+export default function AdminHanVietLogPage({ params }: { params: Promise<{ id: string }> }) {
   return (
     <Suspense fallback={null}>
-      <HanVietLogPanel deckId={id} mode="admin" />
+      <Panel params={params} />
     </Suspense>
   );
 }

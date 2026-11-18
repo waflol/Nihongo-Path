@@ -33,6 +33,7 @@ import {
   type Table,
 } from "./parsers/types.js";
 import { isHiraganaWord, isKatakanaWord, normalizeWord, stripNa, stripNaReading, toHiragana, toKatakana } from "./normalize-word.js";
+import { parsePartsOfSpeech, primaryPos } from "./parts-of-speech.js";
 import { parseCsv } from "./parsers/csv.js";
 import { parseXlsx } from "./parsers/xlsx.js";
 import { ExampleSuggestService } from "../flashcards/example-suggest.service.js";
@@ -90,18 +91,11 @@ export interface ColumnMapping {
   order?: string;
 }
 
-type Pos = "verb" | "noun" | "adjective" | "adjective-na" | "phrase" | "";
+type Pos = "verb" | "noun" | "adjective" | "adjective-na" | "adverb" | "phrase" | "";
 
 /** Accepts English, Vietnamese, Japanese and short forms. */
 function normalizePos(raw: string | undefined): Pos | null {
-  const v = (raw ?? "").trim().toLowerCase();
-  if (!v) return null;
-  if (/^(verb|v|động từ|dong tu|động|動詞)$/.test(v)) return "verb";
-  if (/^(noun|n|danh từ|danh tu|danh|名詞)$/.test(v)) return "noun";
-  if (/^(adjective-na|na-adjective|adj-na|na|tính từ な|tính từ na|tính từ -na|tinh tu na|形容動詞)$/.test(v)) return "adjective-na";
-  if (/^(adjective|adjective-i|i-adjective|adj-i|adj|a|i|tính từ|tính từ い|tính từ i|tinh tu|tính|形容詞)$/.test(v)) return "adjective";
-  if (/^(phrase|expr|expression|idiom|cụm từ|cum tu|cụm|thành ngữ|慣用句|連語|句)$/.test(v)) return "phrase";
-  return null;
+  return primaryPos(parsePartsOfSpeech(raw).parts) || null;
 }
 
 /** "a\nb" / "a|b" → ["a","b"]. */
@@ -805,6 +799,8 @@ export class ImportService implements OnApplicationBootstrap {
     meaning: string;
     reading: string;
     partOfSpeech: Pos;
+    /** A noun that also takes する. */
+    suru?: boolean;
     /** The user's pick for this run (only this AI service / items per request). */
     ai?: { serviceId?: string; batch?: number };
     /** The card's number (STT) in the deck, for the log. */
@@ -856,7 +852,7 @@ export class ImportService implements OnApplicationBootstrap {
       for (const d of decks) {
         const cards = await this.card
           .find({ deck: d._id, examples: { $size: 0 } })
-          .select("front back reading partOfSpeech")
+          .select("front back reading partOfSpeech partsOfSpeech")
           .exec();
         await this.deck
           .updateOne({ _id: d._id }, { $set: { exampleTotal: cards.length, exampleDone: 0 } })
@@ -869,6 +865,7 @@ export class ImportService implements OnApplicationBootstrap {
             meaning: c.back,
             reading: c.reading ?? "",
             partOfSpeech: (c.partOfSpeech ?? "") as Pos,
+            suru: (c.partsOfSpeech ?? []).includes("noun-suru"),
           })),
         );
         if (cards.length === 0) await this.finishDeckExamples(d._id);
@@ -909,7 +906,7 @@ export class ImportService implements OnApplicationBootstrap {
       drop();
       const missing = await this.card
         .find({ deck: deck._id, examples: { $size: 0 } })
-        .select("front back reading partOfSpeech order")
+        .select("front back reading partOfSpeech partsOfSpeech order")
         .exec();
       if (missing.length === 0) {
         await this.finishDeckExamples(deck._id);
@@ -930,6 +927,7 @@ export class ImportService implements OnApplicationBootstrap {
           meaning: c.back,
           reading: c.reading ?? "",
           partOfSpeech: (c.partOfSpeech ?? "") as Pos,
+          suru: (c.partsOfSpeech ?? []).includes("noun-suru"),
           ai,
           order: c.order,
         })),
@@ -957,7 +955,7 @@ export class ImportService implements OnApplicationBootstrap {
     // resume
     const cards = await this.card
       .find({ deck: deck._id, examples: { $size: 0 } })
-      .select("front back reading partOfSpeech")
+      .select("front back reading partOfSpeech partsOfSpeech")
       .exec();
     await this.deck
       .updateOne(
@@ -981,6 +979,7 @@ export class ImportService implements OnApplicationBootstrap {
           meaning: c.back,
           reading: c.reading ?? "",
           partOfSpeech: (c.partOfSpeech ?? "") as Pos,
+          suru: (c.partsOfSpeech ?? []).includes("noun-suru"),
         })),
       );
     }
@@ -1024,6 +1023,7 @@ export class ImportService implements OnApplicationBootstrap {
           meaning: job.meaning,
           reading: job.reading,
           partOfSpeech: job.partOfSpeech,
+          suru: job.suru,
           ai: job.ai,
         });
         const log = this.exampleLogs.get(String(job.deck));
@@ -1074,13 +1074,14 @@ export class ImportService implements OnApplicationBootstrap {
     row: Record<string, string>,
     mapping: ColumnMapping,
     front: string,
-  ): Promise<{ reading: string; partOfSpeech: Pos; examples: CardExample[]; hanViet: string; order?: number }> {
+  ): Promise<{ reading: string; partOfSpeech: Pos; partsOfSpeech: string[]; examples: CardExample[]; hanViet: string; order?: number }> {
     let reading = mapping.reading ? (row[mapping.reading] ?? "").trim() : "";
     // A katakana word's reading is katakana too.
     if (reading && isKatakanaWord(front)) reading = toKatakana(reading);
     // A hiragana word (no kanji) reads in hiragana.
     else if (reading && isHiraganaWord(front)) reading = toHiragana(reading);
-    let pos: Pos = (mapping.partOfSpeech ? normalizePos(row[mapping.partOfSpeech]) : null) ?? "";
+    const partsOfSpeech = mapping.partOfSpeech ? parsePartsOfSpeech(row[mapping.partOfSpeech]).parts : [];
+    let pos: Pos = primaryPos(partsOfSpeech);
     // A blank reading: reuse the one already in the database, else ask the AI, else the analyser.
     if (!reading && KANJI_RE.test(front)) reading = (await this.knownOrAiReading(front)) ?? "";
     if (!reading || !pos) {
@@ -1104,7 +1105,7 @@ export class ImportService implements OnApplicationBootstrap {
     const hanViet = this.hanVietOf(front, givenHv).value;
     const rawNo = mapping.order ? (row[mapping.order] ?? "").trim().replace(/\.$/, "") : "";
     const order = /^\d{1,6}$/.test(rawNo) ? Number(rawNo) : undefined;
-    return { reading, partOfSpeech: pos, examples, hanViet, order };
+    return { reading, partOfSpeech: pos, partsOfSpeech, examples, hanViet, order };
   }
 
   private readonly readingCache = new Map<string, string | null>();
@@ -1893,6 +1894,7 @@ export class ImportService implements OnApplicationBootstrap {
       dedupeKey: string;
       reading: string;
       partOfSpeech: Pos;
+      partsOfSpeech: string[];
       examples: CardExample[];
       hanViet: string;
       order?: number;
@@ -1934,6 +1936,7 @@ export class ImportService implements OnApplicationBootstrap {
         dedupeKey: key,
         reading: extra.reading,
         partOfSpeech: extra.partOfSpeech,
+        partsOfSpeech: extra.partsOfSpeech,
         examples: extra.examples,
         hanViet: extra.hanViet,
         order: extra.order,
@@ -2036,6 +2039,7 @@ export class ImportService implements OnApplicationBootstrap {
                 tags: doc.tags,
                 reading: doc.reading,
                 partOfSpeech: doc.partOfSpeech,
+                partsOfSpeech: doc.partsOfSpeech,
                 examples: doc.examples,
                 hanViet: doc.hanViet,
                 order: doc.order,
@@ -2068,6 +2072,7 @@ export class ImportService implements OnApplicationBootstrap {
               meaning: src.back,
               reading: src.reading,
               partOfSpeech: src.partOfSpeech,
+              suru: src.partsOfSpeech.includes("noun-suru"),
             }
           : null;
       })

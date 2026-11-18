@@ -13,6 +13,7 @@ import {
 } from "class-validator";
 import { Type } from "class-transformer";
 import { PARTS_OF_SPEECH, type PartOfSpeech } from "./../reading.service.js";
+import { PART_TAGS, type PartTag } from "../../import/parts-of-speech.js";
 import { DECK_STATUSES, type DeckStatus } from "../schemas/deck.schema.js";
 
 export class ReadingQueryDto {
@@ -179,6 +180,19 @@ export class CreateCardDto {
   @IsIn([...PARTS_OF_SPEECH, ""])
   partOfSpeech?: PartOfSpeech | "";
 
+  @ApiPropertyOptional({ description: "All parts of speech, first = primary; `noun-suru` = noun that takes する" })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(6)
+  @IsIn(PART_TAGS, { each: true })
+  partsOfSpeech?: PartTag[];
+
+  @ApiPropertyOptional({ description: "Ghi chú / từ đồng nghĩa" })
+  @IsOptional()
+  @IsString()
+  @MaxLength(300)
+  note?: string;
+
   @ApiPropertyOptional({ type: [CardExampleDto] })
   @IsOptional()
   @IsArray()
@@ -264,6 +278,19 @@ export class UpdateCardDto {
   @IsOptional()
   @IsIn([...PARTS_OF_SPEECH, ""])
   partOfSpeech?: PartOfSpeech | "";
+
+  @ApiPropertyOptional({ description: "All parts of speech, first = primary; `noun-suru` = noun that takes する" })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(6)
+  @IsIn(PART_TAGS, { each: true })
+  partsOfSpeech?: PartTag[];
+
+  @ApiPropertyOptional({ description: "Ghi chú / từ đồng nghĩa" })
+  @IsOptional()
+  @IsString()
+  @MaxLength(300)
+  note?: string;
 
   @ApiPropertyOptional({ type: [CardExampleDto] })
   @IsOptional()

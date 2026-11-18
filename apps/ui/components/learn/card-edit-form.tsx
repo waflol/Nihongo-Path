@@ -3,7 +3,7 @@
 import { useConfirm } from "@/components/learn/use-confirm";
 import { useState, type FormEvent } from "react";
 import { ImageField } from "@/components/learn/image-field";
-import { ReadingFields, type PartOfSpeech } from "@/components/learn/reading-fields";
+import { ReadingFields, buildParts, type PartOfSpeech } from "@/components/learn/reading-fields";
 import {
   ExampleFields,
   cleanExampleInputs,
@@ -18,6 +18,8 @@ export interface EditableCard {
   image?: string;
   imageCredit?: string;
   partOfSpeech?: string;
+  partsOfSpeech?: string[];
+  note?: string;
   examples?: { sentence: string; translation?: string }[];
   tags?: string[];
 }
@@ -47,10 +49,12 @@ export function CardEditForm({
   const [imageCredit, setImageCredit] = useState(card.imageCredit ?? "");
   const [reading, setReading] = useState(card.reading ?? "");
   const [partOfSpeech, setPartOfSpeech] = useState<PartOfSpeech | "">(
-    card.partOfSpeech === "verb" || card.partOfSpeech === "noun" || card.partOfSpeech === "adjective" || card.partOfSpeech === "phrase"
+    card.partOfSpeech === "verb" || card.partOfSpeech === "noun" || card.partOfSpeech === "adjective" || card.partOfSpeech === "adjective-na" || card.partOfSpeech === "adverb" || card.partOfSpeech === "phrase"
       ? card.partOfSpeech
       : "",
   );
+  const [extraParts, setExtraParts] = useState<string[]>((card.partsOfSpeech ?? []).filter((p) => p !== card.partOfSpeech));
+  const [note, setNote] = useState(card.note ?? "");
   const [examples, setExamples] = useState<ExampleInput[]>(
     card.examples && card.examples.length > 0
       ? card.examples.map((e) => ({ sentence: e.sentence, translation: e.translation ?? "" }))
@@ -73,6 +77,8 @@ export function CardEditForm({
         image,
         imageCredit,
         partOfSpeech,
+        partsOfSpeech: buildParts(partOfSpeech, extraParts),
+        note: note.trim(),
         examples: cleanExampleInputs(examples),
         tags: tags.split(/[;,]/).map((t) => t.trim()).filter(Boolean),
       }),
@@ -115,8 +121,19 @@ export function CardEditForm({
           partOfSpeech={partOfSpeech}
           onReading={setReading}
           onPartOfSpeech={setPartOfSpeech}
+          extraParts={extraParts}
+          onExtraParts={setExtraParts}
           autoOnMount={false}
         />
+        <label className="block text-sm sm:col-span-2">
+          <span className="text-[var(--muted-foreground)]">Ghi chú / từ đồng nghĩa (tuỳ chọn)</span>
+          <input
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            className={`mt-1 ${inputClass}`}
+            placeholder="vd: 加える"
+          />
+        </label>
         <ImageField
           term={front}
           image={image}

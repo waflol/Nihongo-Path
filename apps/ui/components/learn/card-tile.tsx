@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { isJlptLevel, LevelBadge } from "@/components/learn/level-select";
 import { hanViet } from "@/lib/han-viet";
 import { Furigana } from "@/components/learn/furigana";
-import { PosChip, displayFront } from "@/components/learn/reading-fields";
+import { PosChips, displayFront } from "@/components/learn/reading-fields";
 
 export interface TileCard {
   _id: string;
@@ -14,6 +14,8 @@ export interface TileCard {
   image?: string;
   imageCredit?: string;
   partOfSpeech?: string;
+  partsOfSpeech?: string[];
+  note?: string;
   hanViet?: string;
   examples?: { sentence: string; translation?: string; source?: string }[];
   tags?: string[];
@@ -29,6 +31,7 @@ const ACCENT: Record<string, string> = {
   noun: "bg-[#22c55e]",
   adjective: "bg-[#f59e0b]",
   "adjective-na": "bg-[#e11d48]",
+  adverb: "bg-[#06b6d4]",
   phrase: "bg-[#a855f7]",
 };
 
@@ -104,10 +107,15 @@ export function CardTile({
                 </p>
               ) : null}
             </div>
-            <PosChip pos={card.partOfSpeech} />
+            <PosChips pos={card.partOfSpeech} parts={card.partsOfSpeech} />
           </div>
 
           <p className="mt-2 text-base font-medium text-[var(--foreground)]">{card.back}</p>
+          {card.note ? (
+            <p lang="ja" className="mt-0.5 text-xs text-[var(--muted-foreground)]">
+              Đồng nghĩa: {card.note}
+            </p>
+          ) : null}
 
           {card.examples && card.examples.length > 0 ? (
             <ul className="mt-3 space-y-1.5 rounded-xl bg-[var(--background-1)] px-3 py-2.5">

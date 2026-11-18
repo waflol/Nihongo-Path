@@ -33,6 +33,8 @@ export interface ExampleSuggestInput {
   reading?: string;
   /** Verb / noun / adjective, when known. */
   partOfSpeech?: PartOfSpeech | "";
+  /** A noun that also takes する (乱暴, 売り買い): their する-verb forms count as the word. */
+  suru?: boolean;
   /** The user's pick for this run: only this AI service, and/or this many items per request. */
   ai?: { serviceId?: string; batch?: number };
 }
@@ -148,7 +150,7 @@ export class ExampleSuggestService {
       const meanings = this.meaningWords(input.meaning ?? "");
 
       if (await this.hasLocalIndex()) {
-        return await this.fromLocal(term, termTokens, pos, reading, meanings);
+        return await this.fromLocal(term, termTokens, pos, reading, meanings, input.suru);
       }
 
       // Verbs/adjectives are conjugated (食べる → 食べます): search by the stem
@@ -170,7 +172,7 @@ export class ExampleSuggestService {
               .find((t) => t.lang === "vie" && t.text?.trim())?.text;
             if (!vi) continue;
             if (meanings.length > 0 && !this.mentionsMeaning(vi, meanings)) continue;
-            if (!(await this.usesWord(sentence, termTokens, pos, reading))) continue;
+            if (!(await this.usesWord(sentence, termTokens, pos, reading, input.suru))) continue;
 
             let score = -Math.abs(sentence.length - 12);
             if (/[。！？]$/.test(sentence)) score += 2;
@@ -200,6 +202,7 @@ export class ExampleSuggestService {
     pos: PartOfSpeech | null,
     reading: string,
     meanings: string[],
+    suru = false,
   ): Promise<ExampleSuggestion | null> {
     const docs = await this.local!
       .find({ tokens: { $all: this.contentForms(termTokens) }, hasVi: true })
@@ -211,7 +214,7 @@ export class ExampleSuggestService {
       const sentence = d.ja.trim();
       if (!sentence || sentence === term || sentence.length > 40) continue;
       if (meanings.length > 0 && !this.mentionsMeaning(d.vi ?? "", meanings)) continue;
-      if (!(await this.usesWord(sentence, termTokens, pos, reading))) continue;
+      if (!(await this.usesWord(sentence, termTokens, pos, reading, suru))) continue;
       let score = -Math.abs(sentence.length - 12);
       if (/[。！？]$/.test(sentence)) score += 2;
       if (sentence.length < 5) score -= 6;
@@ -281,7 +284,7 @@ export class ExampleSuggestService {
       for (const d of docs) {
         const sentence = d.ja.trim();
         if (!sentence || sentence === term || sentence.length > 40) continue;
-        if (!(await this.usesWord(sentence, termTokens, pos, reading))) continue;
+        if (!(await this.usesWord(sentence, termTokens, pos, reading, input.suru))) continue;
         let score = -Math.abs(sentence.length - 12);
         if (/[。！？]$/.test(sentence)) score += 2;
         if (sentence.length < 5) score -= 6;
@@ -319,7 +322,7 @@ export class ExampleSuggestService {
           const r = await this.ai.run({ kind: "write", term, reading, meaning, pos: pos ?? "", skip: [...tried], opts: input.ai });
           if (!r) break; // no further service can answer
           const sentence = r.ja?.trim() ?? "";
-          if ((await this.checkAiSentence(term, input.reading, sentence)).ok) {
+          if ((await this.checkAiSentence(term, input.reading, sentence, input.suru)).ok) {
             return { sentence, translation: r.vi, source: "ai" };
           }
           if (!r.service) break;
@@ -342,6 +345,7 @@ export class ExampleSuggestService {
     rawTerm: string,
     reading: string | undefined,
     sentence: string,
+    suru = false,
   ): Promise<{ ok: boolean; reason: string }> {
     const term = rawTerm.replace(/[（(][^）)]*[）)]/g, "").trim();
     const s = sentence.trim();
@@ -349,10 +353,10 @@ export class ExampleSuggestService {
     if ([...s].length > 40) return { ok: false, reason: `Câu quá dài (${[...s].length} ký tự, tối đa 40)` };
     if (this.wordForms(term, reading).some((f) => s.includes(f))) return { ok: true, reason: "" };
     // Passive / causative / potential / adverbial … forms of the word.
-    if (this.wordVariants(term).some((v) => sentenceUsesForm(s, v, null))) return { ok: true, reason: "" };
+    if (this.wordVariants(term).some((v) => sentenceUsesForm(s, v, null, suru))) return { ok: true, reason: "" };
     try {
       const termTokens = (await this.morph.tokens(term)).filter((t) => t.pos !== "記号");
-      if (termTokens.length > 0 && (await this.usesWord(s, termTokens, null, ""))) return { ok: true, reason: "" };
+      if (termTokens.length > 0 && (await this.usesWord(s, termTokens, null, "", suru))) return { ok: true, reason: "" };
     } catch {
       /* analyser unavailable → judged by the text alone */
     }
@@ -403,6 +407,7 @@ export class ExampleSuggestService {
     termTokens: { surface_form: string; basic_form: string; pos: string }[],
     pos: PartOfSpeech | null,
     reading: string,
+    suru = false,
   ): Promise<boolean> {
     const tokens = await this.morph.tokens(sentence);
     const base = (t: { surface_form: string; basic_form: string }) =>
@@ -435,9 +440,9 @@ export class ExampleSuggestService {
     // The analyser lemmatises most inflection (passive, causative, adverbial く),
     // but not all of it (potential 書ける is its own entry): fall back to the
     // grammar-generated forms for verbs and い-adjectives.
-    if (pos === "verb" || pos === "adjective") {
+    if (suru || pos === "verb" || pos === "adjective") {
       const term = termTokens.map((t) => t.surface_form).join("");
-      if (sentenceUsesForm(sentence, term, pos)) return true;
+      if (sentenceUsesForm(sentence, term, pos, suru)) return true;
     }
     return false;
   }

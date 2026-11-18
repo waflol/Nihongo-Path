@@ -75,8 +75,16 @@ export class Flashcard {
   imageCredit?: string;
 
   /** Only verb / noun / adjective are distinguished. */
-  @Prop({ type: String, enum: ["verb", "noun", "adjective", "adjective-na", "phrase", ""], default: "" })
-  partOfSpeech?: "verb" | "noun" | "adjective" | "adjective-na" | "phrase" | "";
+  @Prop({ type: String, enum: ["verb", "noun", "adjective", "adjective-na", "adverb", "phrase", ""], default: "" })
+  partOfSpeech?: "verb" | "noun" | "adjective" | "adjective-na" | "adverb" | "phrase" | "";
+
+  /**
+   * Every part of speech the word has, first = the primary one (`partOfSpeech`).
+   * `noun-suru` = a noun that also takes する (乱暴, 売り買い); it comes with `noun`.
+   * Empty = only `partOfSpeech` is known.
+   */
+  @Prop({ type: [String], enum: ["verb", "noun", "noun-suru", "adjective", "adjective-na", "adverb", "phrase"], default: [] })
+  partsOfSpeech?: string[];
 
   @Prop({
     type: [
@@ -90,6 +98,10 @@ export class Flashcard {
     default: [],
   })
   examples: CardExample[];
+
+  /** Explanation that came after the word in the source (`成績が上がる(=よくなる)` → "よくなる"). */
+  @Prop({ type: String, trim: true, default: "" })
+  note?: string;
 
   /** Âm Hán Việt supplied by the source (e.g. "DUY TRÌ"); empty = derive. */
   @Prop({ type: String, trim: true, default: "" })

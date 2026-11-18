@@ -4,7 +4,7 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { seededShuffle } from "./quiz-utils";
-import { PosChip, displayFront } from "@/components/learn/reading-fields";
+import { PosChips, displayFront } from "@/components/learn/reading-fields";
 import { ConfirmDialog } from "@/components/learn/confirm-dialog";
 import { CardReportDialog } from "@/components/learn/card-report-dialog";
 import { SentenceFurigana } from "@/components/learn/furigana";
@@ -155,6 +155,8 @@ interface QueueItem {
   image?: string;
   imageCredit?: string;
   partOfSpeech?: string;
+  partsOfSpeech?: string[];
+  note?: string;
   hanViet?: string;
   examples?: { sentence: string; translation?: string }[];
   bucket: "new" | "due";
@@ -1019,6 +1021,8 @@ function StudySessionInner({ mode }: { mode: "learn" | "review" }) {
               image={current.image}
               imageCredit={current.imageCredit}
               partOfSpeech={current.partOfSpeech}
+              partsOfSpeech={current.partsOfSpeech}
+              note={current.note}
               hanVietText={current.hanViet}
               examples={current.examples}
               showReading={showReading}
@@ -1222,6 +1226,8 @@ function LearnCard({
   image,
   imageCredit,
   partOfSpeech,
+  partsOfSpeech,
+  note,
   hanVietText,
   examples,
   showReading,
@@ -1239,6 +1245,8 @@ function LearnCard({
   image?: string;
   imageCredit?: string;
   partOfSpeech?: string;
+  partsOfSpeech?: string[];
+  note?: string;
   hanVietText?: string;
   examples?: { sentence: string; translation?: string }[];
   showReading: boolean;
@@ -1296,7 +1304,7 @@ function LearnCard({
       </div>
       {partOfSpeech && (
         <div className="mt-3">
-          <PosChip pos={partOfSpeech} />
+          <PosChips pos={partOfSpeech} parts={partsOfSpeech} />
         </div>
       )}
       {hint("text-white/70", "Nhấn Space / bấm vào thẻ để lật")}
@@ -1315,12 +1323,17 @@ function LearnCard({
       )}
       {partOfSpeech && (
         <div className="mb-2">
-          <PosChip pos={partOfSpeech} />
+          <PosChips pos={partOfSpeech} parts={partsOfSpeech} />
         </div>
       )}
       <p className="break-words text-2xl font-semibold text-[var(--foreground)] sm:text-3xl">
         {back}
       </p>
+      {note && (
+        <p lang="ja" className="mt-1 text-sm text-[var(--muted-foreground)]">
+          Đồng nghĩa: {note}
+        </p>
+      )}
       {showExamples && examples && examples.length > 0 && (
               <div className="mt-4 w-full max-w-md space-y-1.5 text-left">
                 {examples.map((ex, i) => (
