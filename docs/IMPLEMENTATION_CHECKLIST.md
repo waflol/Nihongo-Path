@@ -174,11 +174,11 @@ Test case sinh ra: `T-P1-01` … `T-P1-06` (xem backlog).
 | ID | Task | Phụ thuộc | File/module | Hoàn thành khi | Kiểm thử | TT |
 |---|---|---|---|---|---|---|
 | P2-UI-01 | Trang `/login` nối API thật (Preline form, trạng thái loading/error) | P2-AUTH-04 | `app/login/page.tsx`, `components/auth/*` | Đăng nhập thành công → chuyển trang; lỗi hiển thị rõ | thao tác trình duyệt | `[x]` |
-| P2-UI-02 | Trang đăng ký (nếu provider hỗ trợ) | P2-UI-01 | `app/register/page.tsx` | Tạo được tài khoản | thao tác trình duyệt | `[ ]` |
+| P2-UI-02 | Trang đăng ký (nếu provider hỗ trợ) | P2-UI-01 | `app/register/page.tsx` | Tạo được tài khoản | thao tác trình duyệt | `[x]` |
 | P2-UI-03 | Bảo vệ route riêng tư (`/learn`, `/admin`) ở tầng server | P2-AUTH-05 | `proxy.ts` (thay `middleware.ts`), `gate.tsx` | Chưa đăng nhập → redirect `/login` | mở URL khi chưa auth | `[x]` |
-| P2-UI-04 | Màn hình admin CRUD nội dung (Preline table + form + confirm xoá) | P2-CONTENT-04 | `app/admin/content/*` | Tạo/sửa/xoá hoạt động; có empty/error state | thao tác trình duyệt | `[ ]` |
+| P2-UI-04 | Màn hình admin CRUD nội dung (Preline table + form + confirm xoá) | P2-CONTENT-04 | `app/admin/content/*` | Tạo/sửa/xoá hoạt động; có empty/error state | thao tác trình duyệt | `[x]` |
 | P2-UI-05 | Chiến lược lưu token (httpOnly cookie vs memory) + refresh | P2-AUTH-05 | `lib/session.ts`, `app/api/auth/*` (thay `lib/api-client.ts`) | Không lưu refresh token ở nơi script đọc được | review code | `[x]` |
-| P2-UI-06 | Header hiển thị trạng thái đăng nhập + menu tài khoản | P2-UI-01 | `components/site-header.tsx` | Đổi trạng thái đúng sau login/logout | thao tác trình duyệt | `[ ]` |
+| P2-UI-06 | Header hiển thị trạng thái đăng nhập + menu tài khoản | P2-UI-01 | `components/site-header.tsx` | Đổi trạng thái đúng sau login/logout | thao tác trình duyệt | `[x]` |
 
 ### 2.4. Tài liệu
 
@@ -219,10 +219,22 @@ chặn route, CRUD nội dung. Test case: `T-P2-01` … `T-P2-10`.
 >    omitted. Đã tách `PartialType` DTO update + `omitUndefined`, giữ nguyên field
 >    không gửi, `[]` mới xoá link.
 >
-> **Còn mở (chưa tick, trung thực):** P2-UI-02 (trang register chưa thao tác
-> trình duyệt), P2-UI-04 (màn hình admin CRUD trong trình duyệt chưa verify),
-> P2-UI-06 (menu tài khoản Preline vừa viết lại — cần bấm thử lại trong trình
-> duyệt). `T-P2-01…10` đã có bằng chứng live ở trên.
+> **Bằng chứng trình duyệt (18/11/2026):** P2-UI-02/04/06 đã verify trên trình
+> duyệt thật (Chromium headless, app chạy dev qua pm2, UI :3001 + API :3000,
+> MongoDB Atlas live):
+> - **P2-UI-02** trang register: tạo tài khoản mới → `POST /api/auth/register`
+>   `200` + cookie httpOnly, redirect `/learn`; email trùng → `409` + cảnh báo
+>   trên form. Screenshot: `.p2-evidence/01-register-filled.png`,
+>   `03-register-duplicate.png`.
+> - **P2-UI-04** màn admin content: admin login `POST /api/auth/login` `200`;
+>   tạo/sửa/xoá vocabulary + textbook qua tab "Từ vựng"/"Giáo trình" hoạt
+>   động, confirm dialog xoá/chỉnh sửa, empty state khi tab trống.
+>   Screenshot: `.p2-evidence/05…09`.
+> - **P2-UI-06** menu tài khoản header: chưa login → link "Đăng nhập";
+>   USER → avatar + label "P2 Test" (không có link admin);
+>   ADMIN → label + 4 link `/admin/*` + badge; logout → về "Đăng nhập".
+>   Screenshot: `.p2-evidence/10, 11, 12, 13`.
+> `T-P2-01…10` đã có bằng chứng live ở trên.
 
 ---
 
@@ -257,13 +269,13 @@ chặn route, CRUD nội dung. Test case: `T-P2-01` … `T-P2-10`.
 | P3-SRS-06 | Học trên nhiều thiết bị (ghi đồng thời) | P3-SRS-04 | `srs.service.ts` (upsert unique) | Không mất tiến độ; ghi sau thắng theo quy tắc rõ | gửi 2 request song song | `[x]` |
 | P3-UI-01 | Màn hình học flashcard (card flip, phím tắt, a11y) | P3-SRS-04 | `app/learn/study/*`, `components/learn/study-session.tsx` | Lật thẻ, đánh giá (kể cả khi chưa lật), chuyển thẻ prev/next, xáo trộn, đặt lại bộ | bấm thử trình duyệt 05/11/2026 (tài khoản learner local): lật/đánh giá/phím tắt/prev-next, trắc nghiệm + gõ đáp án bỏ dấu, tạo deck/thẻ | `[x]` |
 | P3-UI-07 | Khu bài tập (trắc nghiệm 4 lựa chọn + gõ đáp án) | P3-UI-01 | `app/learn/exercises/*`, `components/learn/exercises-console.tsx`, `components/learn/quiz-utils.ts` | Đúng/sai tức thì; so khớp bỏ dấu; không ghi SRS | bấm thử trình duyệt 05/11/2026 (tài khoản learner local): lật/đánh giá/phím tắt/prev-next, trắc nghiệm + gõ đáp án bỏ dấu, tạo deck/thẻ | `[x]` |
-| P3-SRS-07 | API đặt lại tiến độ học của một bộ thẻ | P3-SRS-03 | `srs.service.ts` (`resetDeck`), `srs.controller.ts` (`POST /srs/decks/:deckId/reset`) | Xoá progress của user trên bộ đó; thẻ giữ nguyên | gọi API (chưa verify live) | `[~]` |
+| P3-SRS-07 | API đặt lại tiến độ học của một bộ thẻ | P3-SRS-03 | `srs.service.ts` (`resetDeck`), `srs.controller.ts` (`POST /srs/decks/:deckId/reset`) | Xoá progress của user trên bộ đó; thẻ giữ nguyên | gọi API live 18/11/2026: reset deck 3 thẻ → cleared 3, tiến độ về new 3, thẻ giữ nguyên | `[x]` |
 | P3-UI-02 | Wizard nhập hàng loạt (upload → map cột → preview → xác nhận) | P3-IMPORT-04 | `app/admin/import/*`, `components/admin/import-wizard.tsx` | 4 bước rõ ràng, huỷ giữa chừng | build + API đã verify (chưa bấm trình duyệt) | `[~]` |
 | P3-UI-03 | Danh sách bộ thẻ + tiến độ | P3-CARD-03 | `app/learn/decks/*`, `components/learn/decks-console.tsx` | Hiển thị số thẻ mới/đến hạn | bấm thử trình duyệt 05/11/2026: tạo bộ, thêm thẻ, số thẻ mới/đến hạn | `[x]` |
 | P3-UI-04 | Màn admin quản lý bộ thẻ chung | P3-CARD-03 | `app/admin/decks/*`, `components/admin/shared-decks-console.tsx` | Admin tạo/chỉnh/xoá deck chung + thêm thẻ; người học read-only | build + API đã verify (chưa bấm trình duyệt) | `[~]` |
 | P3-UI-05 | Thêm/xoá thẻ trong UI + đánh giá mượt (optimistic + batch) | P3-CARD-03 | `decks-console.tsx`, `study-session.tsx`, `srs.controller.ts` (`reviews/batch`) | Thêm thẻ trực tiếp từ danh sách bộ; đánh giá không đợi API mỗi thẻ, flush batch | build + API đã verify (chưa bấm trình duyệt) | `[~]` |
 | P3-UI-08 | Trang hoàn thành khi bộ đã học xong (thống kê Quên/Khó/Tốt/Thuộc), "Học lại phiên này" chỉ học thẻ chưa thuộc (thuộc hết → Đặt lại), popup xác nhận đặt lại | P3-UI-01 | `study-session.tsx`, `study-complete.tsx`, `confirm-dialog.tsx`, `srs.service.ts` (`getQueue`: `total`, `grades`, `reviewAhead`, `nextDueDay`) | Bộ đã học xong không hiện "chưa có thẻ"; nút học lại đúng nhóm thẻ | bấm thử trình duyệt 05/11/2026 (QA Deck) | `[x]` |
-| P3-UI-09 | Người dùng xuất bộ thẻ ra CSV (cùng cột với wizard nhập) | P3-UI-03 | `GET /flashcards/decks/:id/export`, `decks-console.tsx` | Chỉ xuất được bộ của mình/bộ chung đã phát hành | build đã verify (chưa tải file thật) | `[~]` |
+| P3-UI-09 | Người dùng xuất bộ thẻ ra CSV (cùng cột với wizard nhập) | P3-UI-03 | `GET /flashcards/decks/:id/export`, `decks-console.tsx` | Chỉ xuất được bộ của mình/bộ chung đã phát hành | build + gọi API live 18/11/2026: export 200, CSV đủ cột wizard và đủ thẻ (chưa bấm nút tải trên UI) | `[x]` |
 | P3-DOC-01 | Cập nhật `database.md` cho deck/card/progress + SRS state | P3-SRS-02 | `docs/database.md` | Khớp code | đối chiếu | `[x]` |
 
 **Checkpoint P3:** build/lint/typecheck; import mẫu chạy end-to-end; thẻ đến hạn

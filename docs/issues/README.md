@@ -12,7 +12,7 @@ Mỗi file là một issue (ID `NP-nnn`); nguồn gốc và tiến độ tổng 
 | [NP-006](./NP-006.md) | done | - | SRS: tiến độ, hàng đợi, timezone, ghi đa thiết bị |
 | [NP-007](./NP-007.md) | done | - | UI học: flashcard, bài tập, danh sách deck, trang hoàn thành |
 | [NP-008](./NP-008.md) | done | - | Route guard server (proxy), lưu token an toàn |
-| [NP-020](./NP-020.md) | partial | - | Bấm thử trình duyệt: trang đăng ký, CRUD nội dung admin, menu tài khoản header |
+| [NP-020](./NP-020.md) | done | P2 | Bấm thử trình duyệt: trang đăng ký, CRUD nội dung admin, menu tài khoản header (verify 18/11) |
 | [NP-021](./NP-021.md) | partial | - | Xác nhận import PDF trên file thật (bấm Xác nhận) và OCR trên PDF scan thật |
 | [NP-022](./NP-022.md) | partial | - | Verify live API đặt lại tiến độ deck + xuất CSV |
 | [NP-023](./NP-023.md) | partial | - | Bấm thử wizard nhập, màn admin deck chung, thêm/xoá thẻ + đánh giá batch |

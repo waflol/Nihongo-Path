@@ -1,7 +1,7 @@
 # Danh sách ticket & tiến độ — Nihongo Path
 
 > **Cập nhật:** 18/11/2026. Nguồn: [IMPLEMENTATION_CHECKLIST.md](./IMPLEMENTATION_CHECKLIST.md) (trạng thái từng task),
-> [OPEN_QUESTIONS.md](./OPEN_QUESTIONS.md) (quyết định đang chờ), `git log` đến `614013e`.
+> [OPEN_QUESTIONS.md](./OPEN_QUESTIONS.md) (quyết định đang chờ), `git log` đến `52da2e6`.
 >
 > **Cách đọc trạng thái:** theo quy ước checklist §0.1. `✅` = checklist đã `[x]` có bằng chứng; `🟡` = `[~]` làm dở / chưa kiểm
 > chứng đủ; `⬜` = chưa làm; `⏸` = chờ chủ sản phẩm quyết định; `➕` = đã làm **ngoài** checklist gốc (có commit, chưa có tiêu chí nghiệm thu).
@@ -19,8 +19,8 @@
 |---|---|---:|---:|---:|---:|---|
 | P0 | Discovery | 6 | 0 | 0 | 0 | 100% |
 | P1 | Foundation | 34 | 0 | 0 | 0 | 100% |
-| P2 | Identity & Content | 19 | 0 | 3 | 0 | 86% |
-| P3 | Flashcards & SRS | 20 | 7 | 0 | 0 | 74% (+7 dở) |
+| P2 | Identity & Content | 22 | 0 | 0 | 0 | 100% |
+| P3 | Flashcards & SRS | 22 | 5 | 0 | 0 | 81% (+5 dở) |
 | P4 | Exercises & Exams | 0 | 0 | 13 | 0 | 0% (có nền: ngân hàng câu 問題) |
 | P5 | Admin, Feedback, Entitlements | 0 | 5 | 8 | 1 | 0% (+5 dở) |
 | P6 | Media & STT | 0 | 0 | 14 | 1 | 0% |
@@ -29,7 +29,7 @@
 | P9 | Thanh toán | 0 | 0 | 11 | 1 | 0% |
 | P10 | AdSense | 0 | 0 | 8 | 2 | 0% |
 | P11 | Production readiness | 0 | 0 | 12 | 1 | 0% |
-| **Tổng** | | **79** | **12** | **87** | **8** | **~43% xong** (79/186) |
+| **Tổng** | | **82** | **12** | **84** | **8** | **~44% xong** (82/186) |
 
 \* % = ✅ / tổng task của phase. P5 đã chuyển 5 hàng từ ⬜ sang 🟡 ngày 18/11 vì code nền đã có.
 
@@ -45,12 +45,12 @@
 | NP-006 | SRS: tiến độ, hàng đợi, timezone, ghi đa thiết bị | P3-SRS-01…06 | **Thuật toán nay là FSRS-4.5** (NP-101) |
 | NP-007 | UI học: flashcard, bài tập, danh sách deck, trang hoàn thành | P3-UI-01/03/07/08 | Bấm thử trình duyệt 05/11 |
 | NP-008 | Route guard server (proxy), lưu token an toàn | P2-UI-01/03/05 | |
+| NP-020 | Bấm thử trình duyệt: trang đăng ký, CRUD nội dung admin, menu tài khoản header | P2-UI-02, P2-UI-04, P2-UI-06 | Verify Chromium headless 18/11, screenshot `.p2-evidence/` |
 
 ## 3. Đang dở (🟡) — việc còn lại để đóng
 
 | Ticket | Việc còn lại | Checklist | Tiêu chí đóng |
 |---|---|---|---|
-| NP-020 | Bấm thử trình duyệt: trang đăng ký, CRUD nội dung admin, menu tài khoản header | P2-UI-02, P2-UI-04, P2-UI-06 | Thao tác thật, ghi kết quả vào checklist |
 | NP-021 | Xác nhận import PDF trên file thật (bấm **Xác nhận**) và OCR trên PDF scan thật | P3-IMPORT-05, 05b | Import xong, số thẻ khớp, không trùng khi chạy lại |
 | NP-022 | Verify live API đặt lại tiến độ deck + xuất CSV | P3-SRS-07, P3-UI-09 | Gọi API/tải file thật |
 | NP-023 | Bấm thử wizard nhập, màn admin deck chung, thêm/xoá thẻ + đánh giá batch | P3-UI-02, 04, 05 | Thao tác trình duyệt, ghi bằng chứng |
@@ -77,7 +77,7 @@ Có commit, chưa nằm trong checklist; cần bổ sung tiêu chí nghiệm thu
 | NP-110 | Quản lý admin: tạo admin, đặt lại mật khẩu, trạng thái | `admin-users.service.ts` | Xem NP-024 |
 | NP-111 | Điều khoản & bảo mật, đồng ý khi đăng ký (`/terms`, `/privacy`) | `docs/legal-vietnam-and-terms.md` | Rà soát pháp lý bởi người có chuyên môn |
 | NP-112 | Triển khai pm2 + ngrok, `mem-guard` RAM | `b96aafb`, `ecosystem.config.cjs` | Chạy bản build production thay vì dev |
-| NP-113 | Giám sát máy chủ: RAM, ổ đĩa, CPU + biểu đồ + bộ lọc 1 giờ/6 giờ/ngày/tuần/tháng/năm, lưu mẫu 5 phút (`/admin/system`) | `apps/api/src/system/`, `system-monitor.tsx` | Chưa chạy với Mongo thật / bấm thử trình duyệt, chưa test; RAM chưa trừ cache Linux |
+| NP-113 | Giám sát máy chủ: RAM, ổ đĩa, CPU + biểu đồ + bộ lọc 1 giờ/6 giờ/ngày/tuần/tháng/năm, lưu mẫu 5 phút (`/admin/system`) | `52da2e6`, `apps/api/src/system/`, `system-monitor.tsx` | Chưa chạy với Mongo thật / bấm thử trình duyệt, chưa test; RAM chưa trừ cache Linux |
 
 ## 5. Backlog theo phase (⬜ / ⏸)
 
@@ -89,7 +89,7 @@ Mỗi phase giữ nguyên ID trong checklist; ticket gom theo cụm.
 | NP-401 | Schema câu hỏi/đề/attempt, tách đáp án khỏi payload (P4-EXAM-01…03, P4-SEC-01) | Q-12 (quyền dùng đề) ⏸. Có thể tái dùng `exercise_questions` |
 | NP-402 | API làm bài: bắt đầu/nộp, hết giờ phía server, xáo trộn, chấm điểm (P4-EXAM-04…06) | NP-401 |
 | NP-403 | Xem lại lỗi + thống kê (P4-EXAM-07/08, P4-UI-02) | NP-402 |
-| NP-404 | Admin soạn đề + màn làm bài có timer/lưu nháp (P4-EXAM-09, P4-UI-01) | NP-402, NP-020 |
+| NP-404 | Admin soạn đề + màn làm bài có timer/lưu nháp (P4-EXAM-09, P4-UI-01) | NP-402 (NP-020 đã xong 18/11) |
 | NP-405 | Cập nhật `database.md` nhóm exam (P4-DOC-01) | NP-401 |
 
 ### P5 — Hạn mức & quản trị
@@ -161,7 +161,7 @@ Mỗi phase giữ nguyên ID trong checklist; ticket gom theo cụm.
 
 ## 7. Việc nên làm kế tiếp (đề xuất)
 
-1. **Đóng P2/P3 trước:** NP-020…NP-023 chỉ cần thao tác trình duyệt, không cần quyết định mới.
+1. **Đóng P3 trước:** NP-021…NP-023 chỉ cần thao tác trình duyệt, không cần quyết định mới (NP-020 đã xong 18/11).
 2. **NP-026** (kiểm chứng FSRS) — thay đổi lõi vừa merge, chưa có bằng chứng chạy.
 3. **Hỏi chủ sản phẩm Q-07 và Q-12** — mở khoá cả P4 lẫn P5 (hai phase có sẵn code nền).
 
