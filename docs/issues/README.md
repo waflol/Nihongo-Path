@@ -18,7 +18,7 @@ Mỗi file là một issue (ID `NP-nnn`); nguồn gốc và tiến độ tổng 
 | [NP-023](./NP-023.md) | partial | - | Bấm thử wizard nhập, màn admin deck chung, thêm/xoá thẻ + đánh giá batch |
 | [NP-024](./NP-024.md) | partial | - | Admin: RBAC kiểm 403, quản lý user không tự nâng quyền, audit có giá trị trước/sau |
 | [NP-025](./NP-025.md) | partial | - | Phản hồi người dùng: mở rộng từ "báo lỗi thẻ" sang phản hồi chung, có trạng thái + lịch sử xử lý |
-| [NP-026](./NP-026.md) | partial | - | Kiểm chứng FSRS-4.5: chạy srs.algorithm.spec.ts, so lịch với SM-2 cũ, thử nâng cấp thẻ SM-2 thật |
+| [NP-026](./NP-026.md) | done | - | Kiểm chứng FSRS-4.5: chạy srs.algorithm.spec.ts, so lịch với SM-2 cũ, thử nâng cấp thẻ SM-2 thật |
 | [NP-027](./NP-027.md) | partial | - | Thử Antigravity CLI với tài khoản Google thật |
 | [NP-101](./NP-101.md) | off-roadmap | - | FSRS-4.5 thay SM-2 (API + bản sao client), nâng cấp lười thẻ cũ |
 | [NP-102](./NP-102.md) | off-roadmap | - | PWA: cài như app, offline page, nhắc ôn hằng ngày (Web Push, VAPID) |
