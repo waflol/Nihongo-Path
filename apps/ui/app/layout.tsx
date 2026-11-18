@@ -69,7 +69,8 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         {/* PWA manifest with cookies, so it passes ngrok's warning page (app/app.webmanifest/route.ts). */}
         <link rel="manifest" href="/app.webmanifest" crossOrigin="use-credentials" />
       </head>
-      <body className="flex min-h-full flex-col bg-[var(--background)] font-sans text-[var(--foreground)]">
+      {/* suppressHydrationWarning: extensions (e.g. Grammarly) inject attributes into <body> before hydration. */}
+      <body suppressHydrationWarning className="flex min-h-full flex-col bg-[var(--background)] font-sans text-[var(--foreground)]">
         <SiteHeader />
         <main className="flex flex-1 flex-col">{children}</main>
         <ClientIpv4Reporter />
