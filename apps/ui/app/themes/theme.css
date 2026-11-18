@@ -279,6 +279,8 @@
   --dropdown: #171a23;
   --dropdown-line: #262b36;
   --dropdown-item-foreground: #e5e7eb;
+  --dropdown-item-hover: #212634;
+  --dropdown-item-active: #1e1b4b;
   --dropdown-item-focus: #1e1b4b;
   --select: #171a23;
   --select-line: #262b36;
