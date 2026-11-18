@@ -33,11 +33,11 @@ Mỗi file là một issue (ID `NP-nnn`); nguồn gốc và tiến độ tổng 
 | [NP-111](./NP-111.md) | off-roadmap | - | Điều khoản & bảo mật, đồng ý khi đăng ký (/terms, /privacy) |
 | [NP-112](./NP-112.md) | off-roadmap | - | Triển khai pm2 + ngrok, mem-guard RAM |
 | [NP-113](./NP-113.md) | off-roadmap | - | Giám sát máy chủ (RAM, ổ đĩa, CPU) cho admin |
-| [NP-401](./NP-401.md) | blocked | P4 | Schema câu hỏi/đề/attempt, tách đáp án khỏi payload (P4-EXAM-01…03, P4-SEC-01) |
-| [NP-402](./NP-402.md) | todo | P4 | API làm bài: bắt đầu/nộp, hết giờ phía server, xáo trộn, chấm điểm (P4-EXAM-04…06) |
-| [NP-403](./NP-403.md) | todo | P4 | Xem lại lỗi + thống kê (P4-EXAM-07/08, P4-UI-02) |
-| [NP-404](./NP-404.md) | todo | P4 | Admin soạn đề + màn làm bài có timer/lưu nháp (P4-EXAM-09, P4-UI-01) |
-| [NP-405](./NP-405.md) | todo | P4 | Cập nhật database.md nhóm exam (P4-DOC-01) |
+| [NP-401](./NP-401.md) | partial | P4 | Schema câu hỏi/đề/attempt, tách đáp án khỏi payload (P4-EXAM-01…03, P4-SEC-01) |
+| [NP-402](./NP-402.md) | partial | P4 | API làm bài: bắt đầu/nộp, hết giờ phía server, xáo trộn, chấm điểm (P4-EXAM-04…06) |
+| [NP-403](./NP-403.md) | partial | P4 | Xem lại lỗi + thống kê (P4-EXAM-07/08, P4-UI-02) |
+| [NP-404](./NP-404.md) | partial | P4 | Admin soạn đề + màn làm bài có timer/lưu nháp (P4-EXAM-09, P4-UI-01) |
+| [NP-405](./NP-405.md) | done | P4 | Cập nhật database.md nhóm exam (P4-DOC-01) |
 | [NP-501](./NP-501.md) | blocked | P5 | Schema + service quota reserve→settle→release, reset theo kỳ/tz (P5-QUOTA-01…05) |
 | [NP-502](./NP-502.md) | blocked | P5 | EntitlementGuard/QuotaGuard + chính sách vượt hạn mức (P5-QUOTA-04/06) |
 | [NP-503](./NP-503.md) | todo | P5 | Màn cấu hình hạn mức theo gói (P5-ADMIN-04) |

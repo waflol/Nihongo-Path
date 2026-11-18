@@ -351,19 +351,19 @@ chặn route, CRUD nội dung. Test case: `T-P2-01` … `T-P2-10`.
 
 | ID | Task | Phụ thuộc | File/module | Hoàn thành khi | Kiểm thử | TT |
 |---|---|---|---|---|---|---|
-| P4-EXAM-01 | Schema câu hỏi (loại, đáp án đúng, giải thích) | P2-CONTENT-04 | `src/exams/schemas/question.schema.ts` | Đáp án đúng luôn tách khỏi dữ liệu gửi client | xem DTO trả về | `[ ]` |
-| P4-EXAM-02 | Schema đề thi (cấp độ, loại kỳ thi, năm, bộ câu hỏi) | P4-EXAM-01 | `src/exams/schemas/exam.schema.ts` | Cấu hình được thời gian, thang điểm | xem schema | `[ ]` |
-| P4-EXAM-03 | Schema `exercise_attempts`, `exam_attempts` | P4-EXAM-02, P2-AUTH-06 | `src/exams/schemas/attempt.schema.ts` | Lưu câu trả lời, điểm, thời gian, giải thích | xem schema | `[ ]` |
-| P4-EXAM-04 | API bắt đầu/nộp bài; chặn hết giờ phía server | P4-EXAM-03 | `src/exams/exams.controller.ts` | Nộp sau hạn → bị từ chối/đánh dấu hết giờ | gọi API với thời gian giả lập | `[ ]` |
-| P4-EXAM-05 | Xáo câu hỏi/thứ tự lựa chọn, giữ nguyên đáp án đúng | P4-EXAM-04 | `src/exams/shuffle.service.ts` | Đáp án đúng luôn khớp sau khi xáo | chạy 100 lần với seed | `[ ]` |
-| P4-EXAM-06 | Chấm điểm + trả giải thích | P4-EXAM-05 | `exams.service.ts` | Điểm khớp đáp án; giải thích chỉ hiện sau khi nộp | gọi API | `[ ]` |
-| P4-EXAM-07 | Xem lại lỗi sau khi làm | P4-EXAM-06 | `exams.controller.ts` | Liệt kê câu sai + đáp án đúng + giải thích | thao tác UI | `[ ]` |
-| P4-EXAM-08 | Thống kê tiến độ làm bài | P4-EXAM-07 | `src/exams/stats.service.ts` | Theo thời gian, theo cấp độ, theo loại đề | gọi API | `[ ]` |
-| P4-EXAM-09 | Admin soạn đề (câu hỏi, đáp án, giải thích, năm, cấp) | P4-EXAM-02, P2-UI-04 | `app/admin/exams/*` | Tạo đề hoàn chỉnh qua UI | thao tác trình duyệt | `[ ]` |
-| P4-UI-01 | Màn hình làm bài (timer, điều hướng câu, cờ đánh dấu) | P4-EXAM-04 | `app/learn/exams/*` | Không mất câu trả lời khi refresh (lưu nháp) | thao tác trình duyệt | `[ ]` |
-| P4-UI-02 | Màn hình kết quả + xem lại lỗi | P4-EXAM-07 | `app/learn/exams/[id]/result/*` | Hiển thị điểm, thời gian, từng câu | thao tác trình duyệt | `[ ]` |
-| P4-SEC-01 | Không lộ đáp án đúng qua API trước khi nộp | P4-EXAM-01 | DTO/response | Response làm bài không chứa `isCorrect` | `curl` và kiểm JSON | `[ ]` |
-| P4-DOC-01 | Cập nhật `database.md` cho nhóm exam | P4-EXAM-03 | `docs/database.md` | Khớp code | đối chiếu | `[ ]` |
+| P4-EXAM-01 | Schema câu hỏi (loại, đáp án đúng, giải thích) | P2-CONTENT-04 | `src/exams/schemas/question.schema.ts` | Đáp án đúng luôn tách khỏi dữ liệu gửi client | xem DTO trả về; Code + vitest xong (18/11/2026); chưa verify API/trình duyệt thật | `[~]` |
+| P4-EXAM-02 | Schema đề thi (cấp độ, loại kỳ thi, năm, bộ câu hỏi) | P4-EXAM-01 | `src/exams/schemas/exam.schema.ts` | Cấu hình được thời gian, thang điểm | xem schema; Code + vitest xong (18/11/2026); chưa verify API/trình duyệt thật | `[~]` |
+| P4-EXAM-03 | Schema `exercise_attempts`, `exam_attempts` | P4-EXAM-02, P2-AUTH-06 | `src/exams/schemas/attempt.schema.ts` | Lưu câu trả lời, điểm, thời gian, giải thích | xem schema; Code + vitest xong (18/11/2026); chưa verify API/trình duyệt thật | `[~]` |
+| P4-EXAM-04 | API bắt đầu/nộp bài; chặn hết giờ phía server | P4-EXAM-03 | `src/exams/exams.controller.ts` | Nộp sau hạn → bị từ chối/đánh dấu hết giờ | gọi API với thời gian giả lập; Code + vitest xong (18/11/2026); chưa verify API/trình duyệt thật | `[~]` |
+| P4-EXAM-05 | Xáo câu hỏi/thứ tự lựa chọn, giữ nguyên đáp án đúng | P4-EXAM-04 | `src/exams/shuffle.service.ts` | Đáp án đúng luôn khớp sau khi xáo | chạy 100 lần với seed; Code + vitest xong (18/11/2026); chưa verify API/trình duyệt thật | `[~]` |
+| P4-EXAM-06 | Chấm điểm + trả giải thích | P4-EXAM-05 | `exams.service.ts` | Điểm khớp đáp án; giải thích chỉ hiện sau khi nộp | gọi API; Code + vitest xong (18/11/2026); chưa verify API/trình duyệt thật | `[~]` |
+| P4-EXAM-07 | Xem lại lỗi sau khi làm | P4-EXAM-06 | `exams.controller.ts` | Liệt kê câu sai + đáp án đúng + giải thích | thao tác UI; Code + vitest xong (18/11/2026); chưa verify API/trình duyệt thật | `[~]` |
+| P4-EXAM-08 | Thống kê tiến độ làm bài | P4-EXAM-07 | `src/exams/stats.service.ts` | Theo thời gian, theo cấp độ, theo loại đề | gọi API; Code + vitest xong (18/11/2026); chưa verify API/trình duyệt thật | `[~]` |
+| P4-EXAM-09 | Admin soạn đề (câu hỏi, đáp án, giải thích, năm, cấp) | P4-EXAM-02, P2-UI-04 | `app/admin/exams/*` | Tạo đề hoàn chỉnh qua UI | thao tác trình duyệt; Code + vitest xong (18/11/2026); chưa verify API/trình duyệt thật | `[~]` |
+| P4-UI-01 | Màn hình làm bài (timer, điều hướng câu, cờ đánh dấu) | P4-EXAM-04 | `app/learn/exams/*` | Không mất câu trả lời khi refresh (lưu nháp) | thao tác trình duyệt; Code + vitest xong (18/11/2026); chưa verify API/trình duyệt thật | `[~]` |
+| P4-UI-02 | Màn hình kết quả + xem lại lỗi | P4-EXAM-07 | `app/learn/exams/[id]/result/*` | Hiển thị điểm, thời gian, từng câu | thao tác trình duyệt; Code + vitest xong (18/11/2026); chưa verify API/trình duyệt thật | `[~]` |
+| P4-SEC-01 | Không lộ đáp án đúng qua API trước khi nộp | P4-EXAM-01 | DTO/response | Response làm bài không chứa `isCorrect` | `curl` và kiểm JSON; Code + vitest xong (18/11/2026); chưa verify API/trình duyệt thật | `[~]` |
+| P4-DOC-01 | Cập nhật `database.md` cho nhóm exam | P4-EXAM-03 | `docs/database.md` | Khớp code | đối chiếu | `[x]` |
 
 **Checkpoint P4:** build/lint/typecheck; làm thử 1 đề end-to-end. Test case:
 `T-P4-01` … `T-P4-10`.

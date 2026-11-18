@@ -132,6 +132,16 @@ Các collection ở mục này có `status` (DRAFT / PUBLISHED) và `lang`. Admi
 - Index: `{dedupeKey: 1}` **unique**; `{level: 1, kind: 1}`; `{deck: 1, card: 1}`.
 - Dùng ở `/learn/exercises`, `/learn/exam`.
 
+### `exams` — đề thi tự soạn (P4)
+- `title`, `description`, `examType`, `year`, `level`, `timeLimitMin` (1–240, trống = không giới hạn giờ), `questions[]` (ObjectId của `exercise_questions`, có thứ tự), `shuffle {questions, options}`, `status` (`DRAFT` / `PUBLISHED`), `createdBy`.
+- Index: `{status: 1, level: 1, examType: 1}`. Câu hỏi tái dùng `exercise_questions`, không có collection câu hỏi riêng.
+
+### `exam_attempts` — lượt làm bài (P4)
+- `user`, `exam` + bản chụp `examTitle` / `examType` / `level`; `seed`, `questionOrder[]`, `optionOrder{}` (thứ tự xáo cố định cho lượt này); `startedAtMs`, `deadlineMs` (server quyết định hết giờ), `status` (`in_progress` / `submitted` / `timed_out`).
+- Nháp: `answers{}`, `flagged[]`. Kết quả (chỉ ghi khi nộp): `correct{}`, `score`, `total`, `percent`, `submittedAtMs`, `durationSec`.
+- Index: unique một lượt `in_progress` mỗi (user, exam); `{user: 1, startedAtMs: -1}`; `{exam: 1, status: 1}`. Làm lại đề tạo attempt mới, không ghi đè.
+- Response khi đang làm không chứa đáp án đúng / giải thích; chỉ trả sau khi nộp.
+
 ### `cardreports` — báo lỗi thẻ
 - Học viên báo lỗi / gợi ý sửa thẻ của deck chung: `card`, `deck`, `user`, `message`, `suggestion`.
 - `kind`: translation / hanviet / example / reading / other. `status`: OPEN / RESOLVED / REJECTED.

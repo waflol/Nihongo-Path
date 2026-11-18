@@ -1,7 +1,7 @@
 # Danh sách ticket & tiến độ — Nihongo Path
 
 > **Cập nhật:** 18/11/2026. Nguồn: [IMPLEMENTATION_CHECKLIST.md](./IMPLEMENTATION_CHECKLIST.md) (trạng thái từng task),
-> [OPEN_QUESTIONS.md](./OPEN_QUESTIONS.md) (quyết định đang chờ), `git log` đến `52da2e6`.
+> [OPEN_QUESTIONS.md](./OPEN_QUESTIONS.md) (quyết định đang chờ), `git log` đến `51049d6`.
 >
 > **Cách đọc trạng thái:** theo quy ước checklist §0.1. `✅` = checklist đã `[x]` có bằng chứng; `🟡` = `[~]` làm dở / chưa kiểm
 > chứng đủ; `⬜` = chưa làm; `⏸` = chờ chủ sản phẩm quyết định; `➕` = đã làm **ngoài** checklist gốc (có commit, chưa có tiêu chí nghiệm thu).
@@ -9,7 +9,7 @@
 > **Giới hạn của bản này:** tiến độ lấy từ tài liệu + `git log`, **chưa chạy lại** `typecheck/lint/build/test` (máy chỉ còn ~100 MB RAM trống).
 > Không tick thêm `[x]` nào so với checklist.
 >
-> **Tracker:** mỗi ticket `NP-nnn` có file riêng trong [issues/](./issues/README.md). Máy này chưa có `gh` nên chưa đưa lên GitHub Issues (`waflol/Nihongo-Path`); khi sẵn sàng, đưa nguyên văn từng file.
+> **Tracker:** mỗi ticket `NP-nnn` có file riêng trong [issues/](./issues/README.md). Đã đưa lên GitHub Issues (`waflol/Nihongo-Path`, #2–#19, 18/11); bảng ghép issue ↔ file ở [issues/README.md](./issues/README.md). Dùng `/ticket-status` để xem trạng thái hiện tại.
 
 ## 1. Tổng quan theo phase
 
@@ -21,7 +21,7 @@
 | P1 | Foundation | 34 | 0 | 0 | 0 | 100% |
 | P2 | Identity & Content | 22 | 0 | 0 | 0 | 100% |
 | P3 | Flashcards & SRS | 22 | 5 | 0 | 0 | 81% (+5 dở) |
-| P4 | Exercises & Exams | 0 | 0 | 13 | 0 | 0% (có nền: ngân hàng câu 問題) |
+| P4 | Exercises & Exams | 1 | 12 | 0 | 0 | 8% (code + vitest xong, chờ verify trình duyệt) |
 | P5 | Admin, Feedback, Entitlements | 0 | 5 | 8 | 1 | 0% (+5 dở) |
 | P6 | Media & STT | 0 | 0 | 14 | 1 | 0% |
 | P7 | Phân tích câu & Shadowing | 0 | 0 | 11 | 1 | 0% |
@@ -29,7 +29,7 @@
 | P9 | Thanh toán | 0 | 0 | 11 | 1 | 0% |
 | P10 | AdSense | 0 | 0 | 8 | 2 | 0% |
 | P11 | Production readiness | 0 | 0 | 12 | 1 | 0% |
-| **Tổng** | | **82** | **12** | **84** | **8** | **~44% xong** (82/186) |
+| **Tổng** | | **85** | **22** | **71** | **8** | **~45% xong** (85/186) |
 
 \* % = ✅ / tổng task của phase. P5 đã chuyển 5 hàng từ ⬜ sang 🟡 ngày 18/11 vì code nền đã có.
 
@@ -46,6 +46,8 @@
 | NP-007 | UI học: flashcard, bài tập, danh sách deck, trang hoàn thành | P3-UI-01/03/07/08 | Bấm thử trình duyệt 05/11 |
 | NP-008 | Route guard server (proxy), lưu token an toàn | P2-UI-01/03/05 | |
 | NP-020 | Bấm thử trình duyệt: trang đăng ký, CRUD nội dung admin, menu tài khoản header | P2-UI-02, P2-UI-04, P2-UI-06 | Verify Chromium headless 18/11, screenshot `.p2-evidence/` |
+| NP-026 | Kiểm chứng FSRS-4.5 | NP-101 | Spec 6/6, so lịch với SM-2, nâng cấp thẻ SM-2 thật lên `schemaVersion: 2` (commit `51049d6`) |
+| NP-405 | Cập nhật `database.md` nhóm exam | P4-DOC-01 | `exams`, `exam_attempts` khớp code (18/11) |
 
 ## 3. Đang dở (🟡) — việc còn lại để đóng
 
@@ -56,7 +58,10 @@
 | NP-023 | Bấm thử wizard nhập, màn admin deck chung, thêm/xoá thẻ + đánh giá batch | P3-UI-02, 04, 05 | Thao tác trình duyệt, ghi bằng chứng |
 | NP-024 | Admin: RBAC kiểm 403, quản lý user không tự nâng quyền, audit có giá trị trước/sau | P5-ADMIN-01/02/03 | Test thật + bản ghi audit trong DB |
 | NP-025 | Phản hồi người dùng: mở rộng từ "báo lỗi thẻ" sang phản hồi chung, có trạng thái + lịch sử xử lý | P5-FEEDBACK-01/02 | Đổi trạng thái có lịch sử |
-| NP-026 | **Kiểm chứng FSRS-4.5**: chạy `srs.algorithm.spec.ts`, so lịch với SM-2 cũ, thử nâng cấp thẻ SM-2 thật | NP-101 | Test pass; thẻ cũ lên `schemaVersion: 2` đúng |
+| NP-401 | Schema đề/attempt, tách đáp án khỏi payload | P4-EXAM-01…03, P4-SEC-01 | Verify `curl` response làm bài không có `isCorrect`; Q-12 ⏸ (quyền dùng đề chính thức) |
+| NP-402 | API làm bài: bắt đầu/nộp, hết giờ server, xáo, chấm | P4-EXAM-04…06 | Verify API với thời gian giả lập (code + vitest xong 18/11) |
+| NP-403 | Xem lại lỗi + thống kê + màn kết quả | P4-EXAM-07/08, P4-UI-02 | Verify API + trình duyệt |
+| NP-404 | Màn làm bài có timer/lưu nháp (còn thiếu `app/admin/exams`) | P4-EXAM-09, P4-UI-01 | Màn admin soạn đề chưa có; verify trình duyệt |
 | NP-027 | Thử Antigravity CLI với tài khoản Google thật | `plans/plan-antigravity-cli.md` §3 | Gọi `agy` thật qua đăng nhập dùng chung |
 
 ## 4. Đã làm ngoài checklist (➕)
@@ -82,15 +87,6 @@ Có commit, chưa nằm trong checklist; cần bổ sung tiêu chí nghiệm thu
 ## 5. Backlog theo phase (⬜ / ⏸)
 
 Mỗi phase giữ nguyên ID trong checklist; ticket gom theo cụm.
-
-### P4 — Bài tập & đề thi
-| Ticket | Cụm task | Chặn bởi |
-|---|---|---|
-| NP-401 | Schema câu hỏi/đề/attempt, tách đáp án khỏi payload (P4-EXAM-01…03, P4-SEC-01) | Q-12 (quyền dùng đề) ⏸. Có thể tái dùng `exercise_questions` |
-| NP-402 | API làm bài: bắt đầu/nộp, hết giờ phía server, xáo trộn, chấm điểm (P4-EXAM-04…06) | NP-401 |
-| NP-403 | Xem lại lỗi + thống kê (P4-EXAM-07/08, P4-UI-02) | NP-402 |
-| NP-404 | Admin soạn đề + màn làm bài có timer/lưu nháp (P4-EXAM-09, P4-UI-01) | NP-402 (NP-020 đã xong 18/11) |
-| NP-405 | Cập nhật `database.md` nhóm exam (P4-DOC-01) | NP-401 |
 
 ### P5 — Hạn mức & quản trị
 | Ticket | Cụm task | Chặn bởi |
@@ -162,8 +158,8 @@ Mỗi phase giữ nguyên ID trong checklist; ticket gom theo cụm.
 ## 7. Việc nên làm kế tiếp (đề xuất)
 
 1. **Đóng P3 trước:** NP-021…NP-023 chỉ cần thao tác trình duyệt, không cần quyết định mới (NP-020 đã xong 18/11).
-2. **NP-026** (kiểm chứng FSRS) — thay đổi lõi vừa merge, chưa có bằng chứng chạy.
-3. **Hỏi chủ sản phẩm Q-07 và Q-12** — mở khoá cả P4 lẫn P5 (hai phase có sẵn code nền).
+2. **P4** (NP-401…404): code + vitest đã có, cần verify API/trình duyệt thật và làm màn admin soạn đề (`app/admin/exams`).
+3. **Hỏi chủ sản phẩm Q-07 và Q-12** — Q-07 mở khoá P5; Q-12 quyết định được dùng đề thi chính thức hay chỉ đề tự soạn.
 
 ## 8. Nhãn gợi ý khi tạo GitHub Issues
 
