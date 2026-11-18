@@ -104,7 +104,9 @@ Các collection ở mục này có `status` (DRAFT / PUBLISHED) và `lang`. Admi
 - `deck`, `kind` (VOCABULARY / GRAMMAR / CUSTOM), `origin` (manual / import / saved).
 - `vocabulary` / `grammar`: tham chiếu nguồn khi thẻ được lưu từ nội dung học; `front` / `back` được chép sang thẻ để phần học không phụ thuộc nội dung gốc.
 - `front`, `back` (được để trống khi `origin: "import"` — cho phép nhập từ chưa có nghĩa), `reading` (hiragana), `hanViet`.
-- `partOfSpeech`: `verb` / `noun` / `adjective` / `phrase`.
+- `partOfSpeech`: từ loại chính — `verb` / `noun` / `adjective` / `adjective-na` / `adverb` / `phrase`.
+- `partsOfSpeech[]`: mọi từ loại của từ, phần tử đầu là từ loại chính; có thêm `noun-suru` (danh từ đi với する). Rỗng = chỉ biết `partOfSpeech`.
+- `note`: phần giải thích đi kèm từ trong nguồn nhập (`成績が上がる(=よくなる)` → "よくなる").
 - `image`, `imageCredit`, `examples[]` (mỗi ví dụ có `source`: `tatoeba` / `ai-translated` / `ai`), `tags[]`.
 - `order`: STT trong file nhập, dùng để sắp xếp.
 - `readingChecked`, `backChecked`: dấu (hash của từ + cách đọc / từ + nghĩa) lần kiểm tra cả deck gần nhất; trùng thì lần sau bỏ qua, trừ khi chọn kiểm tra lại tất cả (`?force=1`).
@@ -114,7 +116,7 @@ Các collection ở mục này có `status` (DRAFT / PUBLISHED) và `lang`. Admi
 
 ### `usercardprogresses`
 - Một document cho mỗi `(user, card)`.
-- `state`: payload SRS có phiên bản — `schemaVersion: 1`, `algorithm: "sm2"`, `ease`, `repetitions`, `intervalDays`, `lapses` ([ADR-srs](./adr/ADR-srs.md)).
+- `state`: payload SRS có phiên bản ([ADR-srs](./adr/ADR-srs.md)). Từ 18/11/2026: `schemaVersion: 2`, `algorithm: "fsrs"`, `stability`, `difficulty`, `lastReviewAt` (epoch ms), cùng `ease` (suy ra từ `difficulty`), `repetitions`, `intervalDays`, `lapses` để hàng đợi cũ vẫn chạy. Bản ghi SM-2 cũ (`schemaVersion: 1`, `algorithm: "sm2"`, không có `stability`) được nâng cấp ở lần ôn kế tiếp, không migrate hàng loạt.
 - `dueAt` (thời điểm UTC), `dueDay` (`YYYY-MM-DD` theo múi giờ user), `seenCount`.
 - `lastReviewedAtMs`: dùng cho ghi đa thiết bị — bản ghi mới nhất thắng.
 - Index: `{user: 1, card: 1}` **unique**; `{user: 1, dueDay: 1}` (hàng đợi ôn); `{user: 1, createdAt: 1}` (tra "đã học hôm nay": hạn mức thẻ mới, ưu tiên luyện tập).
@@ -163,7 +165,7 @@ Các collection ở mục này có `status` (DRAFT / PUBLISHED) và `lang`. Admi
 - Nạp: `pnpm --filter @nihongo/api tatoeba:import -- --write` (khoảng 35 MB dữ liệu, 80 MB kể cả index). Nguồn Tatoeba, CC BY 2.0 FR.
 - Chỉ mục rỗng → hệ thống gọi API tatoeba.org.
 
-## 5. AI
+## 5. AI, đánh giá và thông báo
 
 ### `aiservices` — dịch vụ AI do admin quản lý
 - `provider` (gemini / groq / openrouter / nvidia / antigravity hoặc custom), `label`, `modelName`, `rpm`, `enabled`.
@@ -192,6 +194,14 @@ Các collection ở mục này có `status` (DRAFT / PUBLISHED) và `lang`. Admi
 - `key` (**unique**; băm theo tác vụ, gồm cả danh sách dịch vụ đã bị bỏ qua), `ja`, `vi`, `matches`, `term`, `kind`, `serviceLabel`, `modelName`.
 - Giữ kết quả dịch / ví dụ để không gọi lại AI. Redis, nếu có, là lớp cache nhanh đứng trước.
 - Admin xem câu AI đã lưu nhưng chưa gắn vào thẻ: `GET /flashcards/decks/:id/ai-unused`.
+
+### `pushsubscriptions` — đăng ký nhắc ôn tập (Web Push)
+- Một document cho mỗi trình duyệt/thiết bị: `user`, `endpoint` (**unique**), khoá `p256dh` + `auth`, `hour` (0–23, mặc định 20), `timezone`, `lastSentDay`, `userAgent`.
+- Đăng ký lại cùng `endpoint` (kể cả đăng nhập tài khoản khác) cập nhật bản ghi cũ. Index: `{user: 1}`, `{endpoint: 1}` unique.
+- Chỉ hoạt động khi có `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY`; xem [plans/plan-pwa.md](./plans/plan-pwa.md).
+
+### `eval_datasets`, `eval_cases`, `eval_runs`, `eval_calls`, `eval_results` — benchmark AI tiếng Nhật
+- Bộ dữ liệu (1000 case), mỗi lần chạy, từng lần gọi và kết quả chấm; trang `/admin/ai-eval`. Xem [plans/plan-eval-benchmark.md](./plans/plan-eval-benchmark.md).
 
 ## 6. Nhật ký và chặn IP
 

@@ -1,13 +1,25 @@
 # ADR-srs — Thuật toán lặp lại ngắt quãng (SRS)
 
 > **Trạng thái:** `Accepted` — chốt cùng P3-SRS-01 (03/11/2026).
+> **Cập nhật 18/11/2026 (commit `3b7141c`): thuật toán đang chạy là FSRS-4.5**, không còn SM-2 — xem mục "Cập nhật: chuyển sang FSRS-4.5" ngay dưới. Các mục SM-2 bên dưới giữ lại làm lịch sử quyết định.
 > **Quyết định bởi:** Tôi (sản phẩm) + [CC] (thiết kế kỹ thuật).
 > **Phạm vi:** P3 (Flashcards & SRS). Chốt Q-03; cập nhật dòng "Thuật toán
 > SRS (chưa chốt)" trong `database.md` §4. (Không trùng với ADR-002 của
 > plan §9 — cái đó là bộ phân tích hình thái cho P7; file này theo
 > quy ước đặt tên `ADR-<domain>.md` như `ADR-auth-provider.md`.)
 
-## Bối cảnh
+## Cập nhật: chuyển sang FSRS-4.5 (18/11/2026)
+
+Lối thoát đã dự phòng ở bản đầu (state versioned) được dùng đúng như thiết kế:
+
+- `src/srs/srs.algorithm.ts` (hàm thuần, không đồng hồ/IO/timezone) cài FSRS-4.5; 4 nút đánh giá giữ nguyên: `AGAIN`=0, `HARD`=1, `GOOD`=2, `EASY`=3. Độ nhớ có `stability` (ngày để retrievability tụt từ 100% về 90%) và `difficulty` (1–10); lịch kế tiếp nhắm retention 90%.
+- `state` mới: `schemaVersion: 2`, `algorithm: "fsrs"`, thêm `stability`, `difficulty`, `lastReviewAt` (epoch ms). Các trường `ease` (suy ra từ `difficulty`), `repetitions`, `intervalDays`, `lapses` vẫn được ghi để phân loại hàng đợi (mới / đến hạn / khó nhớ / đã thuộc) không đổi.
+- Thẻ SM-2 cũ (`schemaVersion: 1`, không có `stability`) **nâng cấp lười** ở lần ôn kế tiếp; không có migration hàng loạt.
+- Bản sao thuật toán phía client trong `components/learn/study-session.tsx` phải khớp API (hiển thị khoảng cách ôn trên nút). Test hành vi: `srs.algorithm.spec.ts`.
+- Day anchoring theo timezone (`srs.days.ts`) và ghi đa thiết bị không đổi.
+- **Chưa làm:** tối ưu tham số FSRS theo dữ liệu thật (đang dùng tham số mặc định) và đo chất lượng lịch ôn so với SM-2.
+
+## Bối cảnh (bản gốc 03/11/2026)
 
 Spec §4.4 yêu cầu lập lịch ôn theo phản hồi + lịch sử thẻ, "thuật toán cụ
 thể là **chưa quyết định**; so sánh phương án, mô tả dữ liệu cần lưu và test

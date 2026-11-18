@@ -4,7 +4,7 @@
 > duy nhất, phụ thuộc, file/module dự kiến, tiêu chí hoàn thành kiểm chứng được
 > và cách kiểm thử.
 >
-> **Ngày lập:** 30/10/2026. Cập nhật lần cuối: 07/11/2026.
+> **Ngày lập:** 30/10/2026. Cập nhật lần cuối: 18/11/2026. Danh sách ticket + tiến độ: [TICKETS.md](./TICKETS.md).
 
 ---
 
@@ -229,7 +229,8 @@ chặn route, CRUD nội dung. Test case: `T-P2-01` … `T-P2-10`.
 ## P3 — Sprint 3: Flashcards & SRS
 
 > **Gate:** Q-03 (thuật toán SRS) **✅ đã chốt 03/11/2026** — SM-2 + state
-> versioned dự phòng FSRS (ADR-srs, `Accepted`). Q-12 (quyền nội dung)
+> versioned dự phòng FSRS (ADR-srs, `Accepted`); **18/11/2026 đã chuyển sang
+> FSRS-4.5** (commit `3b7141c`, xem ADR-srs). Q-12 (quyền nội dung)
 > đã duyệt 05/11 (chỉ PDF tự soạn/có quyền) → P3-IMPORT-05 (PDF) đã làm `[~]`;
 > CSV/XLSX ≤ 10 MB, PDF ≤ 50 MB (06/11/2026). PDF scan đọc bằng OCR (AI hỗ trợ
 > ảnh) chạy nền dạng job — P3-IMPORT-05b `[~]`; tạo ví dụ do admin bấm nút
@@ -250,7 +251,7 @@ chặn route, CRUD nội dung. Test case: `T-P2-01` … `T-P2-10`.
 | P3-CARD-08 | Tạo ví dụ thủ công (nút "✨ Tạo ví dụ" chạy nền trên server) + xem ví dụ AI đã sinh nhưng chưa gắn vào thẻ | P3-IMPORT-04 | `flashcards.service.ts` (`aiUnusedExamples`, tự gợi ý khi thêm thẻ), `flashcards.controller.ts` (`decks/:id/ai-unused`), `ai-unused-examples.tsx`, `example-starter.tsx` | Bấm nút là deck có ví dụ; admin xem được câu AI bị bỏ | test `reading-variants.spec.ts`, `example-suggest.reading.spec.ts` | `[x]` |
 | P3-SRS-01 | ADR thuật toán SRS (so sánh, chọn, mô tả dữ liệu cần lưu) | P3-CARD-02 | `docs/adr/ADR-srs.md` | Tôi duyệt; ADR `Accepted` | người dùng xác nhận | `[x]` |
 | P3-SRS-02 | Schema `user_card_progress` + index `(userId, dueDate)` | P3-SRS-01 | `src/srs/schemas/progress.schema.ts` | Index tồn tại | xem index (live: `usercardprogresses`) | `[x]` |
-| P3-SRS-03 | Tính lịch ôn từ phản hồi người học | P3-SRS-02 | `src/srs/srs.algorithm.ts` (pure) + `srs.service.ts` | Cùng chuỗi phản hồi → cùng `dueDate` | gọi hàm thuần | `[x]` |
+| P3-SRS-03 | Tính lịch ôn từ phản hồi người học (SM-2 → **FSRS-4.5** từ 18/11/2026) | P3-SRS-02 | `src/srs/srs.algorithm.ts` (pure) + `srs.service.ts` | Cùng chuỗi phản hồi → cùng `dueDate` | gọi hàm thuần; `srs.algorithm.spec.ts` (viết lại cho FSRS, chưa chạy lại lần này) | `[x]` |
 | P3-SRS-04 | API phiên ôn: thẻ mới / đến hạn / khó nhớ / đã thuộc | P3-SRS-03 | `src/srs/srs.controller.ts` | Trả đúng nhóm, không lẫn user khác | gọi API 2 user | `[x]` |
 | P3-SRS-05 | Xử lý timezone và ngày reset | P3-SRS-03 | `src/srs/srs.days.ts` + `srs.service.ts` | Cùng thời điểm, 2 timezone → kết quả đúng theo tz người dùng | đổi tz hồ sơ | `[x]` |
 | P3-SRS-06 | Học trên nhiều thiết bị (ghi đồng thời) | P3-SRS-04 | `srs.service.ts` (upsert unique) | Không mất tiến độ; ghi sau thắng theo quy tắc rõ | gửi 2 request song song | `[x]` |
@@ -317,6 +318,15 @@ chặn route, CRUD nội dung. Test case: `T-P2-01` … `T-P2-10`.
 > verify live, nhưng chưa bấm chuột) — sẽ bổ sung khi có môi trường
 > duyệt; **không tick `[x]` cho tới khi đó**.
 >
+> **Bổ sung 08–18/11/2026 (ngoài checklist gốc):** FSRS-4.5 thay SM-2; PWA cài như app +
+> nhắc ôn hằng ngày qua Web Push (`notifications`, [plan-pwa](./plans/plan-pwa.md)); benchmark AI tiếng Nhật
+> dataset 1000 case (`eval`, `/admin/ai-eval`); dịch vụ AI Google AI Pro qua Antigravity CLI (`agy`);
+> kiểm tra lại cả deck (cách đọc nhiều giá trị, Hán Việt, từ loại `partsOfSpeech`, `note`); nhập từ Mazii;
+> Kanji admin theo thứ tự N5–N1 + đồng bộ Mazii; tách học/ôn, tự phát âm khi học; quản lý admin (tạo admin,
+> đặt lại mật khẩu); chạy server bằng pm2 + ngrok. Danh sách đầy đủ ở [TICKETS.md](./TICKETS.md).
+> **Lưu ý chiến lược test:** quyết định 03/11 "không viết test trước P11" **đã không còn đúng với code** — repo hiện có
+> 47 file `*.spec.ts` (SRS, import, eval, AI, flashcards…). Việc còn lại của P11 là chạy lại và đối chiếu với backlog `T-*`.
+>
 > **Ghi chú chiến lược test (03/11/2026):** theo quyết định mới, **không
 > viết test file ở P1–P10**; toàn bộ test dồn về P11. Các mục
 > `T-P3-01…12` trong backlog chỉ được tick `[x]` khi P11 chạy thật.
@@ -360,11 +370,11 @@ chặn route, CRUD nội dung. Test case: `T-P2-01` … `T-P2-10`.
 | P5-QUOTA-04 | `EntitlementGuard` + `QuotaGuard` | P5-QUOTA-03, P2-AUTH-06 | `src/entitlements/guards/*` | Plan không có quyền → 403; hết hạn mức → 429/403 theo quy ước | gọi API | `[ ]` |
 | P5-QUOTA-05 | Reset theo chu kỳ + timezone | P5-QUOTA-03 | `quota.service.ts` | Sang kỳ mới hạn mức về mặc định đúng tz | giả lập thời gian | `[ ]` |
 | P5-QUOTA-06 | Chính sách vượt hạn mức (chặn / cho vượt có ghi nhận) | P5-QUOTA-04 | `quota.service.ts` | Hành vi khớp quyết định của Tôi | gọi API vượt | `⏸` |
-| P5-ADMIN-01 | Khung admin + RBAC (`USER`/`ADMIN`/`SUPER_ADMIN`) | P2-UI-04 | `app/admin/layout.tsx`, `src/admin/*` | Vào `/admin` khi không đủ quyền → 403 | thao tác trình duyệt | `[ ]` |
-| P5-ADMIN-02 | Quản lý người dùng (trạng thái tài khoản, đổi role — least privilege) | P5-ADMIN-01 | `app/admin/users/*`, `src/users/*` | Không tự nâng quyền; thao tác có audit | thao tác trình duyệt | `[ ]` |
-| P5-ADMIN-03 | Audit log cho thao tác quản trị (ai, khi nào, giá trị trước/sau) | P5-ADMIN-02 | `src/admin/audit.interceptor.ts`, `audit_logs` | Mọi thao tác ghi trong P5 đều có bản ghi | thao tác rồi kiểm DB | `[ ]` |
-| P5-FEEDBACK-01 | Schema + API gửi phản hồi (từ vựng/transcript/bản dịch) | P2-AUTH-06 | `src/feedback/*` | Người dùng gửi được; có trạng thái | gọi API | `[ ]` |
-| P5-FEEDBACK-02 | Hộp thư phản hồi cho admin (lọc theo trạng thái, lịch sử xử lý) | P5-FEEDBACK-01, P5-ADMIN-01 | `app/admin/feedback/*` | Đổi trạng thái + ghi lịch sử | thao tác trình duyệt | `[ ]` |
+| P5-ADMIN-01 | Khung admin + RBAC (`USER`/`ADMIN`/`SUPER_ADMIN`) | P2-UI-04 | `app/admin/layout.tsx`, `src/admin/*` | Vào `/admin` khi không đủ quyền → 403 | thao tác trình duyệt — **đã có `/admin/(panel)` + RBAC; chưa kiểm theo tiêu chí 403** | `[~]` |
+| P5-ADMIN-02 | Quản lý người dùng (trạng thái tài khoản, đổi role — least privilege) | P5-ADMIN-01 | `app/admin/users/*`, `src/users/*` | Không tự nâng quyền; thao tác có audit | thao tác trình duyệt — **đã có `admin-users` (tạo admin, reset mật khẩu, trạng thái); chưa kiểm không-tự-nâng-quyền** | `[~]` |
+| P5-ADMIN-03 | Audit log cho thao tác quản trị (ai, khi nào, giá trị trước/sau) | P5-ADMIN-02 | `src/admin/audit.interceptor.ts`, `audit_logs` | Mọi thao tác ghi trong P5 đều có bản ghi | thao tác rồi kiểm DB — **đã có `audit.interceptor` + `auditlogs` (365 ngày) cho route có `@Roles`; chưa ghi giá trị trước/sau, chưa kiểm** | `[~]` |
+| P5-FEEDBACK-01 | Schema + API gửi phản hồi (từ vựng/transcript/bản dịch) | P2-AUTH-06 | `src/feedback/*` | Người dùng gửi được; có trạng thái | gọi API — **mới có báo lỗi thẻ (`cardreports`); chưa có phản hồi transcript/bản dịch** | `[~]` |
+| P5-FEEDBACK-02 | Hộp thư phản hồi cho admin (lọc theo trạng thái, lịch sử xử lý) | P5-FEEDBACK-01, P5-ADMIN-01 | `app/admin/feedback/*` | Đổi trạng thái + ghi lịch sử | thao tác trình duyệt — **mới có `/admin/reports` cho báo lỗi thẻ; chưa có trạng thái + lịch sử xử lý** | `[~]` |
 | P5-ADMIN-04 | Màn hình cấu hình tính năng/hạn mức theo gói | P5-QUOTA-01, P5-ADMIN-01 | `app/admin/entitlements/*` | Sửa limit → có hiệu lực ngay | thao tác rồi gọi API | `[ ]` |
 | P5-SEC-01 | Rà soát least privilege toàn bộ endpoint admin | P5-ADMIN-03 | `src/**/*.controller.ts` | Mọi endpoint admin có `@Roles` | `grep -L "@Roles" src/**/*.controller.ts` | `[ ]` |
 | P5-DOC-01 | Cập nhật `database.md` + ADR entitlement | P5-QUOTA-05 | `docs/database.md`, `docs/adr/ADR-entitlements.md` | ADR `Proposed`/`Accepted` rõ | đối chiếu | `[ ]` |

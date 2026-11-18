@@ -20,7 +20,7 @@
 
 | Tiêu chí | Phương án A: **Expo (React Native) — Đề xuất** | Phương án B: Capacitor (Bọc Next.js) | Phương án C: Flutter |
 |---|---|---|---|
-| **Tái sử dụng code trong Monorepo** | **Rất cao** (100% TypeScript, dùng chung `packages/shared`, thuật toán SM-2, kiểu DTO, Zod/validation, `han-viet.json`) | Cao (dùng lại UI web nhưng phải đổi sang static export hoặc trỏ remote URL) | Thấp (phải viết lại toàn bộ logic TS sang Dart) |
+| **Tái sử dụng code trong Monorepo** | **Rất cao** (100% TypeScript, dùng chung `packages/shared`, thuật toán FSRS, kiểu DTO, Zod/validation, `han-viet.json`) | Cao (dùng lại UI web nhưng phải đổi sang static export hoặc trỏ remote URL) | Thấp (phải viết lại toàn bộ logic TS sang Dart) |
 | **Rủi ro bị Apple Reject (Guideline 4.2)** | **Thấp** (UI gốc UIKit/Android View qua React Native New Architecture) | **Cao** (nếu giống hệt web) | Thấp |
 | **Offline SRS & SQLite local** | Xuất sắc (`expo-sqlite` + Drizzle/WatermelonDB) | Hạn chế (IndexedDB dễ bị iOS xoá khi thiếu bộ nhớ) | Tốt (`sqflite`/`drift`) |
 | **Audio / Mic / IAP / Push** | Hệ sinh thái chuẩn (`expo-audio`, `react-native-Purchases` / StoreKit 2, `expo-notifications`) | Phụ thuộc plugin cầu nối WebView | Tốt |
@@ -56,7 +56,7 @@ nihongo-path/
     └── shared/                  # @nihongo/shared (dùng chung cho api + ui + mobile)
         ├── han-viet.json        # Đã có
         ├── src/
-        │   ├── srs/             # Tách pure algorithm SM-2 + srs.days.ts sang đây để chạy offline trên Mobile
+        │   ├── srs/             # Tách pure algorithm FSRS + srs.days.ts sang đây để chạy offline trên Mobile
         │   ├── types/           # DTO / Response interfaces (Auth, Deck, Card, Kanji, Exam, AI)
         │   └── constants/       # JLPT levels, feature keys, error codes
         └── package.json

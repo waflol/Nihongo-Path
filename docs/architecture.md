@@ -76,7 +76,7 @@ Dùng pnpm workspace thuần (không turborepo): đủ cho 2 app + 1 package. C�
 | `content` | (gốc), `/kanji`, `/admin/kanji` | Giáo trình, bài, từ vựng, ngữ pháp, kanji Jōyō — chi tiết §3.3 |
 | `flashcards` | `/flashcards` | Deck, thẻ, cảnh báo xem xét, ví dụ, câu luyện thi — chi tiết §3.4 |
 | `import` | `/flashcards/import` | Nhập CSV / XLSX / PDF — xem [import-flow.md](./import-flow.md) |
-| `srs` | `/srs` | SM-2, hàng đợi học / ôn, thống kê — chi tiết §3.5 |
+| `srs` | `/srs` | FSRS-4.5, hàng đợi học / ôn, thống kê — chi tiết §3.5 |
 | `ai` | `/flashcards/admin/ai` | Dịch vụ AI do admin quản lý — chi tiết §3.6 |
 | `redis` | `/admin/redis` | Kết nối tuỳ chọn + console quản trị |
 | `logs` | `/admin/logs` | Log request / ứng dụng / audit, thống kê truy cập, chặn IP |
@@ -108,7 +108,7 @@ Dùng pnpm workspace thuần (không turborepo): đủ cho 2 app + 1 package. C�
 
 ### 3.5. `srs` — lặp lại ngắt quãng
 
-- Thuật toán **SM-2**, state có phiên bản để đổi sang FSRS sau này ([ADR-srs](./adr/ADR-srs.md)).
+- Thuật toán **FSRS-4.5** (từ 18/11/2026, thay SM-2): mỗi thẻ có `stability` + `difficulty`; state có phiên bản (`schemaVersion: 2`). Thẻ SM-2 cũ được nâng cấp ở lần ôn kế tiếp, các trường cũ (`ease`, `repetitions`, `intervalDays`, `lapses`) vẫn được giữ cho hàng đợi. Bản sao phía client ở `study-session.tsx` ([ADR-srs](./adr/ADR-srs.md)).
 - Hàng đợi `GET /srs/queue/:deckId` tách hai chế độ: `mode=learn` (từ mới theo thứ tự deck, giới hạn `newCardsPerDay` mỗi deck mỗi ngày) và `mode=review` (chỉ từ đến hạn). "Ngày" tính theo múi giờ của user.
 - `GET /srs/exercise-priority`: thứ tự từ cho phần luyện tập — từ học hôm nay trước, rồi từ đến hạn.
 - Thống kê tiến độ bằng Mongo aggregation; ôn chéo deck; đặt lại tiến độ một deck.
@@ -217,7 +217,7 @@ Quyết định thuộc chủ sản phẩm; chi tiết ở [OPEN_QUESTIONS.md](.
 | Google AdSense | Chưa làm; sẽ là cờ tắt mặc định theo env |
 | Bộ phân tích hình thái cho tính năng phân tích câu | Chưa quyết định (hiện dùng kuromoji cho cách đọc và kiểm tra ví dụ) |
 | Domain production, tên thương hiệu, palette | Chưa chốt — ảnh hưởng canonical / SEO |
-| Thuật toán SRS | **Đã chốt SM-2** ([ADR-srs](./adr/ADR-srs.md)) |
+| Thuật toán SRS | **Đã chốt FSRS-4.5** (thay SM-2 ngày 18/11/2026, [ADR-srs](./adr/ADR-srs.md)) |
 | Nhà cung cấp xác thực | **Đã chốt** email + Google ([ADR-auth-provider](./adr/ADR-auth-provider.md)) |
 
 Khi làm các lớp trên: RBAC và quyền lợi gói (entitlements) tách riêng; webhook thanh toán phải có chữ ký, idempotency, retry; cần monitoring / alert cho API, worker, AI, storage trước khi lên production.

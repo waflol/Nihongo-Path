@@ -3,7 +3,7 @@
 > Các điểm **mơ hồ, mâu thuẫn hoặc còn thiếu** phát hiện khi đối chiếu spec,
 > `architecture.md`, `database.md` với code thực tế.
 >
-> **Ngày lập:** 30/10/2026. **Cập nhật lần cuối:** 07/11/2026. **Người lập:** [CC].
+> **Ngày lập:** 30/10/2026. **Cập nhật lần cuối:** 18/11/2026. **Người lập:** [CC].
 >
 > Quy ước: **Chặn thiết kế** = không thể bắt đầu phase liên quan.
 > **Chặn phát hành** = có thể code nhưng không được lên production.
@@ -21,7 +21,7 @@
 
 **Trạng thái:**
 - `Q-01`, `Q-02` đã `✅ Chốt` (30/10/2026) — mở khoá P2.
-- `Q-03` (SRS) đã `✅ Chốt` (03/11/2026) — SM-2 + state versioned, mở khoá P3-SRS.
+- `Q-03` (SRS) đã `✅ Chốt` (03/11/2026) — SM-2 + state versioned, mở khoá P3-SRS. **18/11/2026: đã chuyển sang FSRS-4.5** (xem Q-03 và ADR-srs).
 - `Q-12` đã `✅ Duyệt phần P3` (05/11/2026) cho PDF tự soạn/có quyền và Kanji Jōyō nguồn mở; phần đề thi chính thức ở P4 vẫn `⏸ Chờ Tôi`.
 - **Toàn bộ nhóm C (`Q-13`–`Q-18`) đã `✅ Giải quyết dứt điểm` (07/11/2026)** — toàn bộ tài liệu trong `docs/`, `README.md`, `apps/*/README.md` đã khớp với trạng thái codebase hiện tại.
 - Các câu còn lại (`Q-04`–`Q-11`, phần P4 của `Q-12`, `Q-19`–`Q-24`) đang `⏸ Chờ Tôi`. Không câu nào thuộc thẩm quyền chủ sản phẩm bị tự trả lời.
@@ -76,6 +76,7 @@
   `user_card_progress.state` embed `{ schemaVersion: 1, algorithm: "sm2",
   ease, repetitions, intervalDays, lapses }` — FSRS sau này thêm
   `schemaVersion: 2` mà không phá state cũ. ADR-002 đã `Accepted`.
+- **Cập nhật 18/11/2026:** đã dùng đúng lối thoát này — FSRS-4.5 thay SM-2 (`schemaVersion: 2`, thêm `stability`/`difficulty`/`lastReviewAt`; thẻ cũ nâng cấp ở lần ôn kế tiếp). Còn mở: tối ưu tham số FSRS theo dữ liệu thật.
 
 ### Q-04 — Provider AI / STT / đánh giá phát âm
 

@@ -72,7 +72,13 @@ sửa** trong bước lập kế hoạch.
 
 ---
 
-## 3. Trạng thái repository hiện tại (30/10/2026)
+## 3. Trạng thái repository hiện tại
+
+> **Cập nhật 18/11/2026.** Mục 3.1–3.2 dưới đây là ảnh chụp lúc P0 (30/10/2026); trạng thái hiện tại tóm tắt ngay sau đây, tiến độ từng ticket ở [TICKETS.md](./TICKETS.md).
+
+**Hiện tại (18/11/2026):** P0–P2 gần xong (còn 3 mục UI chưa bấm trình duyệt), P3 gần xong (7 mục `[~]`). Đã làm thêm ngoài kế hoạch: Kanji Jōyō + đồng bộ Mazii, dịch vụ AI + benchmark/eval, kiểm tra deck bằng AI, PWA + Web Push, nhật ký/chặn IP, quản lý admin. SRS đã chuyển sang FSRS-4.5. P4–P11 chưa bắt đầu theo đúng tiêu chí checklist (một phần P4/P5 đã có code nền).
+
+### 3.0. Ảnh chụp lúc P0 (30/10/2026)
 
 ### 3.1. Nền tảng đã dựng
 

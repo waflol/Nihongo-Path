@@ -355,7 +355,7 @@ progress bar như `example-job-tracker` hiện có).
 
 ### 6.3. Học
 
-Không đụng engine SM-2. Kanji card vào chung hàng đợi `/learn/study`. Tiến độ
+Không đụng engine SRS (FSRS-4.5). Kanji card vào chung hàng đợi `/learn/study`. Tiến độ
 theo `(user, card)` như mọi thẻ khác.
 
 ## 7. UI

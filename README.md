@@ -1,6 +1,6 @@
 # Nihongo Path
 
-Nền tảng học tiếng Nhật (giao diện tiếng Việt): flashcard + lặp lại ngắt quãng (SM-2),
+Nền tảng học tiếng Nhật (giao diện tiếng Việt): flashcard + lặp lại ngắt quãng (FSRS-4.5),
 Kanji Jōyō 2136 (thứ tự nét, tra âm Hán Việt), luyện từ & luyện thi (問題),
 nhập từ vựng từ CSV/XLSX/PDF (kèm OCR ảnh cho PDF scan), tự tạo câu ví dụ (Tatoeba + AI), khu quản trị.
 
