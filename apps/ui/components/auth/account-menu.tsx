@@ -40,6 +40,7 @@ const ADMIN_LINKS = [
   { href: "/admin/import", label: "Nhập hàng loạt", icon: "M12 3v12m0 0l-4-4m4 4l4-4M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2" },
 ] as const;
 
+const ACCOUNT_ICON = "M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z";
 const LOGOUT_ICON = "M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9";
 
 function MenuIcon({ d }: { d: string }) {
@@ -189,6 +190,12 @@ export function AccountMenu({
               </li>
             ))}
           <li>
+            <Link href="/account" onClick={onNavigate} className={rowClass}>
+              <MenuIcon d={ACCOUNT_ICON} />
+              Tài khoản
+            </Link>
+          </li>
+          <li>
             <button type="button" onClick={logout} className={`${rowClass} font-medium`}>
               <MenuIcon d={LOGOUT_ICON} />
               Đăng xuất
@@ -272,6 +279,16 @@ export function AccountMenu({
                 </Link>
               </li>
             ))}
+          <li className="relative flex cursor-pointer items-center gap-2.5 px-3 py-2 text-sm text-[var(--dropdown-item-foreground)] hover:bg-[var(--dropdown-item-hover)] focus:bg-[var(--dropdown-item-focus)] active:bg-[var(--dropdown-item-active)]">
+            <Link
+              onClick={() => setOpen(false)}
+              href="/account"
+              className="flex w-full items-center gap-2.5 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--dropdown-item-focus)]"
+            >
+              <MenuIcon d={ACCOUNT_ICON} />
+              Tài khoản
+            </Link>
+          </li>
           <li className="relative flex cursor-pointer items-center gap-2.5 px-3 py-2 text-sm font-medium text-[var(--dropdown-item-foreground)] hover:bg-[var(--dropdown-item-hover)] focus:bg-[var(--dropdown-item-focus)] active:bg-[var(--dropdown-item-active)]">
             <button
               type="button"

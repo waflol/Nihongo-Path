@@ -75,7 +75,7 @@ Có commit, chưa nằm trong checklist; cần bổ sung tiêu chí nghiệm thu
 | NP-108 | Luyện thi 問題 (`exercise_questions`, `/learn/exam`), bài tập nhiều chế độ | `exercise-questions.service.ts` | Chưa có attempt/timer/chấm điểm server (xem P4) |
 | NP-109 | Nhật ký request/app/audit, chặn IP, Redis console | `docs/database.md` §6–7 | — |
 | NP-110 | Quản lý admin: tạo admin, đặt lại mật khẩu, trạng thái | `admin-users.service.ts` | Xem NP-024 |
-| NP-111 | Điều khoản & bảo mật, đồng ý khi đăng ký (`/terms`, `/privacy`) | `docs/legal-vietnam-and-terms.md` | Rà soát pháp lý bởi người có chuyên môn |
+| NP-111 | Điều khoản & bảo mật, đồng ý khi đăng ký (`/terms`, `/privacy`) | `docs/legal-vietnam-and-terms.md`, `apps/ui/app/legal.ts` | Điền thông tin đơn vị vận hành; DPIA/TIA gửi A05; luật sư rà soát (xem NP-111) |
 | NP-112 | Triển khai pm2 + ngrok, `mem-guard` RAM | `b96aafb`, `ecosystem.config.cjs` | Chạy bản build production thay vì dev |
 | NP-113 | Giám sát máy chủ: RAM, ổ đĩa, CPU + biểu đồ + bộ lọc 1 giờ/6 giờ/ngày/tuần/tháng/năm, lưu mẫu 5 phút (`/admin/system`) | `52da2e6`, `apps/api/src/system/`, `system-monitor.tsx` | Chưa chạy với Mongo thật / bấm thử trình duyệt, chưa test; RAM chưa trừ cache Linux |
 

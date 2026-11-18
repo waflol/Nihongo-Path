@@ -4,6 +4,7 @@ import {
   Get,
   HttpCode,
   HttpStatus,
+  Delete,
   Patch,
 } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from "@nestjs/swagger";
@@ -11,6 +12,7 @@ import { IsOptional, IsString, MaxLength, MinLength } from "class-validator";
 import { CurrentUser } from "../auth/decorators/current-user.decorator.js";
 import type { AuthUser, PublicUser } from "../auth/auth.types.js";
 import { UsersService } from "./users.service.js";
+import { AccountDeletionService } from "./account-deletion.service.js";
 
 /** Own-profile self-service — no foreign ids, no role/status writes. */
 export class UpdateProfileDto {
@@ -33,11 +35,27 @@ export class UpdateProfileDto {
   timezone?: string;
 }
 
+/** Body of `DELETE /users/me`. */
+export class DeleteAccountDto {
+  /** Must equal `XOA TAI KHOAN`. */
+  @IsString()
+  confirm!: string;
+
+  /** Required when the account has a password (email sign-up). */
+  @IsOptional()
+  @IsString()
+  @MaxLength(256)
+  password?: string;
+}
+
 @ApiTags("users")
 @ApiBearerAuth()
 @Controller("users")
 export class UsersController {
-  constructor(private readonly usersService: UsersService) {}
+  constructor(
+    private readonly usersService: UsersService,
+    private readonly deletion: AccountDeletionService,
+  ) {}
 
   @Get("me")
   @ApiOperation({ summary: "Read the caller's own profile" })
@@ -55,5 +73,17 @@ export class UsersController {
     @Body() body: UpdateProfileDto,
   ): Promise<PublicUser> {
     return this.usersService.updateProfile(caller, body);
+  }
+
+  @Delete("me")
+  @ApiOperation({
+    summary: "Permanently delete the caller's own account and personal data",
+    description: "SUPER_ADMIN accounts are refused (403). Accounts with a password must send it.",
+  })
+  @ApiResponse({ status: 200, description: "Account and data deleted" })
+  @ApiResponse({ status: 403, description: "SUPER_ADMIN cannot self-delete" })
+  @HttpCode(HttpStatus.OK)
+  deleteMe(@CurrentUser() caller: AuthUser, @Body() body: DeleteAccountDto) {
+    return this.deletion.deleteMe(caller, body);
   }
 }

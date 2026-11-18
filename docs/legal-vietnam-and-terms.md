@@ -4,6 +4,18 @@
 >
 > **Lưu ý quan trọng (Disclaimer):** Tài liệu này tổng hợp và phân tích các quy định pháp luật Việt Nam hiện hành (cập nhật tới năm 2026) nhằm thiết kế cơ chế **phòng vệ pháp lý từ trong kiến trúc sản phẩm (Legal-by-Design)** và cung cấp bộ dự thảo **Điều khoản Sử dụng & Chính sách Bảo vệ Dữ liệu Cá nhân** sát với tính năng thực tế của Nihongo Path. Tài liệu này mang tính chất tham khảo kỹ thuật – pháp lý nội bộ, không thay thế văn bản tư vấn chính thức của tổ chức hành nghề luật sư. Trước khi bật thu phí thương mại quy mô lớn, chủ sản phẩm (**Tôi**) nên rà soát lần cuối cùng đơn vị tư vấn pháp lý/thuế.
 
+> **Cập nhật 18/11/2026 — văn bản đang chạy là nguồn đúng.** Phần II bên dưới là **dự thảo gốc 07/11** và đã lệch với sản phẩm. Bản
+> đang công bố nằm ở `apps/ui/app/terms/page.tsx` và `apps/ui/app/privacy/page.tsx`; danh tính đơn vị vận hành, ngày hiệu lực và số
+> ngày báo trước khi sửa đổi nằm ở `apps/ui/app/legal.ts` (điền qua `NEXT_PUBLIC_LEGAL_*`). Khác biệt chính so với dự thảo:
+> - Bỏ/đánh dấu "khi được mở" các tính năng chưa có: thu âm, chấm phát âm, Kaiwa, tải audio/video, thanh toán, quảng cáo, Sign in with Apple.
+> - Thuật toán ôn tập là **FSRS-4.5** (không còn SM-2); thêm Tatoeba (CC BY 2.0 FR) và mazii.net vào ghi công nguồn.
+> - CSDL là **MongoDB Atlas** (cụm đặt ngoài Việt Nam, xác nhận của chủ sản phẩm 18/11): nêu rõ trong mục chuyển dữ liệu xuyên biên giới.
+> - Bổ sung: quyền chấm dứt của người dùng, quy trình Notice & Takedown có phản đối, bảo lưu quyền người tiêu dùng (Luật 19/2023/QH15),
+>   sửa đổi điều khoản báo trước 7 ngày, hiệu lực từng phần, dữ liệu dưới 16 tuổi, căn cứ xử lý, báo sự cố trong 72 giờ,
+>   đầu mối liên hệ và khiếu nại tới A05 — Bộ Công an.
+> - **Đã làm:** xóa tài khoản tự phục vụ (`DELETE /users/me`, trang `/account`), SUPER_ADMIN không có nút.
+> - **Chưa làm (phải xử lý trước khi phát hành rộng):** điền `NEXT_PUBLIC_LEGAL_*`; hồ sơ DPIA/TIA gửi A05; xác minh người giám hộ cho người dưới 16 tuổi.
+
 ---
 
 ## Phần I. Nghiên cứu Pháp lý Việt Nam đối với Nihongo Path
