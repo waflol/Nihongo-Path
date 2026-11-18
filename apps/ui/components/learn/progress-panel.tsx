@@ -46,7 +46,7 @@ const LEVELS: Record<string, { label: string; hint: string; color: string }> = {
 const UNSEEN_COLOR = "#9ca3af";
 
 /** Daily new-card limit + mastery distribution chart for the learner. */
-export function ProgressPanel() {
+export function ProgressPanel({ compact = false, dense = false }: { compact?: boolean; dense?: boolean } = {}) {
   const { confirm, dialog } = useConfirm();
   const [stats, setStats] = useState<Stats | null>(null);
   const [perDay, setPerDay] = useState("20");
@@ -165,11 +165,16 @@ export function ProgressPanel() {
     <section
       aria-busy={loading}
       className={
-        "mt-8 rounded-2xl border border-[var(--border)] bg-[var(--background-1)] p-6 transition-opacity " +
+        (compact
+          ? "flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--background-1)] p-4 transition-opacity "
+          : dense
+            ? "mt-0 rounded-2xl border border-[var(--border)] bg-[var(--background-1)] p-4 transition-opacity [&_.mt-4]:!mt-2 [&_.mt-5]:!mt-3 [&_.mt-6]:!mt-3 [&_.space-y-6>*+*]:!mt-3 "
+            : "mt-8 rounded-2xl border border-[var(--border)] bg-[var(--background-1)] p-6 transition-opacity ") +
         (loading && stats ? "opacity-60" : "")
       }
     >
       {dialog}
+      <div className={compact ? "min-h-0 flex-1 overflow-y-auto" : ""}>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-sm font-semibold text-[var(--foreground)]">
           Tiến độ ghi nhớ
@@ -210,8 +215,8 @@ export function ProgressPanel() {
       {!stats ? (
         <p className="mt-3 text-sm text-[var(--muted-foreground)]">{error ? "" : "Đang tải…"}</p>
       ) : (
-        <div className="mt-4 grid gap-6 sm:grid-cols-[180px_1fr]">
-          <div className="relative mx-auto h-44 w-44">
+        <div className={compact ? "mt-3 grid grid-cols-[6.5rem_1fr] items-center gap-3" : (dense ? "mt-3 grid items-center gap-4 sm:grid-cols-[7.5rem_1fr]" : "mt-4 grid gap-6 sm:grid-cols-[180px_1fr]")}>
+          <div className={"relative mx-auto " + (compact ? "size-26" : dense ? "size-28" : "h-44 w-44")}>
             <svg viewBox="0 0 120 120" className="h-full w-full -rotate-90" role="img" aria-label="Biểu đồ mức độ ghi nhớ">
               <circle cx="60" cy="60" r={R} fill="none" stroke="var(--border)" strokeWidth="14" />
               {sum > 0 &&
@@ -236,17 +241,17 @@ export function ProgressPanel() {
                 })}
             </svg>
             <div className="absolute inset-0 flex flex-col items-center justify-center">
-              <span className="text-2xl font-semibold text-[var(--foreground)]">{learned}</span>
-              <span className="text-xs text-[var(--muted-foreground)]">/ {stats.total} thẻ đã học</span>
+              <span className={(compact ? "text-lg" : "text-2xl") + " font-semibold text-[var(--foreground)]"}>{learned}</span>
+              <span className="text-[10px] text-[var(--muted-foreground)]">/ {stats.total} thẻ</span>
             </div>
           </div>
 
-          <ul className="space-y-2 self-center">
+          <ul className={compact ? "space-y-1 self-center" : "space-y-2 self-center"}>
             {segments.map((s) => (
-              <li key={s.key} className="flex items-center gap-3 text-sm">
+              <li key={s.key} className={"flex items-center gap-2 " + (compact ? "text-xs" : "gap-3 text-sm")}>
                 <span className="h-3 w-3 shrink-0 rounded-sm" style={{ background: s.color }} />
                 <span className="font-medium text-[var(--foreground)]">{s.label}</span>
-                <span className="text-xs text-[var(--muted-foreground)]">{s.hint}</span>
+                {!compact && <span className="text-xs text-[var(--muted-foreground)]">{s.hint}</span>}
                 <span className="ml-auto tabular-nums text-[var(--foreground)]">
                   {s.count}
                   {sum > 0 && (
@@ -261,6 +266,35 @@ export function ProgressPanel() {
         </div>
       )}
 
+      {compact && stats && (() => {
+        const o = stats.overview;
+        const items =
+          range === "all" && o
+            ? [
+                { v: o.streak, l: "Chuỗi ngày học" },
+                { v: o.bestStreak, l: "Chuỗi dài nhất" },
+                { v: o.totalReviews, l: "Tổng lượt ôn" },
+                { v: o.studyDays, l: "Ngày đã học" },
+              ]
+            : [
+                { v: stats.reviewsInRange, l: "Lượt ôn" },
+                { v: stats.newInRange, l: "Từ mới" },
+                { v: stats.newToday, l: "Mới hôm nay" },
+              ];
+        return (
+          <div className="mt-3 hidden grid-cols-2 gap-2 lg:grid [@media(min-height:950px)]:grid">
+            {items.map((t) => (
+              <div key={t.l} className="rounded-lg border border-[var(--border)] px-2.5 py-1.5">
+                <p className="text-lg font-semibold leading-tight tabular-nums text-[var(--foreground)]">{t.v}</p>
+                <p className="text-[11px] text-[var(--muted-foreground)]">{t.l}</p>
+              </div>
+            ))}
+          </div>
+        );
+      })()}
+
+      {!compact && (
+        <>
       {(
         <div
           aria-hidden={range === "all"}
@@ -299,7 +333,7 @@ export function ProgressPanel() {
       )}
 
       {/* Roughly the height of the "Tất cả" overview, so switching tabs doesn't jolt. */}
-      <div className="min-h-[22rem]">
+      <div className={dense ? "min-h-[13rem]" : "min-h-[22rem]"}>
       {stats && range !== "all" && stats.series.length > 0 && (() => {
         const series = stats.series;
         const max = Math.max(1, ...series.map((b) => b.reviews));
@@ -338,13 +372,13 @@ export function ProgressPanel() {
               </div>
             </div>
 
-            <div className="mt-3 flex gap-2">
-              <div className="flex h-40 w-6 shrink-0 flex-col justify-between text-right text-[10px] tabular-nums text-[var(--muted-foreground)]">
+            <div className={"mt-3 flex gap-2 " + (dense ? "h-24" : "h-40")}>
+              <div className="flex w-6  shrink-0 flex-col justify-between text-right text-[10px] tabular-nums text-[var(--muted-foreground)]">
                 <span>{top}</span>
                 <span>{top / 2}</span>
                 <span>0</span>
               </div>
-              <div className="relative h-40 min-w-0 flex-1">
+              <div className="relative h-full min-w-0 flex-1">
                 {[0, 50, 100].map((p) => (
                   <div key={p} className="absolute inset-x-0 border-t border-dashed border-[var(--border)]" style={{ bottom: `${p}%` }} />
                 ))}
@@ -500,15 +534,21 @@ export function ProgressPanel() {
 
       </div>
 
-      <div className="mt-6 border-t border-[var(--border)] pt-4">
+        </>
+      )}
+
+      </div>
+
+      {compact && (
+      <div className="mt-auto shrink-0 border-t border-[var(--border)] pt-3">
         <label htmlFor="new-per-day" className="text-sm font-medium text-[var(--foreground)]">
           Số từ mới mỗi ngày
         </label>
-        <p className="mt-1 text-xs text-[var(--muted-foreground)]">
+        <p className="mt-1 hidden text-xs text-[var(--muted-foreground)]">
           Bộ thẻ lớn sẽ được chia đều theo số này mỗi ngày
           {stats ? ` — hôm nay đã học ${stats.newToday} từ mới.` : "."}
         </p>
-        <div className="mt-2 flex items-center gap-2">
+        <div className="mt-1.5 flex items-center gap-2">
           <input
             id="new-per-day"
             type="number"
@@ -516,7 +556,7 @@ export function ProgressPanel() {
             max={500}
             value={perDay}
             onChange={(e) => setPerDay(e.target.value)}
-            className="w-24 rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-1.5 text-sm text-[var(--foreground)]"
+            className="w-20 rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-1.5 text-sm text-[var(--foreground)]"
           />
           <button
             type="button"
@@ -529,6 +569,7 @@ export function ProgressPanel() {
           {msg && <span className="text-xs text-[var(--muted-foreground)]">{msg}</span>}
         </div>
       </div>
+      )}
     </section>
   );
 }

@@ -42,11 +42,11 @@ export function HeroScene({ className = "" }: { className?: string }) {
         <g className="hs-rise">
           <circle cx="1400" cy="215" r="118" fill="#ff5a3c" />
         </g>
-        <path d={FUJI} fill="#312e81" />
+        <path d={FUJI} style={{ fill: "var(--primary-900)" }} />
         <path className="hs-fade" d={CAP} fill="#fff" />
         <path
           d="M640 600 C760 520 860 470 960 470 C1060 470 1160 520 1320 600Z"
-          fill="#3730a3"
+          style={{ fill: "var(--primary-800)" }}
           opacity=".9"
         />
         <g className="hs-mist" opacity=".35">
@@ -57,11 +57,10 @@ export function HeroScene({ className = "" }: { className?: string }) {
             <path
               className="hs-wing"
               d={`M1700 ${110 + i * 28} q12 -14 24 0 q12 -14 24 0`}
-              stroke="#1e1b4b"
               strokeWidth="3"
               fill="none"
               strokeLinecap="round"
-              style={{ animationDelay: `${-i * 0.17}s` }}
+              style={{ animationDelay: `${-i * 0.17}s`, stroke: "var(--primary-950)" }}
             />
           </g>
         ))}

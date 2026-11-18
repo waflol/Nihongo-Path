@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { siteConfig } from "@/app/site";
 import { AccountMenu } from "@/components/auth/account-menu";
+import { LoginCta } from "@/components/auth/login-cta";
 import { AccentPicker, ThemeToggle } from "@/components/theme-toggle";
 
 const navLinks = [
@@ -97,12 +98,16 @@ export function SiteHeader() {
             </svg>
           </button>
 
+          <LoginCta>
+
           <Link
             href="/learn"
             className="hidden md:inline-flex rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-semibold text-[var(--primary-foreground)] hover:bg-[var(--primary-hover)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--primary-focus)]"
           >
             Bắt đầu học
           </Link>
+
+          </LoginCta>
         </div>
       </div>
 
@@ -158,6 +163,7 @@ export function SiteHeader() {
               {link.label}
             </Link>
           ))}
+          <LoginCta>
           <Link
             onClick={() => setOpen(false)}
             href="/learn"
@@ -165,6 +171,7 @@ export function SiteHeader() {
           >
             Bắt đầu học
           </Link>
+          </LoginCta>
         </nav>
 
         {/* Account area pinned to the bottom: a plain list, not a dropdown. */}

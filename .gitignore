@@ -153,6 +153,8 @@ vite.config.ts.timestamp-*
 
 # kanji import cache
 apps/api/data/kanji/
+# Browser evidence screenshots for checklist verification (P2 etc.)
+.p2-evidence/
 # Antigravity CLI state of each service (sign-in data) - never commit
 apps/api/data/antigravity-cli/
 apps/api/data/gemini-cli/
