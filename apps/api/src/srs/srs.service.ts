@@ -23,7 +23,7 @@ import {
   type StudySessionDocument,
 } from "./schemas/session.schema.js";
 import {
-  advanceSm2,
+  advanceSrs,
   SRS_DEFAULT_STATE,
   type ReviewGrade,
   type SrsState,
@@ -282,7 +282,7 @@ export class SrsService {
         newCards.push({ id, extra: { bucket: "new", state: { ...SRS_DEFAULT_STATE } } });
         continue;
       }
-      // Classify by SM-2 state: a lapse leaves repetitions at 0; otherwise
+      // Classify by SRS state: a lapse leaves repetitions at 0; otherwise
       // the ease drifts down on HARD/GOOD and up on EASY.
       const cls: "AGAIN" | "HARD" | "GOOD" | "EASY" =
         p.state.repetitions === 0
@@ -872,7 +872,7 @@ export class SrsService {
       if (!cardDoc) throw new NotFoundException("Card not found");
 
       const prev: SrsState = stateByCard.get(r.cardId) ?? { ...SRS_DEFAULT_STATE };
-      const outcome = advanceSm2(prev, { grade: r.grade, now });
+      const outcome = advanceSrs(prev, { grade: r.grade, now });
       stateByCard.set(r.cardId, outcome.state);
 
       const dueAtMs =

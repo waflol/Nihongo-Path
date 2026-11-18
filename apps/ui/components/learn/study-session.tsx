@@ -23,7 +23,7 @@ import { useHanVietPref } from "@/lib/use-han-viet-pref";
  * **Grading is always available.** The four grade buttons (Quên / Khó / Tốt /
  * Thuộc) are enabled even before the card is flipped — you can rate your own
  * recall without revealing the answer, which is how Quizlet's "Still learning
- * / Got it" works. The SM-2 mirror (`advanceSm2` below) is a copy of
+ * / Got it" works. The FSRS mirror (`advanceSrs` below) is a copy of
  * `apps/api/src/srs/srs.algorithm.ts`; grades buffer in `pendingReviews` and
  * flush to `POST /api/srs/reviews/batch` (one request for the whole sitting),
  * on a debounce, on tab-hide, and on unmount (keepalive).
@@ -42,20 +42,23 @@ import { useHanVietPref } from "@/lib/use-han-viet-pref";
  * the real component is wrapped in its own `<Suspense>` boundary.
  */
 
-// ── SM-2 state (mirror of the API's `SrsState`) ──────────────────────
+// ── FSRS state (mirror of the API's `SrsState`) ──────────────────────
 
 interface SrsState {
-  schemaVersion: 1;
-  algorithm: "sm2";
+  schemaVersion: 1 | 2;
+  algorithm: "sm2" | "fsrs";
   ease: number;
   repetitions: number;
   intervalDays: number;
   lapses: number;
+  stability?: number;
+  difficulty?: number;
+  lastReviewAt?: number;
 }
 
 const SRS_DEFAULT_STATE: SrsState = {
-  schemaVersion: 1,
-  algorithm: "sm2",
+  schemaVersion: 2,
+  algorithm: "fsrs",
   ease: 2.5,
   repetitions: 0,
   intervalDays: 0,
@@ -64,42 +67,81 @@ const SRS_DEFAULT_STATE: SrsState = {
 
 type Grade = "AGAIN" | "HARD" | "GOOD" | "EASY";
 
-const GRADE_QUALITY: Record<Grade, number> = {
-  AGAIN: 0,
-  HARD: 2,
-  GOOD: 3,
-  EASY: 5,
-};
+const GRADE_NUM: Record<Grade, 1 | 2 | 3 | 4> = { AGAIN: 1, HARD: 2, GOOD: 3, EASY: 4 };
+
+// FSRS-4.5 defaults — keep identical to `apps/api/src/srs/srs.algorithm.ts`.
+const W = [
+  0.4872, 1.4003, 3.7145, 13.8206, 5.1618, 1.2298, 0.8975, 0.031, 1.6474,
+  0.1367, 1.0461, 2.1072, 0.0793, 0.3246, 1.587, 0.2272, 2.8755,
+];
+const DECAY = -0.5;
+const FACTOR = 19 / 81;
+const REQUEST_RETENTION = 0.9;
+const DAY_MS = 86_400_000;
+const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+const round3 = (v: number) => Math.round(v * 1000) / 1000;
+const initDifficulty = (g: number) => clamp(W[4] - W[5] * (g - 3), 1, 10);
 
 /**
- * Client mirror of the API's SM-2 (`srs.algorithm.ts`). MUST stay in lockstep
+ * Client mirror of the API's FSRS (`srs.algorithm.ts`). MUST stay in lockstep
  * — the server re-derives and overwrites the local state after each flush,
  * so a divergence only costs a moment of inaccuracy within a sitting.
  */
-function advanceSm2(prev: SrsState, grade: Grade): SrsState {
-  const q = GRADE_QUALITY[grade];
-  const clampedEase = Math.max(1.3, prev.ease + 0.1 - (5 - q) * (0.08 + (5 - q) * 0.02));
-  let repetitions: number;
-  let intervalDays: number;
-  let lapses = prev.lapses;
-
-  if (q === 0) {
-    repetitions = 0;
-    intervalDays = prev.intervalDays;
-    lapses = prev.lapses + 1;
-  } else {
-    repetitions = prev.repetitions + 1;
-    if (repetitions === 1) intervalDays = 1;
-    else if (repetitions === 2) intervalDays = 6;
-    else intervalDays = Math.max(1, Math.round(prev.intervalDays * clampedEase));
+function advanceSrs(prev: SrsState, grade: Grade): SrsState {
+  const g = GRADE_NUM[grade];
+  const now = Date.now();
+  let s = prev.stability;
+  let d = prev.difficulty;
+  if ((s === undefined || d === undefined) && prev.intervalDays > 0) {
+    s = Math.max(prev.intervalDays, 0.1);
+    d = clamp(initDifficulty(3) + (2.5 - prev.ease) / 0.2, 1, 10);
   }
-
+  let nextS: number;
+  let nextD: number;
+  if (s === undefined || d === undefined) {
+    nextS = Math.max(0.1, W[g - 1]);
+    nextD = initDifficulty(g);
+  } else {
+    const elapsed =
+      prev.lastReviewAt !== undefined
+        ? Math.max(0, (now - prev.lastReviewAt) / DAY_MS)
+        : prev.intervalDays;
+    const r = Math.pow(1 + (FACTOR * elapsed) / s, DECAY);
+    nextD = clamp(W[7] * initDifficulty(4) + (1 - W[7]) * (d - W[6] * (g - 3)), 1, 10);
+    nextS =
+      g === 1
+        ? Math.min(
+            s,
+            W[11] * Math.pow(d, -W[12]) * (Math.pow(s + 1, W[13]) - 1) * Math.exp((1 - r) * W[14]),
+          )
+        : s *
+          (1 +
+            Math.exp(W[8]) *
+              (11 - d) *
+              Math.pow(s, -W[9]) *
+              (Math.exp((1 - r) * W[10]) - 1) *
+              (g === 2 ? W[15] : 1) *
+              (g === 4 ? W[16] : 1));
+  }
+  nextS = Math.max(0.1, nextS);
+  const lapse = g === 1;
+  const intervalDays = lapse
+    ? prev.intervalDays
+    : clamp(
+        Math.round((nextS / FACTOR) * (Math.pow(REQUEST_RETENTION, 1 / DECAY) - 1)),
+        1,
+        36500,
+      );
   return {
-    ...prev,
-    ease: Math.round(clampedEase * 1000) / 1000,
-    repetitions,
+    schemaVersion: 2,
+    algorithm: "fsrs",
+    ease: round3(clamp(2.5 + (initDifficulty(3) - nextD) * 0.2, 1.3, 3.5)),
+    repetitions: lapse ? 0 : prev.repetitions + 1,
     intervalDays,
-    lapses,
+    lapses: prev.lapses + (lapse ? 1 : 0),
+    stability: round3(nextS),
+    difficulty: round3(nextD),
+    lastReviewAt: now,
   };
 }
 
@@ -306,7 +348,7 @@ function StudySessionInner({ mode }: { mode: "learn" | "review" }) {
   const [resetting, setResetting] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
 
-  // ── Sync layer: local SM-2 mirror + buffered batch flush ─────────────
+  // ── Sync layer: local FSRS mirror + buffered batch flush ─────────────
   const statesRef = useRef<Map<string, SrsState>>(new Map());
   const pendingRef = useRef<{ cardId: string; grade: Grade }[]>([]);
   const flushTimer = useRef<number | null>(null);
@@ -490,7 +532,7 @@ function StudySessionInner({ mode }: { mode: "learn" | "review" }) {
     (choice: Grade, advance = true) => {
       if (!current) return;
       const prev = statesRef.current.get(current.id) ?? { ...SRS_DEFAULT_STATE };
-      const next = advanceSm2(prev, choice);
+      const next = advanceSrs(prev, choice);
       statesRef.current.set(current.id, next);
 
       pendingRef.current.push({ cardId: current.id, grade: choice });
