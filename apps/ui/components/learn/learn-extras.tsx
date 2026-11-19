@@ -3,7 +3,21 @@
 import { useEffect, useState, type ReactNode } from "react";
 
 /** Button that opens a modal (own scroll) so the /learn page itself never scrolls. */
-export function ExtraDialog({ label, title, children }: { label: string; title: string; children: ReactNode }) {
+export function ExtraDialog({
+  label,
+  title,
+  children,
+  ariaLabel,
+  className = "px-4",
+}: {
+  label: ReactNode;
+  title: string;
+  children: ReactNode;
+  /** Needed when `label` is an icon. */
+  ariaLabel?: string;
+  /** Trigger width/padding; defaults to a text button. */
+  className?: string;
+}) {
   const [open, setOpen] = useState(false);
   useEffect(() => {
     if (!open) return;
@@ -16,7 +30,9 @@ export function ExtraDialog({ label, title, children }: { label: string; title: 
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="inline-flex h-10 sm:h-11 items-center justify-center rounded-xl border border-[var(--border)] px-4 text-sm font-medium sm:h-auto sm:rounded-full sm:py-1.5 text-[var(--foreground)] transition-colors hover:border-[var(--primary)] hover:text-[var(--primary)]"
+        aria-label={ariaLabel}
+        title={ariaLabel}
+        className={className + " inline-flex h-10 sm:h-11 items-center justify-center rounded-xl border border-[var(--border)] text-sm font-medium sm:h-auto sm:rounded-full sm:py-1.5 text-[var(--foreground)] transition-colors hover:border-[var(--primary)] hover:text-[var(--primary)]"}
       >
         {label}
       </button>

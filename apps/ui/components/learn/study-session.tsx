@@ -207,7 +207,7 @@ const GRADES: { key: string; grade: Grade; label: string; hint: string }[] = [
 /** Toolbar pill: soft primary tint when active, quiet outline otherwise. */
 function toolbarBtn(active: boolean): string {
   return (
-    "inline-flex size-9 items-center justify-center rounded-full border text-sm font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--primary-focus)] " +
+    "inline-flex size-9 shrink-0 max-sm:size-8 items-center justify-center rounded-full border text-sm font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--primary-focus)] " +
     (active
       ? "border-[color-mix(in_srgb,var(--primary)_45%,transparent)] bg-[color-mix(in_srgb,var(--primary)_14%,transparent)] text-[var(--primary)]"
       : "border-[var(--border)] bg-transparent text-[var(--muted-foreground)] hover:bg-[var(--layer-hover)] hover:text-[var(--foreground)]")
@@ -740,7 +740,7 @@ function StudySessionInner({ mode }: { mode: "learn" | "review" }) {
   }
 
   return (
-    <div className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6">
+    <div className="mx-auto w-full max-w-6xl px-4 pb-3 pt-3 sm:px-6 sm:py-8">
       <ConfirmDialog
         open={confirmReset}
         title="Đặt lại tiến độ?"
@@ -752,17 +752,17 @@ function StudySessionInner({ mode }: { mode: "learn" | "review" }) {
           void resetDeckProgress().finally(() => setConfirmReset(false));
         }}
       />
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border)] pb-4">
-        <h1 className="text-2xl font-semibold tracking-tight text-[var(--foreground)]">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border)] pb-4 max-sm:flex-nowrap max-sm:pb-2">
+        <h1 className="shrink-0 text-lg sm:text-2xl font-semibold tracking-tight text-[var(--foreground)]">
           {mode === "learn" ? "Học từ mới" : "Ôn tập SRS"}
         </h1>
-        <div className="flex min-w-0 max-w-full items-center gap-3">
+        <div className="flex min-w-0 max-w-full items-center gap-3 max-sm:flex-1 max-sm:justify-end">
           {/* Always rendered (just hidden when idle) so the header height —
               and therefore the card position — never shifts while grading. */}
           <span
             aria-hidden={syncState === "idle"}
             className={
-              "inline-block w-40 rounded-full px-2.5 py-0.5 text-center text-xs font-medium " +
+              "inline-block w-40 rounded-full px-2.5 py-0.5 text-center text-xs font-medium max-sm:pointer-events-none max-sm:fixed max-sm:bottom-[calc(0.75rem+env(safe-area-inset-bottom))] max-sm:left-1/2 max-sm:z-40 max-sm:-translate-x-1/2 max-sm:shadow-md " +
               (syncState === "idle"
                 ? "invisible"
                 : syncState === "syncing"
@@ -773,8 +773,8 @@ function StudySessionInner({ mode }: { mode: "learn" | "review" }) {
             {syncState === "syncing" ? "Đang đồng bộ…" : `Chờ đồng bộ ${pendingCount} phản hồi`}
           </span>
           {decks.length > 0 && (
-            <label className="flex min-w-0 max-w-full items-center text-sm text-[var(--muted-foreground)]">
-              Bộ thẻ:{" "}
+            <label className="flex min-w-0 max-w-full items-center text-sm text-[var(--muted-foreground)] max-sm:flex-1">
+              <span className="max-sm:sr-only">Bộ thẻ:</span>{" "}
               <select
                 value={deck?._id ?? ""}
                 onChange={(e) => {
@@ -866,7 +866,7 @@ function StudySessionInner({ mode }: { mode: "learn" | "review" }) {
       )}
 
       {!loading && current && (
-        <div className="mt-6">
+        <div className="mt-2 sm:mt-6">
           {/* Quizlet-style counter row: New / Learning / Known */}
           <div className="flex items-center justify-center gap-2 text-xs font-semibold">
             <span className="rounded-full bg-[#ef4444]/10 px-3 py-1 text-[#ef4444]">{counters.new} mới</span>
@@ -876,7 +876,7 @@ function StudySessionInner({ mode }: { mode: "learn" | "review" }) {
 
           {/* Progress strip */}
           <div
-            className="mt-3 h-1 w-full overflow-hidden rounded-full bg-[var(--layer)]"
+            className="mt-2 h-1 w-full overflow-hidden rounded-full bg-[var(--layer)] sm:mt-3"
             role="progressbar"
             aria-valuenow={done}
             aria-valuemin={0}
@@ -892,8 +892,8 @@ function StudySessionInner({ mode }: { mode: "learn" | "review" }) {
           </div>
 
           {/* Toolbar: shuffle + reset + card position */}
-          <div className="mt-4">
-            <div className="flex flex-wrap items-center justify-center gap-1.5">
+          <div className="mt-2 sm:mt-4">
+            <div className="flex flex-wrap items-center justify-center gap-1.5 max-sm:flex-nowrap max-sm:gap-1">
               <div
                 role="group"
                 aria-label="Hiển thị mặt thẻ trước"
@@ -901,10 +901,10 @@ function StudySessionInner({ mode }: { mode: "learn" | "review" }) {
               >
                 {(
                   [
-                    ["front", "Mặt trước"],
-                    ["back", "Mặt sau"],
+                    ["front", "Mặt trước", "Trước"],
+                    ["back", "Mặt sau", "Sau"],
                   ] as const
-                ).map(([side, label]) => (
+                ).map(([side, label, short]) => (
                   <button
                     key={side}
                     type="button"
@@ -916,13 +916,14 @@ function StudySessionInner({ mode }: { mode: "learn" | "review" }) {
                         : "Hiện nghĩa + ví dụ trước, lật để xem thuật ngữ"
                     }
                     className={
-                      "px-4 py-2 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--primary-focus)] " +
+                      "px-4 py-2 max-sm:px-2.5 max-sm:py-1.5 max-sm:text-xs transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--primary-focus)] " +
                       (startSide === side
                         ? "bg-[color-mix(in_srgb,var(--primary)_14%,transparent)] text-[var(--primary)]"
                         : "text-[var(--muted-foreground)] hover:bg-[var(--layer-hover)] hover:text-[var(--foreground)]")
                     }
                   >
-                    {label}
+                    <span className="sm:hidden">{short}</span>
+                    <span className="max-sm:hidden">{label}</span>
                   </button>
                 ))}
               </div>
@@ -1010,7 +1011,7 @@ function StudySessionInner({ mode }: { mode: "learn" | "review" }) {
           </div>
 
           {/* ── The card ────────────────────────────────────────────── */}
-          <div className="mt-2">
+          <div className="mt-6 max-sm:px-3 sm:mt-2">
             {/* key: a new card mounts un-flipped (no flip-back reveal of the
                 next card's answer) and plays the short entrance. */}
             <LearnCard
@@ -1045,12 +1046,12 @@ function StudySessionInner({ mode }: { mode: "learn" | "review" }) {
           </div>
 
           {/* ── Grading (always available — even before flipping) ────── */}
-          <div className="mt-5">
-            <p className="text-center text-xs text-[var(--muted-foreground)]">
+          <div className="mt-6 sm:mt-5">
+            <p className="text-center text-xs text-[var(--muted-foreground)] max-sm:hidden">
               Đánh giá mức độ thuộc — có thể chấm ngay cả khi chưa lật thẻ ·
               phím 0–3
             </p>
-            <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <div className="grid grid-cols-4 gap-1.5 sm:mt-2 sm:gap-2">
               {GRADES.map((g, i) => (
                 <button
                   key={g.grade}
@@ -1058,7 +1059,7 @@ function StudySessionInner({ mode }: { mode: "learn" | "review" }) {
                   title={g.hint}
                   onClick={() => grade(g.grade)}
                   className={
-                    "rounded-lg border px-3 py-2.5 text-base font-semibold transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--primary-focus)] " +
+                    "rounded-lg border px-1 py-2 text-sm sm:px-3 sm:py-2.5 sm:text-base font-semibold transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--primary-focus)] " +
                     [
                       "border-[#fca5a5] bg-[#fef2f2] text-[#b91c1c] hover:bg-[#fee2e2] dark:border-[#7f1d1d] dark:bg-[#2a1215] dark:text-[#fca5a5] dark:hover:bg-[#3a171b]",
                       "border-[#fdba74] bg-[#fff7ed] text-[#c2410c] hover:bg-[#ffedd5] dark:border-[#7c2d12] dark:bg-[#2a1a0e] dark:text-[#fdba74] dark:hover:bg-[#3a2412]",
@@ -1067,7 +1068,7 @@ function StudySessionInner({ mode }: { mode: "learn" | "review" }) {
                     ][i]
                   }
                 >
-                  <span className="mr-1 text-xs opacity-70">{g.key}</span>
+                  <span className="mr-1 text-xs opacity-70 max-sm:hidden">{g.key}</span>
                   {g.label}
                 </button>
               ))}
@@ -1100,7 +1101,7 @@ function StudySessionInner({ mode }: { mode: "learn" | "review" }) {
           <p
             aria-hidden={syncState !== "queued"}
             className={
-              "mt-3 min-h-8 text-center text-xs text-[#a16207] " +
+              "mt-3 min-h-8 text-center text-xs text-[#a16207] max-sm:hidden " +
               (syncState === "queued" ? "" : "invisible")
             }
           >
@@ -1398,7 +1399,7 @@ function LearnCard({
       onClick={onFlip}
       aria-pressed={flipped}
       aria-label={flipped ? "Hiện mặt câu hỏi" : "Hiện mặt đáp án"}
-      className="animate-card-in relative block h-64 w-full cursor-pointer rounded-2xl text-center focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--primary-focus)] sm:h-72"
+      className="animate-card-in relative block h-[clamp(13rem,calc(100svh-27.125rem),20rem)] w-full cursor-pointer rounded-2xl text-center focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--primary-focus)] sm:h-72"
       style={{ perspective: "1400px" }}
     >
       <div

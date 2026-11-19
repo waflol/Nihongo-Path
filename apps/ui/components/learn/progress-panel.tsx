@@ -178,7 +178,7 @@ export function ProgressPanel({ compact = false, dense = false }: { compact?: bo
       <div className={compact ? "min-h-0 shrink overflow-y-auto" : ""}>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-sm font-semibold text-[var(--foreground)]">
-          Tiến độ ghi nhớ
+          Tiến độ<span className={compact ? "max-lg:hidden" : ""}> ghi nhớ</span>
         </h2>
         <div role="tablist" aria-label="Khoảng thời gian" className="inline-flex rounded-lg border border-[var(--border)] p-0.5">
           {RANGES.map((r) => (
@@ -192,7 +192,7 @@ export function ProgressPanel({ compact = false, dense = false }: { compact?: bo
                 setShift(0);
               }}
               className={
-                "rounded-md px-3 py-1 text-xs font-medium " +
+                "rounded-md px-2 py-1 text-xs font-medium sm:px-3 " +
                 (range === r.key
                   ? "bg-[var(--foreground)] text-[var(--background)]"
                   : "text-[var(--muted-foreground)] hover:text-[var(--foreground)]")
@@ -216,8 +216,8 @@ export function ProgressPanel({ compact = false, dense = false }: { compact?: bo
       {!stats ? (
         <p className="mt-3 text-sm text-[var(--muted-foreground)]">{error ? "" : "Đang tải…"}</p>
       ) : (
-        <div className={compact ? "mt-3 grid grid-cols-[6.5rem_1fr] items-center gap-3" : (dense ? "mt-3 grid items-center gap-4 sm:grid-cols-[7.5rem_1fr]" : "mt-4 grid gap-6 sm:grid-cols-[180px_1fr]")}>
-          <div className={"relative mx-auto " + (compact ? "size-26" : dense ? "size-28" : "h-44 w-44")}>
+        <div className={compact ? "mt-3 grid grid-cols-[6.5rem_1fr] items-center gap-3 max-lg:mt-2 max-lg:grid-cols-[4.5rem_1fr]" : (dense ? "mt-3 grid items-center gap-4 sm:grid-cols-[7.5rem_1fr]" : "mt-4 grid gap-6 sm:grid-cols-[180px_1fr]")}>
+          <div className={"relative mx-auto " + (compact ? "size-18 lg:size-26" : dense ? "size-28" : "h-44 w-44")}>
             <svg viewBox="0 0 120 120" className="h-full w-full -rotate-90" role="img" aria-label="Biểu đồ mức độ ghi nhớ">
               <circle cx="60" cy="60" r={R} fill="none" stroke="var(--border)" strokeWidth="14" />
               {sum > 0 &&
@@ -243,20 +243,20 @@ export function ProgressPanel({ compact = false, dense = false }: { compact?: bo
             </svg>
             <div className="absolute inset-0 flex flex-col items-center justify-center">
               <span className={(compact ? "text-lg" : "text-2xl") + " font-semibold text-[var(--foreground)]"}>{learned}</span>
-              <span className="text-[10px] text-[var(--muted-foreground)]">/ {stats.total} thẻ</span>
+              <span className={(compact ? "text-[9px] lg:text-[10px]" : "text-[10px]") + " text-[var(--muted-foreground)]"}>/ {stats.total} thẻ</span>
             </div>
           </div>
 
-          <ul className={compact ? "space-y-1 self-center" : "space-y-2 self-center"}>
+          <ul className={compact ? "grid grid-cols-2 gap-x-3 gap-y-1 self-center lg:block lg:space-y-1" : "space-y-2 self-center"}>
             {segments.map((s) => (
-              <li key={s.key} className={"flex items-center gap-2 " + (compact ? "text-xs" : "gap-3 text-sm")}>
+              <li key={s.key} className={"flex items-center gap-2 " + (compact ? "text-[11px] lg:text-xs" : "gap-3 text-sm")}>
                 <span className="h-3 w-3 shrink-0 rounded-sm" style={{ background: s.color }} />
                 <span className="font-medium text-[var(--foreground)]">{s.label}</span>
                 {!compact && <span className="text-xs text-[var(--muted-foreground)]">{s.hint}</span>}
                 <span className="ml-auto tabular-nums text-[var(--foreground)]">
                   {s.count}
                   {sum > 0 && (
-                    <span className="ml-1 text-xs text-[var(--muted-foreground)]">
+                    <span className={"ml-1 text-xs text-[var(--muted-foreground)]" + (compact ? " max-lg:hidden" : "")}>
                       ({Math.round((s.count / sum) * 100)}%)
                     </span>
                   )}
@@ -541,8 +541,8 @@ export function ProgressPanel({ compact = false, dense = false }: { compact?: bo
 
       </div>
 
-      {compact && (
-      <div className="mt-4 shrink-0 border-t border-[var(--border)] pt-3 lg:mt-auto lg:pt-4">
+      {(compact || dense) && (
+      <div className={"mt-4 shrink-0 border-t border-[var(--border)] pt-3 lg:mt-auto lg:pt-4 " + (compact ? "max-lg:hidden" : "lg:hidden")}>
         <label htmlFor="new-per-day" className="text-sm font-medium text-[var(--foreground)]">
           Số từ mới mỗi ngày
         </label>
@@ -573,7 +573,7 @@ export function ProgressPanel({ compact = false, dense = false }: { compact?: bo
       </div>
       )}
 
-      {compact && <ReviewChart embedded className="mt-3 min-h-36 flex-1 lg:hidden" />}
+      {compact && <ReviewChart embedded bare range={range === "month" ? "month" : "week"} className="mt-2 h-24 shrink-0 [@media(max-height:700px)]:h-[4.5rem] lg:hidden" />}
 
     </section>
   );

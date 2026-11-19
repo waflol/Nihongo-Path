@@ -7,6 +7,8 @@ import { DueButton } from "@/components/learn/due-button";
 import { TodayStrip } from "@/components/learn/today-strip";
 import { LearnSidebar } from "@/components/learn/learn-sidebar";
 import { ExtraDialog } from "@/components/learn/learn-extras";
+import { PushReminderCard } from "@/components/pwa/push-reminder-card";
+import { InstallAppCard } from "@/components/pwa/install-app-card";
 
 export const metadata: Metadata = {
   title: "Khu học tập",
@@ -26,7 +28,7 @@ type Tile = { href: string | null; kanji: string; title: string; desc: string; a
 
 // Bento layout: one featured tile, the rest sized by how often they are used.
 const tiles: Tile[] = [
-  { href: "/learn/decks", kanji: "札", title: "Flashcard", desc: "Bộ thẻ cá nhân, ôn theo thuật toán lặp lại ngắt quãng.", area: "col-span-2 lg:col-span-4 lg:h-28" },
+  { href: "/learn/decks", kanji: "札", title: "Flashcard", desc: "Bộ thẻ cá nhân, ôn theo thuật toán lặp lại ngắt quãng.", area: "col-span-3 sm:col-span-2 lg:col-span-4 lg:h-28" },
   { href: "/learn/review", kanji: "復", title: "Ôn tập hôm nay", desc: "Những từ đã đến hạn ôn.", area: "" },
   { href: "/learn/exercises", kanji: "練", title: "Bài tập", desc: "Trắc nghiệm, gõ đáp án, đặt câu.", area: "" },
   { href: "/learn/exam", kanji: "試", title: "Luyện thi", desc: "6 dạng 問題 kiểu JLPT.", area: "" },
@@ -43,7 +45,7 @@ function TileBody({ t, featured }: { t: Tile; featured: boolean }) {
         style={{ fontFamily: SERIF }}
         className={
           "pointer-events-none absolute -bottom-[0.18em] -right-[0.04em] select-none leading-none text-[var(--foreground)] opacity-[0.07] transition-all duration-500 group-hover:-translate-y-1 group-hover:text-[var(--primary)] group-hover:opacity-[0.16] " +
-          (featured ? "text-[4.5rem] sm:text-[clamp(4rem,14vh,8rem)] lg:text-[8rem]" : "text-[4.5rem] sm:text-[clamp(4rem,14vh,8rem)] lg:text-[6rem]")
+          (featured ? "text-[4.5rem] sm:text-[clamp(4rem,14vh,8rem)] lg:text-[8rem]" : "text-[3.25rem] sm:text-[clamp(4rem,14vh,8rem)] lg:text-[6rem]")
         }
       >
         {t.kanji}
@@ -64,15 +66,15 @@ function TileBody({ t, featured }: { t: Tile; featured: boolean }) {
       <span
         aria-hidden="true"
         style={{ fontFamily: SERIF }}
-        className="relative flex size-9 shrink-0 sm:mb-1 items-center justify-center rounded-lg bg-[color-mix(in_srgb,var(--primary)_16%,transparent)] text-lg font-bold text-[var(--primary)] sm:size-8 sm:text-lg lg:mb-0 lg:size-10 lg:text-xl lg:[.featured_&]:hidden"
+        className="relative flex size-9 shrink-0 max-sm:[:not(.featured)>&]:size-8 max-sm:[:not(.featured)>&]:text-base max-sm:[@media(max-height:700px)]:size-7 max-sm:[@media(max-height:700px)]:text-sm sm:mb-1 items-center justify-center rounded-lg bg-[color-mix(in_srgb,var(--primary)_16%,transparent)] text-lg font-bold text-[var(--primary)] sm:size-8 sm:text-lg lg:mb-0 lg:size-10 lg:text-xl lg:[.featured_&]:hidden"
       >
         {t.kanji}
       </span>
       <div className="relative min-w-0 sm:mt-auto lg:mt-0">
-        <h2 className={(featured ? "text-[15px] sm:text-base lg:text-2xl" : "text-sm leading-tight sm:text-base lg:text-base") + " font-semibold tracking-tight text-[var(--foreground)]"}>
+        <h2 className={(featured ? "text-[15px] sm:text-base lg:text-2xl" : "text-[13px] leading-tight max-sm:line-clamp-2 sm:text-base lg:text-base") + " font-semibold tracking-tight text-[var(--foreground)]"}>
           {t.title}
         </h2>
-        <p className={(featured ? "max-w-xs lg:max-w-md lg:text-base" : "max-w-[16rem] max-sm:hidden lg:text-[13px]") + " mt-0.5 line-clamp-2 max-sm:line-clamp-1 text-xs leading-snug text-[var(--muted-foreground)] sm:mt-1 sm:text-sm"}>
+        <p className={(featured ? "max-w-xs max-sm:[@media(max-height:700px)]:hidden lg:max-w-md lg:text-base" : "max-w-[16rem] max-sm:hidden lg:text-[13px]") + " mt-0.5 line-clamp-2 max-sm:line-clamp-1 text-xs leading-snug text-[var(--muted-foreground)] sm:mt-1 sm:text-sm"}>
           {t.desc}
         </p>
       </div>
@@ -94,7 +96,7 @@ export default function LearnPage() {
   return (
     <div
       data-learn
-      className="mx-auto flex min-h-0 w-full max-w-7xl flex-col px-3 py-3 sm:px-6 lg:min-h-[calc(100dvh-65px)] lg:py-5"
+      className="mx-auto flex min-h-0 w-full max-w-7xl flex-col px-3 pb-3 pt-2 sm:px-6 sm:py-3 lg:min-h-[calc(100dvh-65px)] lg:py-5"
     >
       <FitScreen lg media="(min-width: 1024px)" />
       <div className="flex shrink-0 flex-col gap-3 max-lg:gap-2 max-lg:rounded-2xl max-lg:border max-lg:border-[var(--border)] max-lg:bg-[var(--background-1)] max-lg:p-2.5 sm:flex-row sm:items-center sm:justify-between">
@@ -110,17 +112,31 @@ export default function LearnPage() {
         </div>
         <div className="flex shrink-0 flex-wrap items-center gap-2 [&>*:first-child]:flex-1 sm:[&>*:first-child]:flex-none">
         <DueButton />
+        <ExtraDialog
+          ariaLabel="Nhắc ôn tập & cài ứng dụng"
+          title="Nhắc ôn tập & cài ứng dụng"
+          className="w-10 shrink-0 sm:w-auto sm:px-3"
+          label={
+            <svg aria-hidden="true" viewBox="0 0 24 24" className="size-5 sm:size-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
+              <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
+            </svg>
+          }
+        >
+          <PushReminderCard />
+          <InstallAppCard />
+        </ExtraDialog>
         <ExtraDialog label="Chi tiết" title="Tiến độ ghi nhớ"><ProgressPanel dense /></ExtraDialog>
         </div>
       </div>
 
-      <div className="mt-3 flex min-h-0 flex-1 flex-col gap-3 lg:mt-5 lg:grid lg:flex-none lg:grid-cols-[26rem_minmax(0,1fr)] lg:grid-rows-[auto_auto] lg:gap-3">
-      <div className="grid shrink-0 grid-cols-2 gap-2 sm:h-[clamp(8.5rem,23dvh,13rem)] sm:grid-cols-4 sm:grid-rows-2 lg:col-span-2 lg:row-start-2 lg:h-auto lg:min-h-0 lg:grid-rows-[auto_auto_auto] lg:gap-3">
+      <div className="mt-2 flex min-h-0 flex-1 flex-col gap-2 sm:mt-3 sm:gap-3 lg:mt-5 lg:grid lg:flex-none lg:grid-cols-[26rem_minmax(0,1fr)] lg:grid-rows-[auto_auto] lg:gap-3">
+      <div className="grid shrink-0 grid-cols-3 gap-2 max-lg:order-2 sm:h-[clamp(8.5rem,23dvh,13rem)] sm:grid-cols-4 sm:grid-rows-2 lg:col-span-2 lg:row-start-2 lg:h-auto lg:min-h-0 lg:grid-rows-[auto_auto_auto] lg:gap-3">
         {tiles.map((t, i) => {
           const featured = i === 0;
           const cls =
-            "learn-tile group relative flex min-h-0 min-h-14 items-center gap-2.5 overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--background-1)] p-2.5 sm:min-h-0 sm:flex-col sm:items-stretch sm:gap-0 sm:p-4 lg:flex-row lg:items-center lg:gap-3 lg:p-4 transition-all duration-300 hover:z-10 hover:scale-[1.05] motion-reduce:hover:scale-100 " +
-            t.area + (featured ? " featured" : "");
+            "learn-tile group relative flex min-h-0 min-h-14 max-sm:[@media(max-height:700px)]:min-h-11 max-sm:[@media(max-height:700px)]:py-1.5 items-center gap-2.5 overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--background-1)] p-2.5 sm:min-h-0 sm:flex-col sm:items-stretch sm:gap-0 sm:p-4 lg:flex-row lg:items-center lg:gap-3 lg:p-4 transition-all duration-300 hover:z-10 hover:scale-[1.05] motion-reduce:hover:scale-100 " +
+            t.area + (featured ? " featured" : " max-sm:flex-col max-sm:justify-center max-sm:gap-1 max-sm:px-1.5 max-sm:py-2 max-sm:text-center max-sm:[@media(max-height:700px)]:py-1.5");
           const node = t.href ? (
             <Link
               key={t.title}
@@ -130,7 +146,7 @@ export default function LearnPage() {
               <TileBody t={t} featured={featured} />
             </Link>
           ) : (
-            <div key={t.title} className={cls + " border-dashed max-sm:pr-9"}>
+            <div key={t.title} className={cls + " border-dashed"}>
               <TileBody t={t} featured={featured} />
             </div>
           );

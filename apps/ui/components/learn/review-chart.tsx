@@ -29,8 +29,20 @@ function label(key: string, range: Range): string {
 }
 
 /** Bar chart of reviews (and new cards) per day, shown under the Flashcard tile on /learn. */
-export function ReviewChart({ className = "", embedded = false }: { className?: string; embedded?: boolean }) {
-  const [range, setRange] = useState<Range>("week");
+export function ReviewChart({
+  className = "",
+  embedded = false,
+  bare = false,
+  range: fixedRange,
+}: {
+  className?: string;
+  embedded?: boolean;
+  /** No title row: the caller's own range tabs drive `range`. */
+  bare?: boolean;
+  range?: Range;
+}) {
+  const [ownRange, setRange] = useState<Range>("week");
+  const range = fixedRange ?? ownRange;
   const [stats, setStats] = useState<Stats | null>(null);
   const [error, setError] = useState(false);
 
@@ -57,12 +69,12 @@ export function ReviewChart({ className = "", embedded = false }: { className?: 
     <section
       className={
         (embedded
-          ? "flex min-h-0 flex-col border-t border-[var(--border)] pt-3 "
+          ? "flex min-h-0 flex-col border-t border-[var(--border)] " + (bare ? "pt-2 " : "pt-3 ")
           : "flex min-h-0 flex-col rounded-2xl border border-[var(--border)] bg-[var(--background-1)] p-4 ") + className
       }
       aria-label="Hoạt động học"
     >
-      <div className="flex flex-wrap items-center justify-between gap-2">
+      <div className={"flex flex-wrap items-center justify-between gap-2" + (bare ? " hidden" : "")}>
         <div>
           <h2 className="text-sm font-semibold text-[var(--foreground)]">Hoạt động học</h2>
         </div>
@@ -99,8 +111,8 @@ export function ReviewChart({ className = "", embedded = false }: { className?: 
         </div>
       </div>
 
-      <div className="mt-3 flex min-h-0 flex-1 gap-4">
-      <div className="flex min-h-24 min-w-0 flex-1 gap-2">
+      <div className={"flex min-h-0 flex-1 gap-4" + (bare ? "" : " mt-3")}>
+      <div className="flex min-h-12 min-w-0 flex-1 gap-2 lg:min-h-24">
         <div className="flex w-7 shrink-0 flex-col justify-between pb-5 text-right text-[10px] tabular-nums text-[var(--muted-foreground)]">
           <span>{max}</span>
           <span>{Math.round(max / 2)}</span>
