@@ -61,7 +61,7 @@
 | NP-401 | Schema đề/attempt, tách đáp án khỏi payload | P4-EXAM-01…03, P4-SEC-01 | Verify `curl` response làm bài không có `isCorrect`; Q-12 ⏸ (quyền dùng đề chính thức) |
 | NP-402 | API làm bài: bắt đầu/nộp, hết giờ server, xáo, chấm | P4-EXAM-04…06 | Verify API với thời gian giả lập (code + vitest xong 18/11) |
 | NP-403 | Xem lại lỗi + thống kê + màn kết quả | P4-EXAM-07/08, P4-UI-02 | Verify API + trình duyệt |
-| NP-404 | Màn làm bài có timer/lưu nháp (còn thiếu `app/admin/exams`) | P4-EXAM-09, P4-UI-01 | Màn admin soạn đề chưa có; verify trình duyệt |
+| NP-404 | Màn làm bài có timer/lưu nháp + admin soạn đề (`app/admin/exams`) | P4-EXAM-09, P4-UI-01 | Code xong (commit 39c481b); còn verify trình duyệt |
 | NP-027 | Thử Antigravity CLI với tài khoản Google thật | `plans/plan-antigravity-cli.md` §3 | Gọi `agy` thật qua đăng nhập dùng chung |
 
 ## 4. Đã làm ngoài checklist (➕)
@@ -158,7 +158,7 @@ Mỗi phase giữ nguyên ID trong checklist; ticket gom theo cụm.
 ## 7. Việc nên làm kế tiếp (đề xuất)
 
 1. **Đóng P3 trước:** NP-021…NP-023 chỉ cần thao tác trình duyệt, không cần quyết định mới (NP-020 đã xong 18/11).
-2. **P4** (NP-401…404): code + vitest đã có, cần verify API/trình duyệt thật và làm màn admin soạn đề (`app/admin/exams`).
+2. **P4** (NP-401…404): code + vitest + màn admin soạn đề đã có, cần verify API/trình duyệt thật.
 3. **Hỏi chủ sản phẩm Q-07 và Q-12** — Q-07 mở khoá P5; Q-12 quyết định được dùng đề thi chính thức hay chỉ đề tự soạn.
 
 ## 8. Nhãn gợi ý khi tạo GitHub Issues

@@ -13,6 +13,7 @@ import {
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from "@nestjs/swagger";
 import {
   ArrayMaxSize,
+  ArrayMinSize,
   IsArray,
   IsBoolean,
   IsIn,
@@ -75,7 +76,7 @@ class AdminQuestionDto {
 
   @IsOptional() @IsString() @MaxLength(400) sub?: string;
 
-  @IsArray() @MinLength(4) @MaxLength(4) @IsString({ each: true }) @MaxLength(400, { each: true })
+  @IsArray() @ArrayMinSize(4) @ArrayMaxSize(4) @IsString({ each: true }) @MaxLength(400, { each: true })
   options: string[];
 
   @IsString() @MinLength(1) @MaxLength(400) answer: string;
