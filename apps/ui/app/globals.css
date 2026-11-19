@@ -136,12 +136,9 @@ html.fit-screen body main {
   min-height: 0;
 }
 
-/* /learn: fit one screen on desktop; stack and scroll normally on narrow screens. */
+/* /learn on desktop: footer hidden so the page fills one screen when it fits;
+   the body is not scroll-locked, so taller content scrolls instead of clipping. */
 @media all {
-  html.fit-screen-lg body {
-    height: 100dvh;
-    overflow: hidden;
-  }
   html.fit-screen-lg body footer {
     display: none;
   }
@@ -509,9 +506,5 @@ html, body { overflow-x: clip; }
   html.fit-screen body footer { display: block; }
 }
 
-/* /learn on short desktop windows: let the page scroll instead of clipping. */
-@media (min-width: 1024px) and (max-height: 880px) {
-  html.fit-screen-lg body { height: auto; min-height: 100dvh; overflow: visible; }
-  html.fit-screen-lg body footer { display: block; }
-}
+
 

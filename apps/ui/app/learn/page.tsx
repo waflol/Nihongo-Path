@@ -26,7 +26,7 @@ type Tile = { href: string | null; kanji: string; title: string; desc: string; a
 
 // Bento layout: one featured tile, the rest sized by how often they are used.
 const tiles: Tile[] = [
-  { href: "/learn/decks", kanji: "札", title: "Flashcard", desc: "Bộ thẻ cá nhân, ôn theo thuật toán lặp lại ngắt quãng.", area: "col-span-2 lg:col-span-4 lg:h-36" },
+  { href: "/learn/decks", kanji: "札", title: "Flashcard", desc: "Bộ thẻ cá nhân, ôn theo thuật toán lặp lại ngắt quãng.", area: "col-span-2 lg:col-span-4 lg:h-28" },
   { href: "/learn/review", kanji: "復", title: "Ôn tập hôm nay", desc: "Những từ đã đến hạn ôn.", area: "" },
   { href: "/learn/exercises", kanji: "練", title: "Bài tập", desc: "Trắc nghiệm, gõ đáp án, đặt câu.", area: "" },
   { href: "/learn/exam", kanji: "試", title: "Luyện thi", desc: "6 dạng 問題 kiểu JLPT.", area: "" },
@@ -64,11 +64,11 @@ function TileBody({ t, featured }: { t: Tile; featured: boolean }) {
       <span
         aria-hidden="true"
         style={{ fontFamily: SERIF }}
-        className="relative flex size-9 shrink-0 sm:mb-1 items-center justify-center rounded-lg bg-[color-mix(in_srgb,var(--primary)_16%,transparent)] text-lg font-bold text-[var(--primary)] sm:size-8 sm:text-lg lg:mb-3 lg:size-10 lg:text-xl lg:[.featured_&]:hidden"
+        className="relative flex size-9 shrink-0 sm:mb-1 items-center justify-center rounded-lg bg-[color-mix(in_srgb,var(--primary)_16%,transparent)] text-lg font-bold text-[var(--primary)] sm:size-8 sm:text-lg lg:mb-0 lg:size-10 lg:text-xl lg:[.featured_&]:hidden"
       >
         {t.kanji}
       </span>
-      <div className="relative min-w-0 sm:mt-auto">
+      <div className="relative min-w-0 sm:mt-auto lg:mt-0">
         <h2 className={(featured ? "text-[15px] sm:text-base lg:text-2xl" : "text-sm leading-tight sm:text-base lg:text-base") + " font-semibold tracking-tight text-[var(--foreground)]"}>
           {t.title}
         </h2>
@@ -94,7 +94,7 @@ export default function LearnPage() {
   return (
     <div
       data-learn
-      className="mx-auto flex h-[calc(100dvh-4rem)] min-h-0 w-full max-w-7xl flex-col overflow-hidden max-lg:h-auto max-lg:overflow-visible lg:[@media(max-height:880px)]:h-auto lg:[@media(max-height:880px)]:overflow-visible px-3 py-3 sm:px-6 lg:py-5"
+      className="mx-auto flex min-h-0 w-full max-w-7xl flex-col px-3 py-3 sm:px-6 lg:min-h-[calc(100dvh-65px)] lg:py-5"
     >
       <FitScreen lg media="(min-width: 1024px)" />
       <div className="flex shrink-0 flex-col gap-3 max-lg:gap-2 max-lg:rounded-2xl max-lg:border max-lg:border-[var(--border)] max-lg:bg-[var(--background-1)] max-lg:p-2.5 sm:flex-row sm:items-center sm:justify-between">
@@ -119,7 +119,7 @@ export default function LearnPage() {
         {tiles.map((t, i) => {
           const featured = i === 0;
           const cls =
-            "learn-tile group relative flex min-h-0 min-h-14 items-center gap-2.5 overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--background-1)] p-2.5 sm:min-h-0 sm:flex-col sm:items-stretch sm:gap-0 sm:p-4 lg:p-4 transition-all duration-300 hover:z-10 hover:scale-[1.05] motion-reduce:hover:scale-100 " +
+            "learn-tile group relative flex min-h-0 min-h-14 items-center gap-2.5 overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--background-1)] p-2.5 sm:min-h-0 sm:flex-col sm:items-stretch sm:gap-0 sm:p-4 lg:flex-row lg:items-center lg:gap-3 lg:p-4 transition-all duration-300 hover:z-10 hover:scale-[1.05] motion-reduce:hover:scale-100 " +
             t.area + (featured ? " featured" : "");
           const node = t.href ? (
             <Link
