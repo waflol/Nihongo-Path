@@ -38,6 +38,10 @@ Mỗi file là một issue (ID `NP-nnn`); nguồn gốc và tiến độ tổng 
 | [NP-403](./NP-403.md) | partial | P4 | Xem lại lỗi + thống kê (P4-EXAM-07/08, P4-UI-02) |
 | [NP-404](./NP-404.md) | partial | P4 | Admin soạn đề + màn làm bài có timer/lưu nháp (P4-EXAM-09, P4-UI-01) |
 | [NP-405](./NP-405.md) | done | P4 | Cập nhật database.md nhóm exam (P4-DOC-01) |
+| [NP-406](./NP-406.md) | todo | P4 | Ngân hàng JLPT: mã dạng mondai, bài đọc dùng chung, chấm theo phần |
+| [NP-407](./NP-407.md) | todo | P4 | Nhập PDF đề JLPT thành bản nháp có người duyệt |
+| [NP-408](./NP-408.md) | todo | P4 | Sinh đề JLPT ngẫu nhiên theo khung đề (blueprint) từng level |
+| [NP-409](./NP-409.md) | todo | P4 | UI làm đề JLPT theo phần: bài đọc, câu ★, điểm từng phần |
 | [NP-501](./NP-501.md) | blocked | P5 | Schema + service quota reserve→settle→release, reset theo kỳ/tz (P5-QUOTA-01…05) |
 | [NP-502](./NP-502.md) | blocked | P5 | EntitlementGuard/QuotaGuard + chính sách vượt hạn mức (P5-QUOTA-04/06) |
 | [NP-503](./NP-503.md) | todo | P5 | Màn cấu hình hạn mức theo gói (P5-ADMIN-04) |

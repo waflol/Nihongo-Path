@@ -88,6 +88,16 @@ Có commit, chưa nằm trong checklist; cần bổ sung tiêu chí nghiệm thu
 
 Mỗi phase giữ nguyên ID trong checklist; ticket gom theo cụm.
 
+### P4+ — Ngân hàng đề JLPT & sinh đề ngẫu nhiên (ngoài checklist, lập 19/11)
+Plan chi tiết: [plans/plan-jlpt-question-bank.md](./plans/plan-jlpt-question-bank.md). Chưa có hàng trong checklist nên không tính vào % ở §1.
+
+| Ticket | Cụm task | Chặn bởi |
+|---|---|---|
+| NP-406 | Mã dạng mondai, bài đọc dùng chung (`exam_stimuli`), xáo theo nhóm, chấm theo điểm/phần | NP-401…404 |
+| NP-407 | Nhập PDF đề → bản nháp `exam_import_drafts` → admin duyệt/xuất bản, chống trùng chéo nguồn | NP-406 |
+| NP-408 | Khung đề theo level + `generateExam` có seed; người học chỉ bốc câu `own/licensed` | NP-406; Q-12 ⏸ (phần người học) |
+| NP-409 | UI làm đề theo phần (bài đọc, câu ★, điểm từng phần) + admin phủ ngân hàng/sinh đề thử | NP-407, NP-408 |
+
 ### P5 — Hạn mức & quản trị
 | Ticket | Cụm task | Chặn bởi |
 |---|---|---|
@@ -152,7 +162,7 @@ Mỗi phase giữ nguyên ID trong checklist; ticket gom theo cụm.
 | Q-09 AdSense, domain, thương hiệu | NP-1001, NP-1104 | ⏸ |
 | Q-10 RPO/RTO, hosting, monitoring | NP-1103 | ⏸ |
 | Q-11 Giới hạn media | NP-601 | ⏸ |
-| Q-12 Quyền dùng đề thi chính thức | NP-401 | ⏸ (phần P3 đã duyệt 05/11) |
+| Q-12 Quyền dùng đề thi chính thức | NP-401, NP-407, NP-408 | ⏸ (phần P3 đã duyệt 05/11) |
 | Q-19…Q-24 Mơ hồ (a11y, MVP, đa ngôn ngữ, video ngoài, vượt hạn mức, consent audio) | nhiều ticket | ⏸ |
 
 ## 7. Việc nên làm kế tiếp (đề xuất)
