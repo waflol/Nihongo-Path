@@ -128,20 +128,29 @@ Các collection ở mục này có `status` (DRAFT / PUBLISHED) và `lang`. Admi
 
 ### `exercise_questions` — câu luyện thi (問題)
 - Câu hỏi kiểu JLPT sinh cho deck / thẻ: `deck`, `card`, `prompt`, `sub`, `options[]`, `answer`, `explain`, `level`, `createdBy`.
-- `kind`: `kanji-pick` / `reading-pick` / `meaning-pick` / `synonym-pick` / `sentence-pick` / `formation-pick` / `context-pick`.
+- `kind`: `kanji-pick` / `reading-pick` / `meaning-pick` / `synonym-pick` / `sentence-pick` / `formation-pick` / `context-pick`; ngân hàng đề (NP-406): `grammar-form` / `star-order` / `passage-question`.
 - `source` (local / ai), `verified`, `dedupeKey`.
-- Index: `{dedupeKey: 1}` **unique**; `{level: 1, kind: 1}`; `{deck: 1, card: 1}`.
+- Trường ngân hàng JLPT (NP-406, tất cả tuỳ chọn — câu cũ không có → hành vi cũ): `mondai` (mã dạng chuẩn `src/exams/mondai.ts`), `section` (`vocab`/`grammar`/`reading`/`listening`), `stimulus` (ObjectId `exam_stimuli`), `groupOrder` (thứ tự trong bài đọc / số chỗ trống), `points` (mặc định 1), `rights` (`own`/`licensed`/`reference`, mặc định `own`), `sourceRef {file, sitting?, no?}`, `contentHash` (sha1 prompt+options, unique sparse — chống trùng chéo nguồn).
+- Index: `{dedupeKey: 1}` **unique**; `{level: 1, kind: 1}`; `{deck: 1, card: 1}`; NP-406: `{level: 1, mondai: 1, rights: 1}`, `{stimulus: 1, groupOrder: 1}`, `{contentHash: 1}` unique sparse.
+- Số phương án: 4 cho các dạng in ấn; 3 hoặc 4 cho `listening-*` (chưa làm). Câu nhập đặt `dedupeKey = "imp:" + contentHash`.
 - Dùng ở `/learn/exercises`, `/learn/exam`.
+
+### `exam_stimuli` — bài đọc dùng chung (NP-406)
+- Một đoạn đọc / cloze / thông báo / cặp bài A–B mà N câu hỏi cùng trỏ tới: `level`, `mondai`, `section`, `kind` (`passage`/`cloze`/`notice`/`pair`), `title?`, `body` (markdown; cloze giữ `[1]`…`[n]`), `bodyB?` (bài B), `notes?` (chú thích), `imageUrl?` (bảng dạng ảnh — để trống tới P6 media), `questionCount` (số câu thuộc bài — bộ sinh đề khớp theo số này), `rights`, `sourceRef`, `contentHash` (unique sparse), `createdBy`.
+- Bài đọc là **đơn vị bốc** khi sinh đề: lấy nguyên bài, không tách lẻ câu. Admin CRUD ở `exams/admin/stimuli` (guard admin). Sit payload gửi `body` cho người học nhưng không kèm đáp án câu (P4-SEC-01).
+- Index: `{level: 1, mondai: 1, rights: 1, questionCount: 1}`.
 
 ### `exams` — đề thi tự soạn (P4)
 - `title`, `description`, `examType`, `year`, `level`, `timeLimitMin` (1–240, trống = không giới hạn giờ), `questions[]` (ObjectId của `exercise_questions`, có thứ tự), `shuffle {questions, options}`, `status` (`DRAFT` / `PUBLISHED`), `createdBy`.
+- Đề theo phần (NP-406): `sections[]` (`{key, title?, timeLimitMin?, questions[]}`) — deadline cộng dồn, deadline tổng = deadline phần cuối; `generated {seed, blueprintVersion?, level?, forUser?}` (đề bộ sinh đề tạo, NP-408). Đề có `sections` thì `questions` = nối các `sections[].questions` (giữ để code cũ đọc được).
 - Index: `{status: 1, level: 1, examType: 1}`. Câu hỏi tái dùng `exercise_questions`, không có collection câu hỏi riêng.
 
 ### `exam_attempts` — lượt làm bài (P4)
 - `user`, `exam` + bản chụp `examTitle` / `examType` / `level`; `seed`, `questionOrder[]`, `optionOrder{}` (thứ tự xáo cố định cho lượt này); `startedAtMs`, `deadlineMs` (server quyết định hết giờ), `status` (`in_progress` / `submitted` / `timed_out`).
+- Đề theo phần (NP-406): `sectionKeys[]`, `questionSections{}` (qid → phần), `sectionDeadlinesMs{}` (deadline cộng dồn mỗi phần); `sectionScores{}`, `points`, `maxPoints` (chỉ đề có phần).
 - Nháp: `answers{}`, `flagged[]`. Kết quả (chỉ ghi khi nộp): `correct{}`, `score`, `total`, `percent`, `submittedAtMs`, `durationSec`.
 - Index: unique một lượt `in_progress` mỗi (user, exam); `{user: 1, startedAtMs: -1}`; `{exam: 1, status: 1}`. Làm lại đề tạo attempt mới, không ghi đè.
-- Response khi đang làm không chứa đáp án đúng / giải thích; chỉ trả sau khi nộp.
+- Response khi đang làm không chứa đáp án đúng / giải thích (kể cả bài đọc — chỉ `body`); điểm ước tính 0–60 theo phần (`estimateJlptScaled`) chỉ hiện ở màn kết quả.
 
 ### `cardreports` — báo lỗi thẻ
 - Học viên báo lỗi / gợi ý sửa thẻ của deck chung: `card`, `deck`, `user`, `message`, `suggestion`.

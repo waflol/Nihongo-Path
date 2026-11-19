@@ -8,8 +8,10 @@ import {
 import { User, UserSchema } from "../users/schemas/user.schema.js";
 import { Exam, ExamSchema } from "./schemas/exam.schema.js";
 import { ExamAttempt, ExamAttemptSchema } from "./schemas/attempt.schema.js";
+import { ExamStimulus, ExamStimulusSchema } from "./schemas/stimulus.schema.js";
 import { ExamsController } from "./exams.controller.js";
 import { ExamsService } from "./exams.service.js";
+import { StimuliService } from "./stimuli.service.js";
 
 /**
  * Exams (P4-EXAM-01…09). Graceful-degrade like its P3 siblings: no
@@ -32,11 +34,12 @@ export function buildExamsModule(): DynamicModule {
         { name: ExerciseQuestion.name, schema: ExerciseQuestionSchema },
         { name: Exam.name, schema: ExamSchema },
         { name: ExamAttempt.name, schema: ExamAttemptSchema },
+        { name: ExamStimulus.name, schema: ExamStimulusSchema },
         { name: User.name, schema: UserSchema },
       ]),
     ],
     controllers: [ExamsController],
-    providers: [ExamsService],
+    providers: [ExamsService, StimuliService],
   };
 }
 

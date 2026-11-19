@@ -20,7 +20,12 @@ import {
   ExamAttempt,
   type ExamAttemptDocument,
 } from "./schemas/attempt.schema.js";
-import { optionOrder as optionOrderFor, seededOrder, originalAt } from "./shuffle.js";
+import {
+  ExamStimulus,
+  type ExamStimulusDocument,
+} from "./schemas/stimulus.schema.js";
+import { optionOrder as optionOrderFor, seededOrder, originalAt, groupedOrder, mixSeed } from "./shuffle.js";
+import { optionCountsOf, contentHashOf } from "./mondai.js";
 
 // ── Pure, DB-free core (unit-tested) ─────────────────────────────────
 
@@ -33,6 +38,26 @@ export interface BankQuestion {
   options: string[];
   answer: string;
   explain?: string;
+  // ── JLPT exam-bank fields (NP-406) — undefined on legacy rows ──────
+  mondai?: string;
+  section?: string;
+  /** id of the shared reading passage this question belongs to. */
+  stimulusId?: string;
+  /** position within the passage / cloze blank number. */
+  groupOrder?: number;
+  /** points the question is worth (default 1). */
+  points?: number;
+}
+
+/** A shared reading passage, as the engine serves it (no answers). */
+export interface StimulusView {
+  id: string;
+  kind: string;
+  title?: string;
+  body: string;
+  bodyB?: string;
+  notes?: string;
+  imageUrl?: string;
 }
 
 /** The attempt snapshot the engine works on (plain, lean-shaped). */
@@ -58,6 +83,17 @@ export interface AttemptCore {
   score?: number;
   total?: number;
   percent?: number;
+  /** Per-section cumulative deadlines (NP-406); absent on flat exams. */
+  sectionDeadlinesMs?: Record<string, number>;
+  /** Per-section grading (NP-406); absent on flat exams. */
+  sectionScores?: Record<string, { score: number; total: number; points: number; maxPoints: number }>;
+  /** Points-based totals (NP-406); absent on flat exams. */
+  points?: number;
+  maxPoints?: number;
+  /** Snapshot of the exam's part keys (NP-406); empty on flat exams. */
+  sectionKeys?: string[];
+  /** Question id → section key (NP-406). */
+  questionSections?: Record<string, string>;
 }
 
 /** One served question in the sit payload — NO `answer`, NO `explain` (P4-SEC-01). */
@@ -68,6 +104,25 @@ export interface SitQuestion {
   sub?: string;
   /** Options in the served order. */
   options: string[];
+  /** Exam-bank fields (NP-406) — omitted on legacy questions. */
+  mondai?: string;
+  section?: string;
+  /** This question belongs to the shared passage with this id. */
+  stimulusId?: string;
+  /** Position within the passage / cloze blank. */
+  groupOrder?: number;
+  /** Section key this question was drawn for (exam sections, NP-406). */
+  sectionKey?: string;
+}
+
+/** An exam part as the sit payload describes it (NP-406). */
+export interface SitSection {
+  key: string;
+  title?: string;
+  /** Cumulative deadline (absolute ms) at which this part is due; null = untimed. */
+  deadlineMs: number | null;
+  /** 0 when finished/untimed. */
+  remainingMs: number;
 }
 
 export interface SitPayload {
@@ -83,6 +138,12 @@ export interface SitPayload {
   questions: SitQuestion[];
   answers: Record<string, number | null>;
   flagged: string[];
+  // ── JLPT sectional layout (NP-406). Absent on flat exams. ─────────
+  sections?: SitSection[];
+  /** Shared passages, answer-free (only passages whose questions are in the exam). */
+  stimuli?: StimulusView[];
+  /** Points-based totals (absent on flat exams). */
+  maxPoints?: number;
 }
 
 /** A finished-question entry in the result payload (explain appears ONLY here). */
@@ -101,6 +162,12 @@ export interface ResultPayload extends Omit<SitPayload, "remainingMs"> {
   score: number;
   total: number;
   percent: number;
+  /** Points-based totals + per-section breakdown (NP-406, sectional exams only). */
+  points?: number;
+  maxPoints?: number;
+  sectionScores?: Record<string, { score: number; total: number; points: number; maxPoints: number }>;
+  /** JLPT-style 0–60 estimate per section — an ESTIMATE, not the official scale. */
+  sectionEstimates?: Record<string, number>;
   results: ResultQuestion[];
 }
 
@@ -143,25 +210,95 @@ export function pickIsCorrect(q: BankQuestion, attempt: Pick<AttemptCore, "optio
  * Grade every question of an attempt against the bank (P4-EXAM-06).
  * Unanswered / out-of-range picks are wrong. Deterministic — a concurrent
  * double submit yields the same numbers.
+ *
+ * When the attempt carries `questionSections` (a JLPT sectional exam, NP-406)
+ * the grade also reports the **points** totals and the **per-section**
+ * breakdown. `score` / `total` / `percent` keep their legacy meaning (number
+ * of correct questions) so the old stats are unchanged.
  */
+export interface GradeResult {
+  correct: Record<string, boolean>;
+  score: number;
+  total: number;
+  percent: number;
+  /** Points earned (a correct question counts its `points`, default 1). */
+  points?: number;
+  /** Points on offer across the sitting. */
+  maxPoints?: number;
+  /** Per section: how many answered right / total / points earned / points. */
+  sectionScores?: Record<string, { score: number; total: number; points: number; maxPoints: number }>;
+}
+
 export function gradeAttempt(
   questions: BankQuestion[],
-  attempt: Pick<AttemptCore, "optionOrder" | "answers">,
-): { correct: Record<string, boolean>; score: number; total: number; percent: number } {
+  attempt: Pick<AttemptCore, "optionOrder" | "answers" | "questionSections">,
+): GradeResult {
   const correct: Record<string, boolean> = {};
   let score = 0;
+  let points = 0;
+  let maxPoints = 0;
   for (const q of questions) {
     const ok = pickIsCorrect(q, attempt, attempt.answers?.[q._id] ?? null);
     correct[q._id] = ok;
-    if (ok) score += 1;
+    const pts = q.points ?? 1;
+    maxPoints += pts;
+    if (ok) {
+      score += 1;
+      points += pts;
+    }
   }
   const total = questions.length;
-  return {
+  const base: GradeResult = {
     correct,
     score,
     total,
     percent: total === 0 ? 0 : Math.round((score / total) * 1000) / 10,
   };
+  // Sectional exams (NP-406) add the points + per-section breakdown.
+  const qsec = attempt.questionSections;
+  if (qsec && Object.keys(qsec).length > 0) {
+    const sectionScores: GradeResult["sectionScores"] = {};
+    for (const q of questions) {
+      const sec = qsec[q._id];
+      if (!sec) continue;
+      let s = sectionScores[sec];
+      if (!s) sectionScores[sec] = s = { score: 0, total: 0, points: 0, maxPoints: 0 };
+      s.total += 1;
+      s.maxPoints += q.points ?? 1;
+      if (correct[q._id]) {
+        s.score += 1;
+        s.points += q.points ?? 1;
+      }
+    }
+    base.points = points;
+    base.maxPoints = maxPoints;
+    base.sectionScores = sectionScores;
+  }
+  return base;
+}
+
+/**
+ * JLPT-style scaled estimate (NP-406 / plan §6, D7): each part is mapped to
+ * 0–60, linear in the part's share of its points. Clearly an ESTIMATE — the
+ * label is part of the name — the official conversion is a different curve.
+ */
+export function estimateJlptScaled(
+  sectionScores: Record<string, { points: number; maxPoints: number }>,
+): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const [sec, s] of Object.entries(sectionScores)) {
+    out[sec] = s.maxPoints > 0 ? Math.round(60 * (s.points / s.maxPoints)) : 0;
+  }
+  return out;
+}
+
+export interface BuildSitOptions {
+  /** The sections to describe (absent on flat exams → the payload stays legacy-shaped). */
+  sections?: { key: string; title?: string; deadlineMs: number | null }[];
+  /** Shared passages whose questions the sitting serves (answer-free views). */
+  stimuli?: StimulusView[];
+  /** Points on offer (sectional exams). */
+  maxPoints?: number;
 }
 
 /**
@@ -169,11 +306,13 @@ export function gradeAttempt(
  * Deliberately answer-free: no `answer`, no `explain`, no `correct` (P4-SEC-01,
  * T-P4-03). Questions are presented in the attempt's served order — the
  * caller's `bank` argument may be in any order; it is re-sorted here.
+ * `opts` adds the JLPT sectional layer (NP-406); omitted → legacy payload.
  */
 export function buildSitPayload(
   attempt: AttemptCore,
   bank: BankQuestion[],
   now: number,
+  opts: BuildSitOptions = {},
 ): SitPayload {
   const finished = attempt.status !== "in_progress";
   const ordered = orderByAttempt(attempt, bank);
@@ -183,14 +322,19 @@ export function buildSitPayload(
     prompt: q.prompt,
     sub: q.sub || undefined,
     options: servedOptions(q, attempt),
+    mondai: q.mondai,
+    section: q.section,
+    stimulusId: q.stimulusId,
+    groupOrder: q.groupOrder,
+    sectionKey: attempt.questionSections?.[q._id],
   }));
-  return {
+  const payload: SitPayload = {
     attemptId: String(attempt._id ?? ""),
     examId: attempt.exam,
     status: attempt.status,
     startedAtMs: attempt.startedAtMs,
     deadlineMs: attempt.deadlineMs ?? null,
-    remainingMs: finished || !attempt.deadlineMs ? 0 : Math.max(0, attempt.deadlineMs - now),
+    remainingMs: finished || !attempt.deadlineMs ? 0 : Math.max(0, (attempt.deadlineMs ?? 0) - now),
     exam: {
       title: attempt.examTitle,
       examType: attempt.examType || undefined,
@@ -201,6 +345,17 @@ export function buildSitPayload(
     answers: { ...attempt.answers },
     flagged: [...attempt.flagged],
   };
+  if (opts.sections && opts.sections.length > 0) {
+    payload.sections = opts.sections.map((s) => ({
+      key: s.key,
+      title: s.title,
+      deadlineMs: s.deadlineMs,
+      remainingMs: finished || !s.deadlineMs ? 0 : Math.max(0, s.deadlineMs - now),
+    }));
+  }
+  if (opts.stimuli && opts.stimuli.length > 0) payload.stimuli = opts.stimuli;
+  if (opts.maxPoints !== undefined) payload.maxPoints = opts.maxPoints;
+  return payload;
 }
 
 /**
@@ -218,9 +373,10 @@ function orderByAttempt(attempt: AttemptCore, bank: BankQuestion[]): BankQuestio
 export function buildResultPayload(
   attempt: AttemptCore,
   bank: BankQuestion[],
-  grade: { correct: Record<string, boolean>; score: number; total: number; percent: number },
+  grade: GradeResult,
+  opts: BuildSitOptions = {},
 ): ResultPayload {
-  const base = buildSitPayload(attempt, bank, 0);
+  const base = buildSitPayload(attempt, bank, 0, opts);
   const { remainingMs, ...sit } = base;
   const byId = new Map(bank.map((q) => [q._id, q]));
   // Results follow the sit display order, joined back to the bank by qid.
@@ -235,7 +391,7 @@ export function buildResultPayload(
       explain: q.explain || undefined,
     };
   });
-  return {
+  const payload: ResultPayload = {
     ...sit,
     status: attempt.status,
     submittedAtMs: attempt.submittedAtMs ?? 0,
@@ -245,6 +401,14 @@ export function buildResultPayload(
     percent: grade.percent,
     results,
   };
+  // Sectional exams (NP-406): the points + per-section + the 0–60 estimate.
+  if (grade.sectionScores) {
+    payload.points = grade.points;
+    payload.maxPoints = grade.maxPoints;
+    payload.sectionScores = grade.sectionScores;
+    payload.sectionEstimates = estimateJlptScaled(grade.sectionScores);
+  }
+  return payload;
 }
 
 /** Stats summary of finished attempts (T-P4-08: everything derived from the rows). */
@@ -343,6 +507,13 @@ export interface AuthorQuestionInput {
   answer: string;
   explain?: string;
   level?: string;
+  /** JLPT exam-bank fields (NP-406). */
+  mondai?: string;
+  section?: string;
+  stimulus?: string;
+  groupOrder?: number;
+  points?: number;
+  rights?: "own" | "licensed" | "reference";
 }
 
 /**
@@ -366,6 +537,8 @@ export class ExamsService {
     private readonly attempts: Model<ExamAttemptDocument>,
     @InjectModel(User.name)
     private readonly user: Model<UserDocument>,
+    @InjectModel(ExamStimulus.name)
+    private readonly stimuli: Model<ExamStimulusDocument>,
   ) {}
 
   // ── Learner surface ───────────────────────────────────────────────
@@ -408,19 +581,64 @@ export class ExamsService {
     let attempt = await this.attempts.findOne({ user: userId, exam: examOid, status: "in_progress" }).exec();
 
     if (!attempt) {
-      const found = await this.loadBank(exam.questions);
       const now = Date.now();
       const seed = randomInt(0, 0x7fffffff);
-      // Keep the authoring order of the ids that still exist in the bank.
-      const existing = new Set(found.map((q) => String(q._id)));
-      const order = exam.questions.filter((id) => existing.has(String(id))).map((id) => String(id));
-      if (order.length === 0) {
-        throw new BadRequestException("Đề chưa có câu hỏi"); // T-P4-09 (bank rows gone)
-      }
-      const qids = exam.shuffle?.questions !== false ? seededOrder(seed, order.length).map((p) => order[p]) : order;
+      // Sectional exam (NP-406): order each part independently (groups stay
+      // together), accumulate the per-part deadlines; a flat exam keeps the
+      // legacy single order + single deadline.
+      const sections = exam.sections;
+      const sectional = Array.isArray(sections) && sections.length > 0;
+      let found: BankQuestion[];
+      const qids: string[] = [];
       const optionOrder: Record<string, number[]> = {};
-      for (const q of found) {
-        optionOrder[q._id] = optionOrderFor(seed, q._id, q.options.length, exam.shuffle?.options !== false);
+      let deadlineMs: number | null = null;
+      let sectionDeadlinesMs: Record<string, number> | undefined;
+      let questionSections: Record<string, string> | undefined;
+      let sectionKeys: string[] | undefined;
+      if (sectional) {
+        const ids = sections.flatMap((s) => s.questions).filter((id) => String(id));
+        found = await this.loadBank(ids);
+        const existing = new Set(found.map((q) => String(q._id)));
+        const shuffleQ = exam.shuffle?.questions !== false;
+        const shuffleO = exam.shuffle?.options !== false;
+        const foundById = new Map(found.map((q) => [q._id, q]));
+        sectionDeadlinesMs = {};
+        questionSections = {};
+        sectionKeys = [];
+        let cursor = now;
+        for (const sec of sections) {
+          sectionKeys.push(sec.key);
+          const secFound = sec.questions
+            .filter((id) => existing.has(String(id)))
+            .map((id) => foundById.get(String(id)))
+            .filter((q): q is BankQuestion => q !== undefined);
+          const secIds = shuffleQ
+            ? groupedOrder(mixSeed(seed, sec.key), secFound.map((q) => ({ id: q._id, group: q.stimulusId, groupOrder: q.groupOrder })))
+            : secFound.map((q) => q._id);
+          for (const qid of secIds) {
+            questionSections[qid] = sec.key;
+            optionOrder[qid] = optionOrderFor(seed, qid, foundById.get(qid)!.options.length, shuffleO);
+            qids.push(qid);
+          }
+          if (sec.timeLimitMin) {
+            cursor += sec.timeLimitMin * 60_000;
+            sectionDeadlinesMs[sec.key] = cursor;
+            deadlineMs = cursor;
+          }
+        }
+      } else {
+        found = await this.loadBank(exam.questions);
+        const existing = new Set(found.map((q) => String(q._id)));
+        const order = exam.questions.filter((id) => existing.has(String(id))).map((id) => String(id));
+        const served = exam.shuffle?.questions !== false ? seededOrder(seed, order.length).map((p) => order[p]) : order;
+        qids.push(...served);
+        for (const q of found) {
+          optionOrder[q._id] = optionOrderFor(seed, q._id, q.options.length, exam.shuffle?.options !== false);
+        }
+        deadlineMs = exam.timeLimitMin ? now + exam.timeLimitMin * 60_000 : null;
+      }
+      if (qids.length === 0) {
+        throw new BadRequestException("Đề chưa có câu hỏi"); // T-P4-09 (bank rows gone)
       }
       const doc = {
         user: userId,
@@ -432,10 +650,13 @@ export class ExamsService {
         questionOrder: qids,
         optionOrder,
         startedAtMs: now,
-        deadlineMs: exam.timeLimitMin ? now + exam.timeLimitMin * 60_000 : null,
+        deadlineMs,
         status: "in_progress" as const,
         answers: {},
         flagged: [],
+        ...(sectionDeadlinesMs ? { sectionDeadlinesMs } : {}),
+        ...(questionSections ? { questionSections } : {}),
+        ...(sectionKeys && sectionKeys.length > 0 ? { sectionKeys } : {}),
       };
       try {
         attempt = await this.attempts.create(doc);
@@ -460,7 +681,7 @@ export class ExamsService {
       // The sitting lapsed while it sat open — grade it now.
       return await this.finalize(caller, String(attempt._id), "timed_out");
     }
-    return buildSitPayload(core, bank, Date.now());
+    return buildSitPayload(core, bank, Date.now(), await this.sitOpts(core, bank));
   }
 
   /** List my sittings, newest first. */
@@ -499,13 +720,13 @@ export class ExamsService {
     if (core.status !== "in_progress") {
       const bank = await this.bankFor(core);
       const grade = gradeAttempt(bank, core);
-      return buildResultPayload(core, bank, grade);
+      return buildResultPayload(core, bank, grade, await this.sitOpts(core, bank));
     }
     if (finishStatus(core.deadlineMs, Date.now()) === "timed_out") {
       return await this.finalize(caller, attemptId, "timed_out");
     }
     const bank = await this.bankFor(core);
-    return buildSitPayload(core, bank, Date.now());
+    return buildSitPayload(core, bank, Date.now(), await this.sitOpts(core, bank));
   }
 
   /**
@@ -522,7 +743,7 @@ export class ExamsService {
     const core = toCore(attempt);
     if (core.status !== "in_progress") {
       const bank = await this.bankFor(core);
-      return buildResultPayload(core, bank, gradeAttempt(bank, core));
+      return buildResultPayload(core, bank, gradeAttempt(bank, core), await this.sitOpts(core, bank));
     }
     if (finishStatus(core.deadlineMs, Date.now()) === "timed_out") {
       return await this.finalize(caller, attemptId, "timed_out");
@@ -530,11 +751,14 @@ export class ExamsService {
 
     const set: Record<string, unknown> = {};
     if (patch.answers) {
+      const bank = await this.bankFor(core);
       const map = new Map<string, number | null>();
       const known = new Set(core.questionOrder);
+      const capOf = new Map(bank.map((q) => [q._id, q.options.length - 1]));
       for (const [qid, v] of Object.entries(patch.answers)) {
         if (!known.has(qid)) continue;
-        map.set(qid, v === null ? null : Number.isInteger(v) ? Math.max(0, Math.min(3, v)) : null);
+        const cap = capOf.get(qid) ?? 3;
+        map.set(qid, v === null ? null : Number.isInteger(v) ? Math.max(0, Math.min(cap, v)) : null);
       }
       set.answers = Object.fromEntries(map);
     }
@@ -556,14 +780,17 @@ export class ExamsService {
     if (core.status !== "in_progress") {
       const bank = await this.bankFor(core);
       const grade = gradeAttempt(bank, core);
-      return buildResultPayload(core, bank, grade);
+      return buildResultPayload(core, bank, grade, await this.sitOpts(core, bank));
     }
     if (answers) {
+      const bank = await this.bankFor(core);
       const known = new Set(core.questionOrder);
+      const capOf = new Map(bank.map((q) => [q._id, q.options.length - 1]));
       const merged: Record<string, number | null> = { ...core.answers };
       for (const [qid, v] of Object.entries(answers)) {
         if (!known.has(qid)) continue;
-        merged[qid] = v === null ? null : Number.isInteger(v) ? Math.max(0, Math.min(3, v)) : null;
+        const cap = capOf.get(qid) ?? 3;
+        merged[qid] = v === null ? null : Number.isInteger(v) ? Math.max(0, Math.min(cap, v)) : null;
       }
       await this.attempts
         .updateOne({ _id: attempt._id, status: "in_progress" }, { $set: { answers: merged } })
@@ -621,17 +848,23 @@ export class ExamsService {
     const options = (input.options ?? []).map((o) => String(o).trim());
     const answer = String(input.answer ?? "").trim();
     const prompt = String(input.prompt ?? "").trim();
+    // Option count is per-type (NP-406): 4 for the printed forms, 3 or 4 for
+    // listening; legacy / untyped questions keep exactly 4.
+    const allowed = optionCountsOf(input.mondai);
     if (
       !prompt ||
       prompt.length > MAX_BANK_QUESTION ||
-      options.length !== 4 ||
-      new Set(options).size !== 4 ||
+      !allowed.includes(options.length) ||
+      new Set(options).size !== options.length ||
       options.some((o) => !o || o.length > MAX_BANK_QUESTION) ||
       !options.includes(answer)
     ) {
-      throw new BadRequestException("Câu hỏi không hợp lệ: cần tiêu đề, 4 lựa chọn khác nhau và đáp án nằm trong 4 lựa chọn");
+      throw new BadRequestException(
+        `Câu hỏi không hợp lệ: cần tiêu đề, ${allowed.length === 1 ? "4" : allowed.join("/")} lựa chọn khác nhau và đáp án nằm trong các lựa chọn`,
+      );
     }
     const key = questionKey("", "", kind, answer, options);
+    const hash = contentHashOf(prompt, options);
     const res = await this.bank
       .updateOne(
         { dedupeKey: key },
@@ -648,6 +881,13 @@ export class ExamsService {
             source: "local",
             verified: true, // authored by the admin — the author is the source of truth
             level: String(input.level ?? "").slice(0, 8),
+            mondai: input.mondai || undefined,
+            section: input.section || undefined,
+            stimulus: input.stimulus ? new Types.ObjectId(input.stimulus) : null,
+            groupOrder: input.groupOrder ?? undefined,
+            points: input.points ?? 1,
+            rights: input.rights ?? "own",
+            contentHash: hash,
             createdBy: caller.sub,
             dedupeKey: key,
           },
@@ -799,7 +1039,7 @@ export class ExamsService {
   private async loadBank(ids: Types.ObjectId[]): Promise<BankQuestion[]> {
     const rows = await this.bank
       .find({ _id: { $in: ids } })
-      .select("kind prompt sub options answer explain")
+      .select("kind prompt sub options answer explain mondai section stimulus groupOrder points")
       .lean()
       .exec();
     return rows.map((r) => ({
@@ -810,6 +1050,11 @@ export class ExamsService {
       options: r.options,
       answer: r.answer,
       explain: r.explain,
+      mondai: r.mondai,
+      section: r.section,
+      stimulusId: r.stimulus ? String(r.stimulus) : undefined,
+      groupOrder: r.groupOrder,
+      points: r.points,
     }));
   }
 
@@ -817,6 +1062,47 @@ export class ExamsService {
   private async bankFor(core: AttemptCore): Promise<BankQuestion[]> {
     const found = await this.loadBank(core.questionOrder.map((id) => new Types.ObjectId(id)));
     return bankByOrder(found, core.questionOrder);
+  }
+
+  /**
+   * The JLPT sectional layer (NP-406) for the sit/result payloads: the part
+   * descriptors (cumulative deadlines from the attempt's snapshot) and the
+   * answer-free shared passages the sitting serves. Flat exams → `{}` (the
+   * legacy payload shape is untouched).
+   */
+  private async sitOpts(core: AttemptCore, bank: BankQuestion[]): Promise<BuildSitOptions> {
+    if (!core.questionSections || Object.keys(core.questionSections).length === 0) return {};
+    // Part descriptors from the stored snapshot (sectionKeys + sectionDeadlinesMs).
+    const keys: string[] = core.sectionKeys ?? Object.keys(core.questionSections ?? {});
+    const deadlines = core.sectionDeadlinesMs ?? {};
+    const sections = keys.map((k) => ({ key: k, deadlineMs: deadlines[k] ?? null }));
+    // Shared passages whose questions are in the sitting.
+    const stimulusIds = [...new Set(bank.map((q) => q.stimulusId).filter((s): s is string => !!s))];
+    let stimuli: StimulusView[] = [];
+    if (stimulusIds.length > 0) {
+      const rows = await this.stimuli
+        .find({ _id: { $in: stimulusIds } })
+        .select("kind title body bodyB notes imageUrl")
+        .lean()
+        .exec();
+      const byId = new Map(rows.map((s) => [String(s._id), s]));
+      stimuli = stimulusIds.flatMap((id) => {
+        const s = byId.get(id);
+        if (!s) return [];
+        const view: StimulusView = {
+          id,
+          kind: s.kind,
+          title: s.title || undefined,
+          body: s.body,
+          bodyB: s.bodyB || undefined,
+          notes: s.notes || undefined,
+          imageUrl: s.imageUrl || undefined,
+        };
+        return [view];
+      });
+    }
+    const maxPoints = bank.reduce((a, q) => a + (q.points ?? 1), 0);
+    return { sections, stimuli, maxPoints };
   }
 
   /**
@@ -828,28 +1114,30 @@ export class ExamsService {
     const core = toCore(attempt);
     if (core.status !== "in_progress") {
       const bank = await this.bankFor(core);
-      return buildResultPayload(core, bank, gradeAttempt(bank, core));
+      const grade = gradeAttempt(bank, core);
+      return buildResultPayload(core, bank, grade, await this.sitOpts(core, bank));
     }
     const bank = await this.bankFor(core);
     const grade = gradeAttempt(bank, core);
     const now = Date.now();
     const submittedAtMs = status === "timed_out" && core.deadlineMs ? core.deadlineMs : now;
     const durationSec = Math.max(0, Math.round((submittedAtMs - core.startedAtMs) / 1000));
+    const set: Record<string, unknown> = {
+      status,
+      submittedAtMs,
+      durationSec,
+      score: grade.score,
+      total: grade.total,
+      percent: grade.percent,
+      correct: grade.correct,
+    };
+    if (grade.sectionScores) {
+      set.sectionScores = grade.sectionScores;
+      set.points = grade.points;
+      set.maxPoints = grade.maxPoints;
+    }
     await this.attempts
-      .updateOne(
-        { _id: attempt._id, status: "in_progress" },
-        {
-          $set: {
-            status,
-            submittedAtMs,
-            durationSec,
-            score: grade.score,
-            total: grade.total,
-            percent: grade.percent,
-            correct: grade.correct,
-          },
-        },
-      )
+      .updateOne({ _id: attempt._id, status: "in_progress" }, { $set: set })
       .exec();
     core.status = status;
     core.submittedAtMs = submittedAtMs;
@@ -857,7 +1145,10 @@ export class ExamsService {
     core.score = grade.score;
     core.total = grade.total;
     core.percent = grade.percent;
-    return buildResultPayload(core, bank, grade);
+    core.sectionScores = grade.sectionScores;
+    core.points = grade.points;
+    core.maxPoints = grade.maxPoints;
+    return buildResultPayload(core, bank, grade, await this.sitOpts(core, bank));
   }
 
   /** Validate a question list against the bank; 400 when ids are unknown. */
@@ -915,6 +1206,12 @@ function toCore(doc: ExamAttemptDocument): AttemptCore {
     score: doc.score,
     total: doc.total,
     percent: doc.percent,
+    sectionDeadlinesMs: doc.sectionDeadlinesMs,
+    sectionScores: doc.sectionScores,
+    points: doc.points,
+    maxPoints: doc.maxPoints,
+    sectionKeys: doc.sectionKeys,
+    questionSections: doc.questionSections,
   };
 }
 

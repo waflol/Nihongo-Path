@@ -38,6 +38,10 @@ import {
 } from "../flashcards/schemas/exercise-question.schema.js";
 import { EXAM_STATUSES, type ExamStatus } from "./schemas/exam.schema.js";
 import { ExamsService } from "./exams.service.js";
+import { StimuliService } from "./stimuli.service.js";
+import { MONDAI_TYPES, SECTION_KEYS, type MondaiType, type SectionKey } from "./mondai.js";
+import { STIMULUS_KINDS, type StimulusKind } from "./schemas/stimulus.schema.js";
+import { QUESTION_RIGHTS, type QuestionRights } from "../flashcards/schemas/exercise-question.schema.js";
 
 // ── Learner DTOs ──────────────────────────────────────────────────────
 
@@ -76,7 +80,8 @@ class AdminQuestionDto {
 
   @IsOptional() @IsString() @MaxLength(400) sub?: string;
 
-  @IsArray() @ArrayMinSize(4) @ArrayMaxSize(4) @IsString({ each: true }) @MaxLength(400, { each: true })
+  /** Option count is per-type: 4 for the printed forms, 3 or 4 for listening. */
+  @IsArray() @ArrayMinSize(1) @ArrayMaxSize(4) @IsString({ each: true }) @MaxLength(400, { each: true })
   options: string[];
 
   @IsString() @MinLength(1) @MaxLength(400) answer: string;
@@ -84,6 +89,14 @@ class AdminQuestionDto {
   @IsOptional() @IsString() @MaxLength(400) explain?: string;
 
   @IsOptional() @IsString() @MaxLength(8) level?: string;
+
+  // ── JLPT exam-bank fields (NP-406) ───────────────────────────────
+  @IsOptional() @IsIn(MONDAI_TYPES as unknown as string[]) mondai?: MondaiType;
+  @IsOptional() @IsIn(SECTION_KEYS as unknown as string[]) section?: SectionKey;
+  @IsOptional() @IsString() stimulus?: string;
+  @IsOptional() @Type(() => Number) @IsInt() @Min(0) groupOrder?: number;
+  @IsOptional() @Type(() => Number) @IsInt() @Min(0) @Max(100) points?: number;
+  @IsOptional() @IsIn(QUESTION_RIGHTS as unknown as string[]) rights?: QuestionRights;
 }
 
 class ShuffleDto {
@@ -115,6 +128,51 @@ class AdminExamDto {
   @IsOptional() @IsIn(EXAM_STATUSES as unknown as string[]) status?: (typeof EXAM_STATUSES)[number];
 }
 
+/**
+ * One shared reading passage (NP-406). Admin auth + review only — the sit
+ * payload serves the passage body to learners, answer-free.
+ */
+class StimulusDto {
+  @IsOptional() @IsString() @MaxLength(8) level?: string;
+
+  @IsIn(MONDAI_TYPES as unknown as string[]) mondai: MondaiType;
+
+  @IsIn(SECTION_KEYS as unknown as string[]) section: SectionKey;
+
+  @IsIn(STIMULUS_KINDS as unknown as string[]) kind: StimulusKind;
+
+  @IsOptional() @IsString() @MaxLength(200) title?: string;
+
+  @IsString() @MinLength(1) body: string;
+
+  @IsOptional() @IsString() bodyB?: string;
+
+  @IsOptional() @IsString() notes?: string;
+
+  @IsOptional() @IsString() @MaxLength(1000) imageUrl?: string;
+
+  @Type(() => Number) @IsInt() @Min(0) questionCount: number;
+
+  @IsOptional() @IsIn(QUESTION_RIGHTS as unknown as string[]) rights?: QuestionRights;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => SourceRefDto)
+  sourceRef?: SourceRefDto;
+}
+
+class SourceRefDto {
+  @IsString() @MinLength(1) @MaxLength(300) file: string;
+  @IsOptional() @IsString() @MaxLength(40) sitting?: string;
+  @IsOptional() @IsString() @MaxLength(40) no?: string;
+}
+
+class StimuliQuery {
+  @IsOptional() @IsString() @MaxLength(8) level?: string;
+  @IsOptional() @IsIn(MONDAI_TYPES as unknown as string[]) mondai?: MondaiType;
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(500) limit?: number;
+}
+
 class AdminQuestionQuery {
   @IsOptional() @IsIn(EXERCISE_KINDS as unknown as string[]) kind?: ExerciseKind;
   @IsOptional() @IsString() @MaxLength(8) level?: string;
@@ -137,7 +195,10 @@ class AdminQuestionQuery {
 @ApiBearerAuth()
 @Controller("exams")
 export class ExamsController {
-  constructor(private readonly exams: ExamsService) {}
+  constructor(
+    private readonly exams: ExamsService,
+    private readonly stimuli: StimuliService,
+  ) {}
 
   // ── Learner ──────────────────────────────────────────────────────
 
@@ -210,7 +271,6 @@ export class ExamsController {
   adminAuthorQuestion(@CurrentUser() caller: AuthUser, @Body() body: AdminQuestionDto) {
     return this.exams.adminAuthorQuestion(caller, body);
   }
-
   @Get("admin/exam-questions")
   @ContentAdmin()
   @ApiOperation({ summary: "List the question bank (?kind, ?level, ?q, ?standalone, ?limit)" })
@@ -268,5 +328,53 @@ export class ExamsController {
   @ApiOperation({ summary: "Delete an exam (its attempts keep their snapshots) (admin)" })
   adminDeleteExam(@Param("id") id: string) {
     return this.exams.adminDeleteExam(id);
+  }
+
+  // ── Stimuli (NP-406) — the shared reading passages ───────────────
+
+  @Get("admin/stimuli")
+  @ContentAdmin()
+  @ApiOperation({ summary: "Shared reading passages (?level, ?mondai, ?limit) (admin)" })
+  adminListStimuli(@Query() query: StimuliQuery) {
+    return this.stimuli.list({
+      level: query.level,
+      mondai: query.mondai,
+      limit: query.limit,
+    });
+  }
+
+  @Get("admin/stimuli/:id")
+  @ContentAdmin()
+  @ApiOperation({ summary: "One passage, full body (admin review) (admin)" })
+  adminGetStimulus(@Param("id") id: string) {
+    return this.stimuli.get(id);
+  }
+
+  @Post("admin/stimuli")
+  @ContentAdmin()
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({ summary: "Create a shared reading passage (admin)" })
+  adminCreateStimulus(@CurrentUser() caller: AuthUser, @Body() body: StimulusDto) {
+    return this.stimuli.create(caller, body);
+  }
+
+  @Patch("admin/stimuli/:id")
+  @ContentAdmin()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: "Edit a passage (admin)" })
+  adminUpdateStimulus(
+    @CurrentUser() caller: AuthUser,
+    @Param("id") id: string,
+    @Body() body: Partial<StimulusDto>,
+  ) {
+    return this.stimuli.update(caller, id, body);
+  }
+
+  @Delete("admin/stimuli/:id")
+  @ContentAdmin()
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: "Delete a passage (?hard=true also clears its questions' refs) (admin)" })
+  adminDeleteStimulus(@Param("id") id: string, @Query("hard") hard?: string) {
+    return this.stimuli.remove(id, hard === "true");
   }
 }

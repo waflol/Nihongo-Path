@@ -45,6 +45,38 @@ export class Exam {
   @Prop({ type: [Types.ObjectId], default: [] })
   questions: Types.ObjectId[];
 
+  // ── JLPT sectional layout (NP-406). Optional — a flat exam leaves both absent. ──
+
+  /**
+   * Exam parts. Each part has its own time limit and question list; the
+   * section deadlines accumulate from the start (v1: fixed accumulation, the
+   * final deadline is the last section's). When present, `questions` is the
+   * concatenation of all sections' questions (kept so old code keeps reading
+   * a single flat list).
+   */
+  @Prop({
+    type: [
+      {
+        key: { type: String, required: true },
+        title: { type: String },
+        timeLimitMin: { type: Number, min: 1, max: 240 },
+        questions: { type: [Types.ObjectId], default: [] },
+      },
+    ],
+  })
+  sections?: { key: string; title?: string; timeLimitMin?: number; questions: Types.ObjectId[] }[];
+
+  /** Present when the exam was produced by the generator (NP-408). */
+  @Prop({
+    type: {
+      seed: { type: Number },
+      blueprintVersion: { type: Number },
+      level: { type: String, trim: true },
+      forUser: { type: Boolean },
+    },
+  })
+  generated?: { seed?: number; blueprintVersion?: number; level?: string; forUser?: boolean };
+
   /** Shuffling (P4-EXAM-05): questions and/or the option order per question. */
   @Prop({
     type: {

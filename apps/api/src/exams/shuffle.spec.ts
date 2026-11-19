@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { optionOrder, seededOrder } from "./shuffle.js";
+import { groupedOrder, optionOrder, seededOrder } from "./shuffle.js";
 
 /**
  * T-P4-01: shuffle 1000 times → the answer always stays findable.
@@ -73,5 +73,55 @@ describe("optionOrder", () => {
       const served = optionOrder(seed, "q-X", 4, true);
       expect([...served].sort((x, y) => x - y)).toEqual([0, 1, 2, 3]);
     }
+  });
+});
+
+/**
+ * NP-406: `groupedOrder` shuffles the UNITS of a section (single questions
+ * and whole reading groups) while keeping a group's questions adjacent and
+ * in their `groupOrder` — a passage is never split across two sittings.
+ */
+describe("groupedOrder (NP-406)", () => {
+  // A section: 2 solo questions + one passage of 3 (out of order on purpose).
+  const items = [
+    { id: "p1", groupOrder: 1, group: "S1" },
+    { id: "q-a" },
+    { id: "p3", groupOrder: 3, group: "S1" },
+    { id: "q-b" },
+    { id: "p2", groupOrder: 2, group: "S1" },
+  ];
+
+  it("keeps a group adjacent and in groupOrder, for many seeds", () => {
+    for (const seed of [0, 1, 7, 42, 999, 0x7fffffff]) {
+      const out = groupedOrder(seed, items);
+      // Every id exactly once.
+      expect(out.sort()).toEqual(["p1", "p2", "p3", "q-a", "q-b"].sort());
+      const i1 = out.indexOf("p1");
+      expect(out.slice(i1, i1 + 3)).toEqual(["p1", "p2", "p3"]);
+    }
+  });
+
+  it("is deterministic (same seed → same order)", () => {
+    expect(groupedOrder(5, items)).toEqual(groupedOrder(5, items));
+  });
+
+  it("differs across seeds (with high probability)", () => {
+    expect(groupedOrder(1, items)).not.toEqual(groupedOrder(2, items));
+  });
+
+  it("is the identity for a single item", () => {
+    expect(groupedOrder(9, [{ id: "solo" }])).toEqual(["solo"]);
+  });
+
+  it("handles null / missing group as a solo unit", () => {
+    const out = groupedOrder(3, [
+      { id: "g1", group: "S", groupOrder: 1 },
+      { id: "x" },
+      { id: "g2", group: "S", groupOrder: 2 },
+      { id: "y", group: null },
+    ]);
+    const i = out.indexOf("g1");
+    expect(out.slice(i, i + 2)).toEqual(["g1", "g2"]);
+    expect(new Set(out)).toEqual(new Set(["g1", "g2", "x", "y"]));
   });
 });

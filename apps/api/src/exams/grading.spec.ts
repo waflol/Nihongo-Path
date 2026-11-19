@@ -184,3 +184,113 @@ describe("buildResultPayload (P4-EXAM-07/08 / T-P4-05)", () => {
     expect(positionsOf(bare, "q1", 4)).toEqual([0, 1, 2, 3]);
   });
 });
+
+/**
+ * NP-406 additions: a listening-style 3-option question, a ★ question, and the
+ * guarantee that a FLAT legacy exam grades byte-for-byte the same as before the
+ * sectional layer (plan §6 GĐ1 — "đề phẳng cũ cho kết quả giống hệt trước khi
+ * sửa").
+ */
+describe("gradeAttempt — NP-406 option counts and ★ questions", () => {
+  const BANK3: BankQuestion[] = [
+    {
+      _id: "l1",
+      kind: "meaning-pick",
+      prompt: "（音声）",
+      options: ["はい", "いいえ", "わからない"], // 3 options — listening style
+      answer: "いいえ",
+    },
+    {
+      _id: "s1",
+      kind: "star-order",
+      prompt: "＿＿な気持ちです。",
+      options: ["楽し", "楽しい", "楽しみ", "たのし"],
+      answer: "楽しい",
+    },
+  ];
+
+  it("grades a 3-option question through its own served order", () => {
+    // l1: bank answer index 1; served order puts bank 1 at position 2.
+    const attempt: AttemptCore = {
+      _id: "a",
+      exam: "e",
+      examTitle: "t",
+      seed: 1,
+      questionOrder: ["l1", "s1"],
+      optionOrder: { l1: [0, 2, 1], s1: [0, 1, 2, 3] },
+      startedAtMs: 0,
+      deadlineMs: null,
+      status: "in_progress",
+      answers: { l1: 2, s1: 0 }, // l1 picks served 2 → bank 1 = "いいえ" ✓; s1 picks served 0 → bank 0 = "楽し" ✗
+      flagged: [],
+    };
+    const grade = gradeAttempt(BANK3, attempt);
+    expect(grade.correct).toEqual({ l1: true, s1: false });
+    expect(grade.score).toBe(1);
+    expect(grade.total).toBe(2);
+  });
+
+  it("grades a ★ question as a normal MCQ (the fragment at the ★ is the answer)", () => {
+    // s1 alone, identity order, learner picks served position 1 → bank 1 = "楽しい" ✓.
+    const onlyStar: BankQuestion[] = BANK3.filter((q) => q._id === "s1");
+    const attempt: AttemptCore = {
+      _id: "a",
+      exam: "e",
+      examTitle: "t",
+      seed: 1,
+      questionOrder: ["s1"],
+      optionOrder: { s1: [0, 1, 2, 3] },
+      startedAtMs: 0,
+      deadlineMs: null,
+      status: "in_progress",
+      answers: { s1: 1 },
+      flagged: [],
+    };
+    expect(gradeAttempt(onlyStar, attempt).correct).toEqual({ s1: true });
+  });
+});
+
+describe("gradeAttempt — flat legacy exams are unchanged (snapshot)", () => {
+  // The original P4 fixtures, exactly as before the NP-406 layer:
+  // no `points`, no `section` fields → the legacy shape must come back verbatim.
+  const LEGACY_BANK: BankQuestion[] = [
+    { _id: "a", kind: "meaning-pick", prompt: "x", options: ["1", "2", "3", "4"], answer: "1" },
+    { _id: "b", kind: "meaning-pick", prompt: "y", options: ["1", "2", "3", "4"], answer: "2" },
+    { _id: "c", kind: "meaning-pick", prompt: "z", options: ["1", "2", "3", "4"], answer: "3" },
+  ];
+  const LEGACY: AttemptCore = {
+    _id: "a",
+    exam: "e",
+    examTitle: "t",
+    seed: 1,
+    questionOrder: ["a", "b", "c"],
+    optionOrder: { a: [0, 1, 2, 3], b: [0, 1, 2, 3], c: [0, 1, 2, 3] },
+    startedAtMs: 0,
+    deadlineMs: null,
+    status: "in_progress",
+    answers: { a: 0, b: 1, c: 2 }, // a ✓, b ✓, c ✓(bank 3? no: served 2 → bank 2 = "3" ✓)
+    flagged: [],
+  };
+
+  it("returns the legacy 4-number grade, no points / sectionScores keys", () => {
+    const grade = gradeAttempt(LEGACY_BANK, LEGACY);
+    // Exact numeric snapshot of the pre-NP-406 behaviour.
+    expect(grade).toEqual({
+      correct: { a: true, b: true, c: true },
+      score: 3,
+      total: 3,
+      percent: 100,
+    });
+    expect(Object.keys(grade)).toEqual(["correct", "score", "total", "percent"]);
+  });
+
+  it("a wrong + unanswered mix still grades to the same legacy numbers", () => {
+    const attempt: AttemptCore = { ...LEGACY, answers: { a: 0, b: 3, c: null } };
+    const grade = gradeAttempt(LEGACY_BANK, attempt);
+    expect(grade.correct).toEqual({ a: true, b: false, c: false });
+    expect(grade.score).toBe(1);
+    expect(grade.total).toBe(3);
+    expect(grade.percent).toBe(33.3);
+    expect(Object.keys(grade)).toEqual(["correct", "score", "total", "percent"]);
+  });
+});

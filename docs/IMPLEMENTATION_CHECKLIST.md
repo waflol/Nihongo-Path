@@ -368,6 +368,18 @@ chặn route, CRUD nội dung. Test case: `T-P2-01` … `T-P2-10`.
 **Checkpoint P4:** build/lint/typecheck; làm thử 1 đề end-to-end. Test case:
 `T-P4-01` … `T-P4-10`.
 
+### P4+ — Ngân hàng đề JLPT (NP-406…409, lập 19/11)
+
+| ID | Task | Phụ thuộc | File/module | Hoàn thành khi | Kiểm thử | TT |
+|---|---|---|---|---|---|---|
+| P4-JLPT-01 | Mã dạng mondai + phân loại theo lời dẫn + `contentHashOf` (NP-406) | P4-EXAM-01 | `src/exams/mondai.ts` | `classifyInstruction` đúng mã cho từng dạng (lời dẫn tự viết, full/half-width); lạ → `null` | vitest `mondai.spec.ts` (19/11) | `[x]` |
+| P4-JLPT-02 | Schema: +3 `kind`, trường §5.2, `exam_stimuli`, `Exam.sections/generated`, `attempt` chấm theo phần (NP-406) | P4-JLPT-01 | `schemas/{exercise-question,stimulus,exam,attempt}.schema.ts` | Đề phẳng cũ không đổi hành vi; đề có phần có `sections[]` | xem schema + vitest (19/11) | `[x]` |
+| P4-JLPT-03 | `groupedOrder` + chấm `points`/`sectionScores` + `estimateJlptScaled` + sit payload có `stimuli` không lộ đáp án (NP-406) | P4-JLPT-02 | `shuffle.ts`, `exams.service.ts` | Cùng seed → cùng thứ tự; nhóm bài đọc liền nhau; payload đệ quy không có khoá `answer/explain/correct` | vitest `shuffle.spec`, `grading.spec`, `sit-payload.spec` (19/11) | `[x]` |
+| P4-JLPT-04 | CRUD admin `exam_stimuli` + `adminAuthorQuestion` nới theo `optionCountsOf` (NP-406) | P4-JLPT-03 | `stimuli.service.ts`, `exams.controller.ts` | Route `exams/admin/stimuli` guard admin; câu 3 phương án cho `listening` | vitest (19/11); chưa verify API/trình duyệt thật | `[x]` |
+| P4-JLPT-05 | Import PDF đề → draft có người duyệt (NP-407) | P4-JLPT-04 | `src/exams/import/*` | Draft nhóm đúng kỳ × mondai; ≥ 90% câu ngôn ngữ N3 7/2010 tách đúng; publish idempotent theo `contentHash` | vitest + đo RSS (chưa bắt đầu) | `[ ]` |
+| P4-JLPT-06 | Bộ sinh đề theo blueprint (NP-408) | P4-JLPT-04 | `src/exams/{blueprints,generator}.ts` | Đề đúng blueprint; khoá Q-12: người học chỉ bốc `own\|licensed` | vitest (chưa bắt đầu) | `[ ]` |
+| P4-JLPT-07 | UI làm đề theo phần + admin phủ ngân hàng (NP-409) | P4-JLPT-05, P4-JLPT-06 | `apps/ui/...` | Bấm thử Chromium headless + mobile 375 px | (chưa bắt đầu) | `[ ]` |
+
 ---
 
 ## P5 — Sprint 5: Admin, Feedback & Entitlements

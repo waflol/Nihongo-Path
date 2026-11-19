@@ -42,10 +42,50 @@ export function seededOrder(seed: number, n: number): number[] {
  */
 export function optionOrder(seed: number, qid: string, count: number, shuffleOptions: boolean): number[] {
   if (!shuffleOptions || count <= 1) return Array.from({ length: count }, (_, i) => i);
-  // Mix the question id in so two questions with the same option count differ.
+  return seededOrder(mixSeed(seed, qid), count);
+}
+
+/** Mix a string label into a 32-bit seed (XOR-fold) — one PRNG stream per label. */
+export function mixSeed(seed: number, label: string): number {
   let mix = seed >>> 0;
-  for (let i = 0; i < qid.length; i += 1) mix = (mix ^ qid.charCodeAt(i)) | 0;
-  return seededOrder(mix, count);
+  for (let i = 0; i < label.length; i += 1) mix = (mix ^ label.charCodeAt(i)) | 0;
+  return mix;
+}
+
+/**
+ * Served order of a set of questions where some form **groups** that must
+ * stay together (NP-406: a reading passage and its questions). A group is
+ * identified by `group` (e.g. the stimulus id); items without one are their
+ * own unit. Units are shuffled (same seed → same order), and inside a group
+ * the items keep their `groupOrder`. Every id appears exactly once.
+ */
+export function groupedOrder(
+  seed: number,
+  items: { id: string; group?: string | null; groupOrder?: number }[],
+): string[] {
+  if (items.length <= 1) return items.map((i) => i.id);
+  const units = new Map<string, { id: string; groupOrder?: number }[]>();
+  const unitKeys: string[] = [];
+  for (const it of items) {
+    const key = it.group ?? `solo:${it.id}`;
+    let u = units.get(key);
+    if (!u) {
+      u = [];
+      units.set(key, u);
+      unitKeys.push(key); // first-appearance order → deterministic before the permutation
+    }
+    u.push(it);
+  }
+  const perm = seededOrder(seed, unitKeys.length);
+  const out: string[] = [];
+  for (const p of perm) {
+    units
+      .get(unitKeys[p])!
+      .slice()
+      .sort((a, b) => (a.groupOrder ?? 0) - (b.groupOrder ?? 0))
+      .forEach((x) => out.push(x.id));
+  }
+  return out;
 }
 
 /** The original bank index now sitting at served position `p`. */

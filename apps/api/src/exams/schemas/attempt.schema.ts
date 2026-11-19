@@ -96,6 +96,33 @@ export class ExamAttempt {
   @Prop({ type: Number, default: 0 })
   percent: number;
 
+  // ── JLPT sectional scoring (NP-406). Absent on flat exams. ────────
+  /** Points-based totals (a question's `points`, not its count). */
+  @Prop({ type: Number })
+  points?: number;
+
+  @Prop({ type: Number })
+  maxPoints?: number;
+
+  /** Per-section verdicts: `{score; total; points; maxPoints}`. */
+  @Prop({ type: Object })
+  sectionScores?: Record<string, { score: number; total: number; points: number; maxPoints: number }>;
+
+  /**
+   * Per-section cumulative deadlines (NP-406, v1 fixed accumulation):
+   * `{ key: absoluteMs }`. The overall `deadlineMs` is the last one.
+   */
+  @Prop({ type: Object })
+  sectionDeadlinesMs?: Record<string, number>;
+
+  /** Snapshot of the exam's parts: `[{key, title}]` (empty on flat exams). */
+  @Prop({ type: [String], default: [] })
+  sectionKeys: string[];
+
+  /** Question id → the section key it was drawn for (NP-406). */
+  @Prop({ type: Object })
+  questionSections?: Record<string, string>;
+
   // Managed by `@Schema({ timestamps: true })` — type-only.
   createdAt: Date;
   updatedAt: Date;

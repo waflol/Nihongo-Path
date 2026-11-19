@@ -48,6 +48,7 @@
 | NP-020 | Bấm thử trình duyệt: trang đăng ký, CRUD nội dung admin, menu tài khoản header | P2-UI-02, P2-UI-04, P2-UI-06 | Verify Chromium headless 18/11, screenshot `.p2-evidence/` |
 | NP-026 | Kiểm chứng FSRS-4.5 | NP-101 | Spec 6/6, so lịch với SM-2, nâng cấp thẻ SM-2 thật lên `schemaVersion: 2` (commit `51049d6`) |
 | NP-405 | Cập nhật `database.md` nhóm exam | P4-DOC-01 | `exams`, `exam_attempts` khớp code (18/11) |
+| NP-406 | Ngân hàng JLPT GĐ1: mã dạng mondai, `exam_stimuli`, xáo theo nhóm, chấm theo điểm/phần | P4-JLPT-01…04 | vitest 424 xanh (19/11); đề phẳng không đổi hành vi |
 
 ## 3. Đang dở (🟡) — việc còn lại để đóng
 
@@ -102,10 +103,11 @@ Plan chi tiết: [plans/plan-jlpt-question-bank.md](./plans/plan-jlpt-question-b
 
 | Ticket | Cụm task | Chặn bởi |
 |---|---|---|
-| NP-406 | Mã dạng mondai, bài đọc dùng chung (`exam_stimuli`), xáo theo nhóm, chấm theo điểm/phần | NP-401…404 |
-| NP-407 | Nhập PDF đề → bản nháp `exam_import_drafts` → admin duyệt/xuất bản, chống trùng chéo nguồn | NP-406 |
-| NP-408 | Khung đề theo level + `generateExam` có seed; người học chỉ bốc câu `own/licensed` | NP-406; Q-12 ⏸ (phần người học) |
+| NP-407 | Nhập PDF đề → bản nháp `exam_import_drafts` → admin duyệt/xuất bản, chống trùng chéo nguồn | NP-406 ✅ |
+| NP-408 | Khung đề theo level + `generateExam` có seed; người học chỉ bốc câu `own/licensed` | NP-406 ✅; Q-12 ⏸ (phần người học) |
 | NP-409 | UI làm đề theo phần (bài đọc, câu ★, điểm từng phần) + admin phủ ngân hàng/sinh đề thử | NP-407, NP-408 |
+
+> NP-406 (GĐ1) xong 19/11 — xem §2.
 
 ### P5 — Hạn mức & quản trị
 | Ticket | Cụm task | Chặn bởi |
