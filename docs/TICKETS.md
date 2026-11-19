@@ -88,6 +88,15 @@ Có commit, chưa nằm trong checklist; cần bổ sung tiêu chí nghiệm thu
 
 Mỗi phase giữ nguyên ID trong checklist; ticket gom theo cụm.
 
+### SRS — Nâng lên FSRS-6 + tối ưu tham số (ngoài checklist, lập 19/11)
+Plan chi tiết: [plans/plan-fsrs-6.md](./plans/plan-fsrs-6.md). Làm tuần tự; NP-114 nên lên production sớm để tích luỹ nhật ký ôn.
+
+| Ticket | Cụm task | Chặn bởi |
+|---|---|---|
+| NP-114 | `srs_review_logs` + `reviewId`/`reviewedAt` từng lượt, gửi lại batch không áp dụng hai lần | — |
+| NP-115 | FSRS-6 qua `ts-fsrs` trong `@nihongo/shared/srs`, nâng lười thẻ v1/v2, bỏ bản sao trong UI | NP-114 |
+| NP-116 | Tối ưu tham số theo người học (`@open-spaced-repetition/binding`), chỉ áp dụng khi tốt hơn mặc định | NP-115; người dùng đủ ~1.000 lượt ôn |
+
 ### P4+ — Ngân hàng đề JLPT & sinh đề ngẫu nhiên (ngoài checklist, lập 19/11)
 Plan chi tiết: [plans/plan-jlpt-question-bank.md](./plans/plan-jlpt-question-bank.md). Chưa có hàng trong checklist nên không tính vào % ở §1.
 
