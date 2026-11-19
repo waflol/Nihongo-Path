@@ -13,6 +13,7 @@ import { buildContentModule } from "./content/content.module.js";
 import { buildFlashcardsModule } from "./flashcards/flashcards.module.js";
 import { buildSrsModule } from "./srs/srs.module.js";
 import { buildImportModule } from "./import/import.module.js";
+import { buildExamsModule } from "./exams/exams.module.js";
 import { buildLogsModule } from "./logs/logs.module.js";
 import { buildSystemModule } from "./system/system.module.js";
 import { buildEvalModule } from "./eval/eval.module.js";
@@ -53,6 +54,9 @@ import { buildNotificationsModule } from "./notifications/notifications.module.j
     buildFlashcardsModule(),
     buildSrsModule(),
     buildImportModule(),
+    // Phase P4 (Exercises & Exams): the exam engine over the P3 question
+    // bank (exams / exam_attempts) — same graceful-degrade contract.
+    buildExamsModule(),
     // Admin request-log viewer (GET /admin/logs).
     buildLogsModule(),
     // Admin server monitor (GET /admin/system/stats).

@@ -137,6 +137,12 @@ export class SrsController {
     return this.srs.exercisePriority(caller, query.tz);
   }
 
+  @Get("due-count")
+  @ApiOperation({ summary: "How many learned words are due today (same count as the review hub)" })
+  dueCount(@CurrentUser() caller: AuthUser, @Query() query: QueueQuery) {
+    return this.srs.dueCount(caller, query.tz);
+  }
+
   @Get("queue/:deckId")
   @ApiOperation({
     summary: "My review queue for a deck (new / due / hard / mastered)",

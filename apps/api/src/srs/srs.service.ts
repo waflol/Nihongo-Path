@@ -152,6 +152,12 @@ export class SrsService {
     return doc?.timezone ?? "Asia/Ho_Chi_Minh";
   }
 
+  /** Words due today across every deck — identical to the review hub's `counts.due`. */
+  async dueCount(caller: AuthUser, tz?: string): Promise<{ due: number }> {
+    const q = await this.getQueue(caller, "all", tz, 1, "review");
+    return { due: q.counts.due };
+  }
+
   /**
    * Resolve a deck the caller may study. A shared deck must be PUBLISHED; a
    * personal deck must belong to the caller (T-P3-07: one user cannot read
