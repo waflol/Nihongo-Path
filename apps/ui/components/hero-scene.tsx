@@ -21,7 +21,17 @@ const PETALS = [
   { x: 880, d: 7, s: 0.8, t: 10 },
 ];
 
-export function HeroScene({ className = "" }: { className?: string }) {
+export function HeroScene({
+  className = "",
+  fit = "meet",
+  align = "xMaxYMax",
+  viewBox = "0 0 1920 600",
+}: {
+  className?: string;
+  fit?: "meet" | "slice";
+  align?: string;
+  viewBox?: string;
+}) {
   return (
     <div className={className} aria-hidden="true">
       <style>{`
@@ -38,7 +48,7 @@ export function HeroScene({ className = "" }: { className?: string }) {
         .hs-bird{animation:hs-fly 9s linear infinite}
         .hs-wing{transform-box:fill-box;transform-origin:center;animation:hs-flap .5s ease-in-out infinite}
       `}</style>
-      <svg viewBox="0 0 1920 600" preserveAspectRatio="xMaxYMax meet" className="h-full w-full overflow-visible">
+      <svg viewBox={viewBox} preserveAspectRatio={`${align} ${fit}`} className="h-full w-full overflow-visible">
         <g className="hs-rise">
           <circle cx="1400" cy="215" r="118" fill="#ff5a3c" />
         </g>

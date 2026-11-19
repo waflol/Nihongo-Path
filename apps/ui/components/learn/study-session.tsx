@@ -756,7 +756,7 @@ function StudySessionInner({ mode }: { mode: "learn" | "review" }) {
         <h1 className="text-2xl font-semibold tracking-tight text-[var(--foreground)]">
           {mode === "learn" ? "Học từ mới" : "Ôn tập SRS"}
         </h1>
-        <div className="flex items-center gap-3">
+        <div className="flex min-w-0 max-w-full items-center gap-3">
           {/* Always rendered (just hidden when idle) so the header height —
               and therefore the card position — never shifts while grading. */}
           <span
@@ -773,7 +773,7 @@ function StudySessionInner({ mode }: { mode: "learn" | "review" }) {
             {syncState === "syncing" ? "Đang đồng bộ…" : `Chờ đồng bộ ${pendingCount} phản hồi`}
           </span>
           {decks.length > 0 && (
-            <label className="text-sm text-[var(--muted-foreground)]">
+            <label className="flex min-w-0 max-w-full items-center text-sm text-[var(--muted-foreground)]">
               Bộ thẻ:{" "}
               <select
                 value={deck?._id ?? ""}
@@ -784,7 +784,7 @@ function StudySessionInner({ mode }: { mode: "learn" | "review" }) {
                       : decks.find((d) => d._id === e.target.value);
                   if (next) void switchDeck(next);
                 }}
-                className="ml-1 rounded-lg border border-[var(--border)] bg-[var(--background)] px-2 py-1 text-sm text-[var(--foreground)]"
+                className="ml-1 min-w-0 max-w-full flex-1 truncate rounded-lg border border-[var(--border)] bg-[var(--background)] px-2 py-1 text-sm text-[var(--foreground)]"
               >
                 {mode === "review" && <option value={ALL_DECKS._id}>{ALL_DECKS.title}</option>}
                 {decks.map((d) => (

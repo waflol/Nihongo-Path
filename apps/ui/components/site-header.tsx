@@ -50,9 +50,9 @@ export function SiteHeader() {
             alt=""
             width={28}
             height={28}
-            className="h-7 w-7"
+            className="h-7 w-7 shrink-0"
           />
-          {siteConfig.name}
+          <span className="whitespace-nowrap max-[349px]:sr-only">{siteConfig.name}</span>
         </Link>
 
         {/* Desktop nav */}

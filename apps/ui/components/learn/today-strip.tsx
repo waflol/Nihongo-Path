@@ -53,7 +53,7 @@ export function TodayStrip() {
 
   return (
     <div className="min-w-0">
-      <h1 className="truncate text-xl font-semibold leading-none tracking-tight text-[var(--foreground)] lg:text-2xl">
+      <h1 className="truncate text-lg font-semibold leading-none sm:text-xl tracking-tight text-[var(--foreground)] lg:text-2xl">
         {hour === null ? "Khu học tập" : `${greeting(hour)}${name ? `, ${name}` : ""}`}
       </h1>
       <div className="mt-1.5 flex min-w-0 items-center gap-3 text-xs text-[var(--muted-foreground)] sm:text-sm">

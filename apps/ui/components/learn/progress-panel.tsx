@@ -1,6 +1,7 @@
 "use client";
 
 import { useConfirm } from "@/components/learn/use-confirm";
+import { ReviewChart } from "@/components/learn/review-chart";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 interface Stats {
@@ -166,7 +167,7 @@ export function ProgressPanel({ compact = false, dense = false }: { compact?: bo
       aria-busy={loading}
       className={
         (compact
-          ? "flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border lg:flex-initial border-[var(--border)] bg-[var(--background-1)] p-4 transition-opacity "
+          ? "flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border lg:flex-1 border-[var(--border)] bg-[var(--background-1)] p-3 sm:p-4 transition-opacity "
           : dense
             ? "mt-0 rounded-2xl border border-[var(--border)] bg-[var(--background-1)] p-4 transition-opacity [&_.mt-4]:!mt-2 [&_.mt-5]:!mt-3 [&_.mt-6]:!mt-3 [&_.space-y-6>*+*]:!mt-3 "
             : "mt-8 rounded-2xl border border-[var(--border)] bg-[var(--background-1)] p-6 transition-opacity ") +
@@ -174,7 +175,7 @@ export function ProgressPanel({ compact = false, dense = false }: { compact?: bo
       }
     >
       {dialog}
-      <div className={compact ? "min-h-0 flex-1 overflow-y-auto" : ""}>
+      <div className={compact ? "min-h-0 shrink overflow-y-auto" : ""}>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-sm font-semibold text-[var(--foreground)]">
           Tiến độ ghi nhớ
@@ -293,26 +294,6 @@ export function ProgressPanel({ compact = false, dense = false }: { compact?: bo
         );
       })()}
 
-      {compact && stats && range !== "all" && stats.series.length > 0 && (() => {
-        const series = stats.series;
-        const max = Math.max(1, ...series.map((b) => b.reviews));
-        const unit = range === "year" ? "tháng" : "ngày";
-        return (
-          <div className="mt-4 hidden lg:block">
-            <p className="text-[11px] font-medium text-[var(--muted-foreground)]">Lượt ôn theo {unit}</p>
-            <div className={"mt-2 flex h-28 items-end rounded-xl border border-[var(--border)] bg-[var(--background)] px-2 pt-2 " + (series.length > 14 ? "gap-px" : "gap-1.5")} role="img" aria-label={`Biểu đồ lượt ôn theo ${unit}`}>
-              {series.map((b) => (
-                <div key={b.key} className="flex h-full flex-1 items-end" title={`${b.key}: ${b.reviews} lượt ôn`}>
-                  <div
-                    className={"w-full rounded-t-sm " + (b.reviews > 0 ? "bg-[var(--primary)]" : "bg-[var(--border)]")}
-                    style={{ height: b.reviews > 0 ? `${Math.max(6, (b.reviews / max) * 100)}%` : "3px" }}
-                  />
-                </div>
-              ))}
-            </div>
-          </div>
-        );
-      })()}
 
       {!compact && (
         <>
@@ -561,7 +542,7 @@ export function ProgressPanel({ compact = false, dense = false }: { compact?: bo
       </div>
 
       {compact && (
-      <div className="mt-4 shrink-0 border-t border-[var(--border)] pt-3 lg:mt-5">
+      <div className="mt-4 shrink-0 border-t border-[var(--border)] pt-3 lg:mt-auto lg:pt-4">
         <label htmlFor="new-per-day" className="text-sm font-medium text-[var(--foreground)]">
           Số từ mới mỗi ngày
         </label>
@@ -591,6 +572,9 @@ export function ProgressPanel({ compact = false, dense = false }: { compact?: bo
         </div>
       </div>
       )}
+
+      {compact && <ReviewChart embedded className="mt-3 min-h-36 flex-1 lg:hidden" />}
+
     </section>
   );
 }

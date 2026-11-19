@@ -92,7 +92,7 @@ function Avatar({ name }: { name: string }) {
 function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
   return (
     <div
-      className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4"
+      className="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-black/50 p-4"
       onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div role="dialog" aria-modal="true" aria-label={title} className="w-full max-w-md rounded-2xl border border-[var(--border)] bg-[var(--background)] p-6 shadow-xl">

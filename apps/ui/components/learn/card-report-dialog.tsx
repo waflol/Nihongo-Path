@@ -76,7 +76,7 @@ export function CardReportDialog({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4"
+      className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/50 p-4"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}

@@ -528,9 +528,9 @@ export function ExercisesConsole({ variant = "exercises" }: { variant?: "exercis
         <h1 className="text-2xl font-semibold tracking-tight text-[var(--foreground)]">
           {exam ? "Luyện thi" : "Bài tập"}
         </h1>
-        <div className="flex items-center gap-3">
+        <div className="flex min-w-0 max-w-full items-center gap-3">
           {decks.length > 0 && (
-            <label className="text-sm text-[var(--muted-foreground)]">
+            <label className="flex min-w-0 max-w-full items-center text-sm text-[var(--muted-foreground)]">
               Bộ thẻ:{" "}
               <select
                 value={deck?._id ?? ""}
@@ -539,7 +539,7 @@ export function ExercisesConsole({ variant = "exercises" }: { variant?: "exercis
                     e.target.value === ALL_DECKS._id ? ALL_DECKS : decks.find((d) => d._id === e.target.value);
                   if (next) setDeck(next);
                 }}
-                className="ml-1 rounded-lg border border-[var(--border)] bg-[var(--background)] px-2 py-1 text-sm text-[var(--foreground)]"
+                className="ml-1 min-w-0 max-w-full flex-1 truncate rounded-lg border border-[var(--border)] bg-[var(--background)] px-2 py-1 text-sm text-[var(--foreground)]"
               >
                 {decks.length > 1 && <option value={ALL_DECKS._id}>{ALL_DECKS.title}</option>}
                 {decks.map((d) => (

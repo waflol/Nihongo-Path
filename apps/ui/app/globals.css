@@ -489,3 +489,28 @@ html { scroll-behavior: smooth; }
   border-left: 3px solid var(--primary);
   background: color-mix(in srgb, var(--primary) 6%, transparent);
 }
+
+/* Mobile: inputs below 16px make iOS Safari zoom the page on focus. */
+@media (max-width: 639px) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
+
+/* Never let a stray wide child cause sideways page scroll. */
+html, body { overflow-x: clip; }
+
+/* Very short viewports (phone landscape): one-screen pages scroll instead of clipping. */
+@media (max-height: 520px) {
+  html.fit-screen body { height: auto; min-height: 100dvh; overflow: visible; }
+  html.fit-screen body footer { display: block; }
+}
+
+/* /learn on short desktop windows: let the page scroll instead of clipping. */
+@media (min-width: 1024px) and (max-height: 880px) {
+  html.fit-screen-lg body { height: auto; min-height: 100dvh; overflow: visible; }
+  html.fit-screen-lg body footer { display: block; }
+}
+
