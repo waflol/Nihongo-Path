@@ -36,13 +36,13 @@ export default function Home() {
       />
       <div
         aria-hidden="true"
-        className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-[54%] overflow-hidden opacity-[0.42] [mask-image:linear-gradient(to_bottom,#000_55%,transparent_100%)] md:hidden"
+        className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-[72%] overflow-hidden opacity-[0.5] [mask-image:linear-gradient(to_bottom,#000_70%,transparent_100%)] md:hidden"
       >
-        <HeroScene fit="slice" align="xMidYMax" viewBox="760 0 1280 600" className="absolute inset-0" />
+        <HeroScene fit="slice" align="xMidYMax" viewBox="670 0 1280 600" className="absolute inset-0" />
       </div>
       <PetalField className="pointer-events-none absolute inset-0 -z-10 overflow-hidden sm:hidden" />
       <HeroScene className="pointer-events-none hidden lg:landscape:block absolute -left-[30%] right-[22%] bottom-[20%] -z-10 h-[80%] opacity-[0.3] [mask-image:linear-gradient(to_right,transparent_6%,#000_40%,#000_78%,transparent_100%),linear-gradient(to_bottom,#000_88%,transparent_100%)] [mask-composite:intersect] [-webkit-mask-composite:source-in] dark:opacity-45" />
-    <div className="relative mx-auto flex min-h-[calc(100dvh-4rem)] w-full max-w-7xl flex-col justify-center overflow-hidden px-4 max-lg:justify-start lg:portrait:justify-start max-lg:[@media(min-height:540px)]:h-[calc(100dvh-65px)] max-lg:[@media(min-height:540px)]:min-h-0 sm:px-6 lg:px-8">
+    <div className="relative mx-auto flex min-h-[calc(100dvh-4rem)] w-full max-w-7xl flex-col justify-center overflow-hidden px-4 max-lg:justify-start lg:portrait:justify-start max-lg:[@media(min-height:540px)]:h-[calc(100svh-65px)] max-lg:[@media(min-height:540px)]:min-h-0 sm:px-6 lg:px-8">
       <span
         aria-hidden="true"
         style={{ fontFamily: '"Yu Mincho","Hiragino Mincho ProN","Noto Serif JP",serif' }}
@@ -62,7 +62,7 @@ export default function Home() {
           <h1 className="relative text-4xl font-bold leading-[1.05] min-[400px]:text-5xl [@media(max-height:700px)]:!text-3xl tracking-tight text-[var(--foreground)] sm:text-6xl lg:text-[4rem] xl:text-7xl lg:[@media(min-height:1000px)_and_(orientation:landscape)]:text-7xl">
             {siteConfig.name}
           </h1>
-          <p className="relative mt-3 max-w-md text-sm leading-6 [@media(max-height:780px)]:max-sm:hidden sm:mt-5 sm:text-base sm:leading-7 text-[var(--muted-foreground)] sm:text-lg lg:[@media(min-height:1000px)_and_(orientation:landscape)]:max-w-lg lg:[@media(min-height:1000px)_and_(orientation:landscape)]:text-xl lg:[@media(min-height:1000px)_and_(orientation:landscape)]:leading-8">
+          <p className="relative mt-3 max-w-md text-sm leading-6 [@media(max-height:640px)]:max-sm:hidden sm:mt-5 sm:text-base sm:leading-7 text-[var(--muted-foreground)] sm:text-lg lg:[@media(min-height:1000px)_and_(orientation:landscape)]:max-w-lg lg:[@media(min-height:1000px)_and_(orientation:landscape)]:text-xl lg:[@media(min-height:1000px)_and_(orientation:landscape)]:leading-8">
             {siteConfig.tagline}
           </p>
           <p className="relative mt-2 max-w-md text-sm leading-6 max-md:hidden [@media(max-height:780px)]:max-sm:hidden sm:text-base sm:leading-7 text-[var(--muted-foreground)]">
@@ -93,7 +93,7 @@ export default function Home() {
 
       <section
         aria-label="Bạn sẽ làm được gì"
-        className="relative mt-1 grid grid-cols-2 gap-2.5 pb-3 max-md:min-h-0 max-md:flex-1 max-md:grid-rows-2 md:grid-cols-4 sm:gap-0 sm:border-t sm:border-[var(--border)] sm:pb-0 lg:mt-6 lg:grid-cols-4 lg:[@media(min-height:1000px)_and_(orientation:landscape)]:mt-10"
+        className="relative mt-1 grid grid-cols-2 gap-2.5 pb-3 max-md:mt-auto max-md:mb-[calc(6svh+env(safe-area-inset-bottom))] md:grid-cols-4 sm:gap-0 sm:border-t sm:border-[var(--border)] sm:pb-0 lg:mt-6 lg:grid-cols-4 lg:[@media(min-height:1000px)_and_(orientation:landscape)]:mt-10"
       >
         {features.map((f, n) => (
           <Link
@@ -101,7 +101,7 @@ export default function Home() {
             href={f.href}
             aria-label={f.title}
             className={
-              "group relative flex min-w-0 flex-col justify-between overflow-hidden rounded-2xl border border-[var(--border)] bg-[color-mix(in_srgb,var(--background)_68%,transparent)] p-3.5 backdrop-blur-sm transition-all duration-300 active:scale-[0.98] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--primary)] " +
+              "group relative flex min-w-0 flex-col gap-3 overflow-hidden rounded-2xl border border-[var(--border)] bg-[color-mix(in_srgb,var(--background)_68%,transparent)] p-3.5 backdrop-blur-sm transition-all duration-300 active:scale-[0.98] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--primary)] " +
               "md:flex-row md:items-center md:justify-start md:gap-3 md:rounded-none md:border-0 md:bg-transparent md:p-0 md:px-1 md:py-4 md:backdrop-blur-none md:active:scale-100 lg:px-4 lg:[@media(min-height:1000px)_and_(orientation:landscape)]:py-6 " +
               (n > 0 ? "lg:border-l lg:border-[var(--border)] " : "") +
               (n % 2 === 1 ? "md:pl-4 " : "")
@@ -122,7 +122,7 @@ export default function Home() {
               {f.icon}
             </span>
             <span className="relative min-w-0">
-              <span className="block text-[15px] font-semibold leading-tight text-[var(--foreground)] md:text-sm">{f.title}</span>
+              <span className="block text-[15px] font-semibold leading-tight max-[389px]:text-sm text-[var(--foreground)] md:text-sm">{f.title}</span>
               <span className="mt-1 line-clamp-2 block text-xs leading-snug text-[var(--muted-foreground)] [@media(max-height:600px)]:max-sm:hidden lg:truncate">{f.desc}</span>
             </span>
           </Link>

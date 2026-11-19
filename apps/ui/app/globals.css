@@ -125,7 +125,8 @@ html {
 
 /* Pages marked data-fit-screen (/ and /learn) fill exactly one viewport: no page scroll, footer hidden. */
 html.fit-screen body {
-  height: 100dvh;
+  /* svh: the viewport with browser bars shown, so nothing hides under them. */
+  height: 100svh;
   overflow: hidden;
 }
 html.fit-screen body footer {

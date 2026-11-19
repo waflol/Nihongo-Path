@@ -43,7 +43,7 @@ function TileBody({ t, featured }: { t: Tile; featured: boolean }) {
         style={{ fontFamily: SERIF }}
         className={
           "pointer-events-none absolute -bottom-[0.18em] -right-[0.04em] select-none leading-none text-[var(--foreground)] opacity-[0.07] transition-all duration-500 group-hover:-translate-y-1 group-hover:text-[var(--primary)] group-hover:opacity-[0.16] " +
-          (featured ? "text-[clamp(4rem,14vh,8rem)] lg:text-[8rem]" : "text-[clamp(4rem,14vh,8rem)] lg:text-[6rem]")
+          (featured ? "text-[4.5rem] sm:text-[clamp(4rem,14vh,8rem)] lg:text-[8rem]" : "text-[4.5rem] sm:text-[clamp(4rem,14vh,8rem)] lg:text-[6rem]")
         }
       >
         {t.kanji}
@@ -64,15 +64,15 @@ function TileBody({ t, featured }: { t: Tile; featured: boolean }) {
       <span
         aria-hidden="true"
         style={{ fontFamily: SERIF }}
-        className="relative mb-1 flex size-7 shrink-0 items-center justify-center rounded-lg bg-[color-mix(in_srgb,var(--primary)_16%,transparent)] text-base font-bold text-[var(--primary)] sm:size-8 sm:text-lg lg:mb-3 lg:size-10 lg:text-xl lg:[.featured_&]:hidden"
+        className="relative flex size-9 shrink-0 sm:mb-1 items-center justify-center rounded-lg bg-[color-mix(in_srgb,var(--primary)_16%,transparent)] text-lg font-bold text-[var(--primary)] sm:size-8 sm:text-lg lg:mb-3 lg:size-10 lg:text-xl lg:[.featured_&]:hidden"
       >
         {t.kanji}
       </span>
-      <div className="relative mt-auto">
-        <h2 className={(featured ? "text-sm sm:text-base lg:text-2xl" : "text-xs leading-tight sm:text-base lg:text-base") + " font-semibold tracking-tight text-[var(--foreground)]"}>
+      <div className="relative min-w-0 sm:mt-auto">
+        <h2 className={(featured ? "text-[15px] sm:text-base lg:text-2xl" : "text-sm leading-tight sm:text-base lg:text-base") + " font-semibold tracking-tight text-[var(--foreground)]"}>
           {t.title}
         </h2>
-        <p className={(featured ? "hidden sm:block max-w-xs lg:max-w-md lg:text-base" : "hidden max-w-[16rem] sm:block lg:text-[13px]") + " mt-0.5 line-clamp-2 text-xs leading-snug text-[var(--muted-foreground)] sm:mt-1 sm:text-sm"}>
+        <p className={(featured ? "max-w-xs lg:max-w-md lg:text-base" : "max-w-[16rem] max-sm:hidden lg:text-[13px]") + " mt-0.5 line-clamp-2 max-sm:line-clamp-1 text-xs leading-snug text-[var(--muted-foreground)] sm:mt-1 sm:text-sm"}>
           {t.desc}
         </p>
       </div>
@@ -115,11 +115,11 @@ export default function LearnPage() {
       </div>
 
       <div className="mt-3 flex min-h-0 flex-1 flex-col gap-3 lg:mt-5 lg:grid lg:flex-none lg:grid-cols-[26rem_minmax(0,1fr)] lg:grid-rows-[auto_auto] lg:gap-3">
-      <div className="grid h-[clamp(8.5rem,23dvh,13rem)] shrink-0 grid-cols-4 grid-rows-2 gap-2 lg:col-span-2 lg:row-start-2 lg:h-auto lg:min-h-0 lg:grid-rows-[auto_auto_auto] lg:gap-3">
+      <div className="grid shrink-0 grid-cols-2 gap-2 sm:h-[clamp(8.5rem,23dvh,13rem)] sm:grid-cols-4 sm:grid-rows-2 lg:col-span-2 lg:row-start-2 lg:h-auto lg:min-h-0 lg:grid-rows-[auto_auto_auto] lg:gap-3">
         {tiles.map((t, i) => {
           const featured = i === 0;
           const cls =
-            "learn-tile group relative flex min-h-0 flex-col overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--background-1)] p-2 sm:p-4 lg:p-4 transition-all duration-300 hover:z-10 hover:scale-[1.05] motion-reduce:hover:scale-100 " +
+            "learn-tile group relative flex min-h-0 min-h-14 items-center gap-2.5 overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--background-1)] p-2.5 sm:min-h-0 sm:flex-col sm:items-stretch sm:gap-0 sm:p-4 lg:p-4 transition-all duration-300 hover:z-10 hover:scale-[1.05] motion-reduce:hover:scale-100 " +
             t.area + (featured ? " featured" : "");
           const node = t.href ? (
             <Link
@@ -130,7 +130,7 @@ export default function LearnPage() {
               <TileBody t={t} featured={featured} />
             </Link>
           ) : (
-            <div key={t.title} className={cls + " border-dashed"}>
+            <div key={t.title} className={cls + " border-dashed max-sm:pr-9"}>
               <TileBody t={t} featured={featured} />
             </div>
           );

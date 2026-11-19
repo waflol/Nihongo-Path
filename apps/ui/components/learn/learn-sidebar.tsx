@@ -9,7 +9,7 @@ import { InstallAppCard } from "@/components/pwa/install-app-card";
 export function LearnSidebar() {
   const [tab, setTab] = useState<"progress" | "remind">("progress");
   const tabCls = (on: boolean) =>
-    "min-h-10 flex-1 rounded-lg px-3 text-sm font-medium transition-colors " +
+    "min-h-10 flex-1 whitespace-nowrap rounded-lg px-2 text-sm font-medium max-[389px]:text-[13px] transition-colors " +
     (on ? "bg-[var(--foreground)] text-[var(--background)]" : "text-[var(--muted-foreground)]");
   return (
     <aside className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden lg:col-start-1 lg:row-start-1 lg:flex-none lg:gap-3 [&_section]:rounded-2xl lg:[&_section]:rounded-r-none lg:[&_section]:border-r-0">
