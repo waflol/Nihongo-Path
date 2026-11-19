@@ -11,6 +11,12 @@ import { SentenceFurigana } from "@/components/learn/furigana";
 import { StudyComplete } from "@/components/learn/study-complete";
 import { hanViet } from "@/lib/han-viet";
 import { useHanVietPref } from "@/lib/use-han-viet-pref";
+import {
+  advanceSrs,
+  SRS_DEFAULT_STATE,
+  type ReviewGrade,
+  type SrsState,
+} from "@nihongo/shared/srs";
 
 /**
  * Flashcard study screen (P3-UI-01) — Quizlet-style "Learn" flow.
@@ -24,7 +30,7 @@ import { useHanVietPref } from "@/lib/use-han-viet-pref";
  * Thuộc) are enabled even before the card is flipped — you can rate your own
  * recall without revealing the answer, which is how Quizlet's "Still learning
  * / Got it" works. The FSRS mirror (`advanceSrs` below) is a copy of
- * `apps/api/src/srs/srs.algorithm.ts`; grades buffer in `pendingReviews` and
+ * `@nihongo/shared/srs`; grades buffer in `pendingReviews` and
  * flush to `POST /api/srs/reviews/batch` (one request for the whole sitting),
  * on a debounce, on tab-hide, and on unmount (keepalive).
  *
@@ -42,108 +48,8 @@ import { useHanVietPref } from "@/lib/use-han-viet-pref";
  * the real component is wrapped in its own `<Suspense>` boundary.
  */
 
-// ── FSRS state (mirror of the API's `SrsState`) ──────────────────────
-
-interface SrsState {
-  schemaVersion: 1 | 2;
-  algorithm: "sm2" | "fsrs";
-  ease: number;
-  repetitions: number;
-  intervalDays: number;
-  lapses: number;
-  stability?: number;
-  difficulty?: number;
-  lastReviewAt?: number;
-}
-
-const SRS_DEFAULT_STATE: SrsState = {
-  schemaVersion: 2,
-  algorithm: "fsrs",
-  ease: 2.5,
-  repetitions: 0,
-  intervalDays: 0,
-  lapses: 0,
-};
-
-type Grade = "AGAIN" | "HARD" | "GOOD" | "EASY";
-
-const GRADE_NUM: Record<Grade, 1 | 2 | 3 | 4> = { AGAIN: 1, HARD: 2, GOOD: 3, EASY: 4 };
-
-// FSRS-4.5 defaults — keep identical to `apps/api/src/srs/srs.algorithm.ts`.
-const W = [
-  0.4872, 1.4003, 3.7145, 13.8206, 5.1618, 1.2298, 0.8975, 0.031, 1.6474,
-  0.1367, 1.0461, 2.1072, 0.0793, 0.3246, 1.587, 0.2272, 2.8755,
-];
-const DECAY = -0.5;
-const FACTOR = 19 / 81;
-const REQUEST_RETENTION = 0.9;
-const DAY_MS = 86_400_000;
-const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
-const round3 = (v: number) => Math.round(v * 1000) / 1000;
-const initDifficulty = (g: number) => clamp(W[4] - W[5] * (g - 3), 1, 10);
-
-/**
- * Client mirror of the API's FSRS (`srs.algorithm.ts`). MUST stay in lockstep
- * — the server re-derives and overwrites the local state after each flush,
- * so a divergence only costs a moment of inaccuracy within a sitting.
- */
-function advanceSrs(prev: SrsState, grade: Grade): SrsState {
-  const g = GRADE_NUM[grade];
-  const now = Date.now();
-  let s = prev.stability;
-  let d = prev.difficulty;
-  if ((s === undefined || d === undefined) && prev.intervalDays > 0) {
-    s = Math.max(prev.intervalDays, 0.1);
-    d = clamp(initDifficulty(3) + (2.5 - prev.ease) / 0.2, 1, 10);
-  }
-  let nextS: number;
-  let nextD: number;
-  if (s === undefined || d === undefined) {
-    nextS = Math.max(0.1, W[g - 1]);
-    nextD = initDifficulty(g);
-  } else {
-    const elapsed =
-      prev.lastReviewAt !== undefined
-        ? Math.max(0, (now - prev.lastReviewAt) / DAY_MS)
-        : prev.intervalDays;
-    const r = Math.pow(1 + (FACTOR * elapsed) / s, DECAY);
-    nextD = clamp(W[7] * initDifficulty(4) + (1 - W[7]) * (d - W[6] * (g - 3)), 1, 10);
-    nextS =
-      g === 1
-        ? Math.min(
-            s,
-            W[11] * Math.pow(d, -W[12]) * (Math.pow(s + 1, W[13]) - 1) * Math.exp((1 - r) * W[14]),
-          )
-        : s *
-          (1 +
-            Math.exp(W[8]) *
-              (11 - d) *
-              Math.pow(s, -W[9]) *
-              (Math.exp((1 - r) * W[10]) - 1) *
-              (g === 2 ? W[15] : 1) *
-              (g === 4 ? W[16] : 1));
-  }
-  nextS = Math.max(0.1, nextS);
-  const lapse = g === 1;
-  const intervalDays = lapse
-    ? prev.intervalDays
-    : clamp(
-        Math.round((nextS / FACTOR) * (Math.pow(REQUEST_RETENTION, 1 / DECAY) - 1)),
-        1,
-        36500,
-      );
-  return {
-    schemaVersion: 2,
-    algorithm: "fsrs",
-    ease: round3(clamp(2.5 + (initDifficulty(3) - nextD) * 0.2, 1.3, 3.5)),
-    repetitions: lapse ? 0 : prev.repetitions + 1,
-    intervalDays,
-    lapses: prev.lapses + (lapse ? 1 : 0),
-    stability: round3(nextS),
-    difficulty: round3(nextD),
-    lastReviewAt: now,
-  };
-}
+// FSRS-6 lives in `@nihongo/shared/srs` — one implementation for API and UI.
+type Grade = ReviewGrade;
 
 // ── API shapes ────────────────────────────────────────────────────────
 
@@ -536,7 +442,7 @@ function StudySessionInner({ mode }: { mode: "learn" | "review" }) {
     (choice: Grade, advance = true) => {
       if (!current) return;
       const prev = statesRef.current.get(current.id) ?? { ...SRS_DEFAULT_STATE };
-      const next = advanceSrs(prev, choice);
+      const next = advanceSrs(prev, { grade: choice, now: Date.now() }).state;
       statesRef.current.set(current.id, next);
 
       // reviewId is minted once per grade and kept across retries, so the

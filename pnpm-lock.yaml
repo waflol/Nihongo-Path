@@ -192,6 +192,9 @@ importers:
       '@nestjs/swagger':
         specifier: ^12.0.5
         version: 12.0.5(@nestjs/common@12.3.2(class-transformer@0.5.1)(class-validator@0.14.4)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@7.2.0))(@nestjs/core@12.3.2)(class-transformer@0.5.1)(class-validator@0.14.4)(reflect-metadata@0.2.2)(typescript@6.0.3)
+      '@nihongo/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       class-transformer:
         specifier: ^0.5.1
         version: 0.5.1
@@ -298,6 +301,9 @@ importers:
       supertest:
         specifier: ^7.0.0
         version: 7.3.1(supports-color@7.2.0)
+      ts-fsrs:
+        specifier: 6.0.0
+        version: 6.0.0
       typescript:
         specifier: ^6.0.2
         version: 6.0.3
@@ -325,6 +331,9 @@ importers:
       '@next/env':
         specifier: ^16.4.0
         version: 16.4.3
+      '@nihongo/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       dotenv:
         specifier: ^18.0.9
         version: 18.0.9
@@ -372,7 +381,15 @@ importers:
         specifier: ^5
         version: 5.9.3
 
-  packages/shared: {}
+  packages/shared:
+    dependencies:
+      ts-fsrs:
+        specifier: 6.0.0
+        version: 6.0.0
+    devDependencies:
+      typescript:
+        specifier: 6.0.2
+        version: 6.0.2
 
 packages:
 
@@ -1399,6 +1416,10 @@ packages:
   '@nolyfill/is-core-module@1.0.39':
     resolution: {integrity: sha512-nn5ozdjYQpUCZlWGuxcJY/KpxkWQs4DcbMCmKojjyrYDEAGy4Ce19NN4v5MduafTwJlbKc99UA8YhSVqq9yPZA==}
     engines: {node: '>=12.4.0'}
+
+  '@open-spaced-repetition/srs-kit@1.0.0':
+    resolution: {integrity: sha512-f++JAMpRw7Yh1U4JcHzTtVknJ1bYKz/4yejsus6TRl+ueGJpvexNBrOoqaeUWCgH/e1j046oiqjzy4Nf4RW/vw==}
+    engines: {node: '>=20.0.0'}
 
   '@oxc-project/types@0.155.0':
     resolution: {integrity: sha512-SeE8JPwW1xs1tHeNycjUtUBdhorRa8o4jlvjwk49R7/Z291i+4DQa7JJIgOm/TaYQZx+QrPQbVJ/9c8dMIZN8Q==}
@@ -4508,6 +4529,10 @@ packages:
     peerDependencies:
       typescript: '>=4.8.4'
 
+  ts-fsrs@6.0.0:
+    resolution: {integrity: sha512-kX03GIEhXgBtUrgZuv7k7Aax8oYF3GCO0lASqJFw/8cvvI7qjE83J8IzFhHugux7//W0yquG7zidk3e9NRgEwg==}
+    engines: {node: '>=24.0.0'}
+
   tsconfig-paths@3.15.0:
     resolution: {integrity: sha512-2Ac2RgzDe/cn48GvOe3M+o82pEFewD3UPbyoUHHdKasHwJKjds4fLXWf/Ux5kATBKN20oaFGu+jbElp1pos0mg==}
 
@@ -4559,6 +4584,11 @@ packages:
 
   typescript@5.9.3:
     resolution: {integrity: sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw==}
+    engines: {node: '>=14.17'}
+    hasBin: true
+
+  typescript@6.0.2:
+    resolution: {integrity: sha512-bGdAIrZ0wiGDo5l8c++HWtbaNCWTS4UTv7RaTH/ThVIgjkveJt83m74bBHMJkuCbslY8ixgLBVZJIOiQlQTjfQ==}
     engines: {node: '>=14.17'}
     hasBin: true
 
@@ -5811,6 +5841,8 @@ snapshots:
       fastq: 1.20.3
 
   '@nolyfill/is-core-module@1.0.39': {}
+
+  '@open-spaced-repetition/srs-kit@1.0.0': {}
 
   '@oxc-project/types@0.155.0': {}
 
@@ -9006,6 +9038,10 @@ snapshots:
     dependencies:
       typescript: 5.9.3
 
+  ts-fsrs@6.0.0:
+    dependencies:
+      '@open-spaced-repetition/srs-kit': 1.0.0
+
   tsconfig-paths@3.15.0:
     dependencies:
       '@types/json5': 0.0.29
@@ -9082,6 +9118,8 @@ snapshots:
       - supports-color
 
   typescript@5.9.3: {}
+
+  typescript@6.0.2: {}
 
   typescript@6.0.3: {}
 

@@ -15,6 +15,7 @@
     "@mui/material": "9.5.0",
     "@mui/x-charts": "9.16.0",
     "@next/env": "^16.4.0",
+    "@nihongo/shared": "workspace:*",
     "dotenv": "^18.0.9",
     "gsap": "^3.15.1",
     "motion": "^14.9.1",

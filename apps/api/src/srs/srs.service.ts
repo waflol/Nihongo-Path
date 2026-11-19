@@ -962,7 +962,7 @@ export class SrsService {
           intervalDays: outcome.intervalDays,
           relearnHours: outcome.relearnHours,
         },
-        algorithm: "fsrs-4.5",
+        algorithm: "fsrs-6",
       });
 
       const dueAtMs =

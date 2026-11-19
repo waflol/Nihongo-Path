@@ -15,11 +15,19 @@ Lối thoát đã dự phòng ở bản đầu (state versioned) được dùng 
 - `src/srs/srs.algorithm.ts` (hàm thuần, không đồng hồ/IO/timezone) cài FSRS-4.5; 4 nút đánh giá giữ nguyên: `AGAIN`=0, `HARD`=1, `GOOD`=2, `EASY`=3. Độ nhớ có `stability` (ngày để retrievability tụt từ 100% về 90%) và `difficulty` (1–10); lịch kế tiếp nhắm retention 90%.
 - `state` mới: `schemaVersion: 2`, `algorithm: "fsrs"`, thêm `stability`, `difficulty`, `lastReviewAt` (epoch ms). Các trường `ease` (suy ra từ `difficulty`), `repetitions`, `intervalDays`, `lapses` vẫn được ghi để phân loại hàng đợi (mới / đến hạn / khó nhớ / đã thuộc) không đổi.
 - Thẻ SM-2 cũ (`schemaVersion: 1`, không có `stability`) **nâng cấp lười** ở lần ôn kế tiếp; không có migration hàng loạt.
-- Bản sao thuật toán phía client trong `components/learn/study-session.tsx` phải khớp API (hiển thị khoảng cách ôn trên nút). Test hành vi: `srs.algorithm.spec.ts`.
+- ~~Bản sao thuật toán phía client~~ — đã bỏ (NP-115): API và UI cùng import `@nihongo/shared/srs`. Test hành vi: `srs.algorithm.spec.ts`.
 - Day anchoring theo timezone (`srs.days.ts`) và ghi đa thiết bị không đổi.
 - **Chưa làm:** tối ưu tham số FSRS theo dữ liệu thật (đang dùng tham số mặc định) và đo chất lượng lịch ôn so với SM-2.
 
-## Bối cảnh (bản gốc 03/11/2026)
+## Cập nhật: FSRS-6 (NP-115, 19/11/2026)
+
+- Thư viện `ts-fsrs` **6.0.0** (MIT), ghim chính xác trong `packages/shared` (và devDependency của API cho test đối chiếu). 21 tham số mặc định lấy từ `default_w` của thư viện, không chép tay.
+- Adapter `packages/shared/srs/index.ts` (build ra `dist/`, `pnpm -r build` build gói này trước app): `advanceSrs(prev, {grade, now}, params?)`, `previewIntervals`. `enable_short_term: false`, không fuzz; AGAIN → học lại 10 phút do adapter, giữ `intervalDays` (UX không đổi).
+- `SrsState.schemaVersion: 3`, `algorithm: "fsrs6"`. Nâng lười: v2 dùng thẳng `stability`/`difficulty` (cùng nghĩa: S = số ngày R còn 90%); v1 (SM-2) như cũ (S = interval, D từ ease). Không migration hàng loạt.
+- Số đo lệch lịch (S=20, D=5, ôn GOOD đúng hạn): FSRS-4.5 → 66 ngày, FSRS-6 → 59 ngày (−11%, trong ±25%).
+- Lượt ôn đầu: GOOD = 3 ngày (trước đây 4).
+- Nhật ký lượt ôn: `srs_review_logs` (NP-114), ghi `algorithm: "fsrs-6"`.
+ 03/11/2026)
 
 Spec §4.4 yêu cầu lập lịch ôn theo phản hồi + lịch sử thẻ, "thuật toán cụ
 thể là **chưa quyết định**; so sánh phương án, mô tả dữ liệu cần lưu và test

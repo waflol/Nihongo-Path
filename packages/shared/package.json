@@ -3,5 +3,22 @@
   "version": "0.0.1",
   "private": true,
   "description": "Data shared by api and ui (curated Han-Viet table).",
-  "exports": { "./han-viet.json": "./han-viet.json" }
+  "exports": {
+    "./han-viet.json": "./han-viet.json",
+    "./srs": {
+      "types": "./dist/srs/index.d.ts",
+      "default": "./dist/srs/index.js"
+    }
+  },
+  "dependencies": {
+    "ts-fsrs": "6.0.0"
+  },
+  "devDependencies": {
+    "typescript": "6.0.2"
+  },
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  }
 }
