@@ -50,7 +50,7 @@ export default function Home() {
       >
         道
       </span>
-      <section className="relative grid items-center max-md:flex max-md:flex-none max-md:flex-col max-md:items-stretch md:grid-cols-[1fr_21rem] gap-5 pb-3 pt-4 sm:gap-8 sm:pb-8 sm:pt-8 lg:grid-cols-[1fr_27rem] lg:gap-16 lg:py-10 xl:grid-cols-[1fr_30rem] lg:[@media(min-height:1000px)_and_(orientation:landscape)]:py-16">
+      <section className="relative grid items-center max-md:flex max-md:flex-none max-md:flex-col max-md:items-stretch md:grid-cols-[1fr_21rem] gap-5 pb-3 pt-4 max-md:pt-[7svh] sm:gap-8 sm:pb-8 sm:pt-8 lg:grid-cols-[1fr_27rem] lg:gap-16 lg:py-10 xl:grid-cols-[1fr_30rem] lg:[@media(min-height:1000px)_and_(orientation:landscape)]:py-16">
         <div className="relative max-w-xl max-md:shrink-0">
           <p
             aria-hidden="true"
@@ -93,7 +93,7 @@ export default function Home() {
 
       <section
         aria-label="Bạn sẽ làm được gì"
-        className="relative mt-1 grid grid-cols-2 gap-2.5 pb-3 max-md:mt-auto max-md:mb-[calc(6svh+env(safe-area-inset-bottom))] md:grid-cols-4 sm:gap-0 sm:border-t sm:border-[var(--border)] sm:pb-0 lg:mt-6 lg:grid-cols-4 lg:[@media(min-height:1000px)_and_(orientation:landscape)]:mt-10"
+        className="relative mt-1 grid grid-cols-2 gap-2.5 pb-3 max-md:mt-auto max-md:mb-[calc(9svh+env(safe-area-inset-bottom))] md:grid-cols-4 sm:gap-0 sm:border-t sm:border-[var(--border)] sm:pb-0 lg:mt-6 lg:grid-cols-4 lg:[@media(min-height:1000px)_and_(orientation:landscape)]:mt-10"
       >
         {features.map((f, n) => (
           <Link
