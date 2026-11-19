@@ -133,6 +133,8 @@ export type TestKind = "mixed" | "meaning" | "kanji";
 export type ChoiceMode = "test" | "kanji" | "reading" | "sentence" | "formation" | "context";
 
 const HAN = /\p{Script=Han}/u;
+/** How many kanji a word has (okurigana and other kana don't count). */
+export const kanjiCount = (word: string) => [...word].filter((ch) => HAN.test(ch)).length;
 export const hasKanji = (c: ExerciseCard) => HAN.test(c.front);
 /** The type-answer drill asks for the hiragana reading when the front is kanji. */
 export const asksReading = (c: ExerciseCard) => hasKanji(c) && hasReading(c);
@@ -153,7 +155,11 @@ function pickDistractors(pool: string[], answer: string, n: number, seed: number
  */
 export function similarKanji(word: string, pool: string[], n: number, seed: number): string[] {
   const own = new Set([...word].filter((ch) => HAN.test(ch)));
-  const scored = seededShuffle([...new Set(pool.filter((p) => p !== word))], seed).map((cand) => {
+  // Only words with as many kanji as the answer: a 3-kanji option next to a
+  // 2-kanji answer gives the answer away (意図 vs 意図的).
+  const size = kanjiCount(word);
+  const same = pool.filter((p) => p !== word && kanjiCount(p) === size);
+  const scored = seededShuffle([...new Set(same)], seed).map((cand) => {
     const chars = [...cand];
     const shared = chars.filter((ch) => own.has(ch)).length;
     const edge = (chars[0] === [...word][0] ? 1 : 0) + (chars[chars.length - 1] === [...word].at(-1) ? 1 : 0);
@@ -285,7 +291,7 @@ export function buildKanjiQuestions(
       ...composed.map((w) => ({ w, ai: false })),
       ...real.map((w) => ({ w, ai: false })),
     ]
-      .filter((m) => !seen.has(m.w) && seen.add(m.w))
+      .filter((m) => kanjiCount(m.w) === kanjiCount(c.front) && !seen.has(m.w) && seen.add(m.w))
       .slice(0, 3);
     if (wrong.length < 3) continue;
     const ex = c.examples?.find((e) => e.sentence.includes(c.front));

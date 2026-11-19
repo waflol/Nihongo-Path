@@ -6,6 +6,7 @@ import {
   NotFoundException,
   OnModuleInit,
 } from "@nestjs/common";
+import { kanjiElements } from "./kanji-lookalikes.js";
 import { InjectModel } from "@nestjs/mongoose";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -132,6 +133,20 @@ export class KanjiService implements OnModuleInit {
         });
       if (ops.length > 0) {
         await this.model.bulkWrite(ops);
+      }
+      // Fill empty radicals from KRADFILE (an admin-entered list is never overwritten).
+      const bare = await this.model
+        .find({ $or: [{ radicals: { $exists: false } }, { radicals: { $size: 0 } }] }, { char: 1 })
+        .lean()
+        .exec();
+      const fill = bare.flatMap((k) => {
+        const radicals = kanjiElements(k.char);
+        return radicals.length
+          ? [{ updateOne: { filter: { _id: k._id, radicals: { $size: 0 } }, update: { $set: { radicals } } } }]
+          : [];
+      });
+      if (fill.length > 0) {
+        await this.model.bulkWrite(fill);
       }
     } catch {
       /* never block startup if DB is not connected */

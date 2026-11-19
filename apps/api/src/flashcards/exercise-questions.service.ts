@@ -24,6 +24,11 @@ export interface QuestionInput {
 
 const MAX_TEXT = 400;
 
+/** Number of kanji in a word (kana such as okurigana don't count). */
+export function kanjiCount(word: string): number {
+  return [...word].filter((ch) => /\p{Script=Han}/u.test(ch)).length;
+}
+
 /** Fingerprint of a question: same card/kind/answer/options (in any order) → same key. */
 export function questionKey(deck: string, card: string, kind: string, answer: string, options: string[]): string {
   return createHash("sha1")
@@ -77,6 +82,11 @@ export class ExerciseQuestionsService {
         continue;
       }
       const kind = it.kind as ExerciseKind;
+      // Kanji options must all have as many kanji as the answer, or the odd one out gives it away.
+      if (kind === "kanji-pick" && options.some((o) => kanjiCount(o) !== kanjiCount(answer))) {
+        rejected++;
+        continue;
+      }
       // What the card itself says the right answer is, per kind (null = cannot be checked).
       const truth: string[] | null =
         kind === "kanji-pick"

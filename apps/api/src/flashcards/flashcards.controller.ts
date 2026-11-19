@@ -28,6 +28,7 @@ import { ContentAdmin } from "../auth/decorators/roles.decorator.js";
 import { CurrentUser } from "../auth/decorators/current-user.decorator.js";
 import type { AuthUser } from "../auth/auth.types.js";
 import { FlashcardsService } from "./flashcards.service.js";
+import { lookalikeMap, lookalikeWords } from "../content/kanji-lookalikes.js";
 import { ReadingService } from "./reading.service.js";
 import { PART_TAGS } from "../import/parts-of-speech.js";
 import { ImageSuggestService } from "./image-suggest.service.js";
@@ -323,12 +324,17 @@ export class FlashcardsController {
     const cards = (await this.flashcards.listCards(caller, id, 5000)).filter((c) =>
       wanted.has(String(c._id)),
     );
-    const map = await this.ai.kanjiLookalikes(
-      cards.map((c) => ({ term: c.front, reading: c.reading ?? "", meaning: c.back })),
-    );
+    const [map, level] = await Promise.all([
+      this.ai.kanjiLookalikes(
+        cards.map((c) => ({ term: c.front, reading: c.reading ?? "", meaning: c.back })),
+      ),
+      this.levelKanji(),
+    ]);
     const items = cards.flatMap((c) => {
-      const chars = map?.get(c.front);
-      return chars ? [{ cardId: String(c._id), chars }] : [];
+      // Kanji the AI left out (or every kanji, when the AI failed) get their
+      // look-alikes from shared elements: 意 → 億 憶 臆.
+      const chars = { ...lookalikeMap(c.front, [...level]), ...(map?.get(c.front) ?? {}) };
+      return Object.keys(chars).length ? [{ cardId: String(c._id), chars }] : [];
     });
     return { items };
   }
@@ -348,13 +354,18 @@ export class FlashcardsController {
     const cards = (await this.flashcards.listCards(caller, id, 5000)).filter((c) =>
       wanted.has(String(c._id)),
     );
+    const level = await this.levelKanji();
     const map = await this.ai.kanjiDistractors(
       cards.map((c) => ({ term: c.front, reading: c.reading ?? "", meaning: c.back })),
-      await this.levelKanji(),
+      level,
     );
+    const size = (w: string) => [...w].filter((ch) => /\p{Script=Han}/u.test(ch)).length;
     const items = cards.flatMap((c) => {
-      const wrong = map?.get(c.front);
-      return wrong?.length ? [{ cardId: String(c._id), wrong }] : [];
+      // AI spellings first (only those with the answer's kanji count), topped up
+      // with look-alike-element spellings so the drill works without the AI too.
+      const ai = (map?.get(c.front) ?? []).filter((w) => w !== c.front && size(w) === size(c.front));
+      const wrong = [...new Set([...ai, ...lookalikeWords(c.front, lookalikeMap(c.front, [...level]), 3)])].slice(0, 3);
+      return wrong.length ? [{ cardId: String(c._id), wrong }] : [];
     });
     return { items };
   }

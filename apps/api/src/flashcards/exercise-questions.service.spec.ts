@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { questionKey } from "./exercise-questions.service.js";
+import { kanjiCount, questionKey } from "./exercise-questions.service.js";
 
 describe("questionKey", () => {
   it("ignores the order of the options", () => {
@@ -18,5 +18,14 @@ describe("questionKey", () => {
     const opts = ["a", "b", "c", "d"];
     expect(questionKey("d", "c1", "kanji-pick", "a", opts)).not.toBe(questionKey("d", "c2", "kanji-pick", "a", opts));
     expect(questionKey("d", "c1", "kanji-pick", "a", opts)).not.toBe(questionKey("d", "c1", "reading-pick", "a", opts));
+  });
+});
+
+describe("kanjiCount", () => {
+  it("counts kanji only, not okurigana", () => {
+    expect(kanjiCount("意図")).toBe(2);
+    expect(kanjiCount("意図的")).toBe(3);
+    expect(kanjiCount("食べる")).toBe(1);
+    expect(kanjiCount("いと")).toBe(0);
   });
 });

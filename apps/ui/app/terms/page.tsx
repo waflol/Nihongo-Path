@@ -191,7 +191,7 @@ export default function TermsPage() {
               sau, mọi quyền thuộc về chủ sở hữu tương ứng:
               <ul>
                 <li>
-                  Dữ liệu chữ Hán (KANJIDIC2) và từ điển tiếng Nhật (JMdict/EDICT) của{" "}
+                  Dữ liệu chữ Hán (KANJIDIC2), thành phần chữ Hán (KRADFILE) và từ điển tiếng Nhật (JMdict/EDICT) của{" "}
                   <strong>Electronic Dictionary Research and Development Group (EDRDG)</strong>, theo giấy phép{" "}
                   <a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noopener noreferrer">
                     CC BY-SA 4.0
