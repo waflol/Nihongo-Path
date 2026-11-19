@@ -26,6 +26,7 @@ Các tài liệu kế hoạch cũ dùng tên có gạch dưới. Bảng đối c
 | `flashcard_decks` | `flashcarddecks` |
 | `user_card_progress` | `usercardprogresses` |
 | `study_sessions` | `studysessions` |
+| `srs_review_logs` | `srs_review_logs` |
 
 Hai collection có gạch dưới trong tên thật: `exercise_questions` và `reading_overrides`.
 

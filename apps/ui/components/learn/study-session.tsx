@@ -352,7 +352,9 @@ function StudySessionInner({ mode }: { mode: "learn" | "review" }) {
 
   // ── Sync layer: local FSRS mirror + buffered batch flush ─────────────
   const statesRef = useRef<Map<string, SrsState>>(new Map());
-  const pendingRef = useRef<{ cardId: string; grade: Grade }[]>([]);
+  const pendingRef = useRef<
+    { cardId: string; grade: Grade; reviewId: string; reviewedAt: number }[]
+  >([]);
   const flushTimer = useRef<number | null>(null);
   const [pendingCount, setPendingCount] = useState(0);
   const [syncState, setSyncState] = useState<"idle" | "syncing" | "queued">("idle");
@@ -537,7 +539,14 @@ function StudySessionInner({ mode }: { mode: "learn" | "review" }) {
       const next = advanceSrs(prev, choice);
       statesRef.current.set(current.id, next);
 
-      pendingRef.current.push({ cardId: current.id, grade: choice });
+      // reviewId is minted once per grade and kept across retries, so the
+      // server applies a re-sent batch only once.
+      pendingRef.current.push({
+        cardId: current.id,
+        grade: choice,
+        reviewId: crypto.randomUUID(),
+        reviewedAt: Date.now(),
+      });
       setPendingCount(pendingRef.current.length);
       setSyncState("queued");
 

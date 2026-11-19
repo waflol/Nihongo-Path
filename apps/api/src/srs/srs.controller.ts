@@ -24,6 +24,7 @@ import {
   IsInt,
   IsOptional,
   IsString,
+  IsUUID,
   Max,
   Min,
   MinLength,
@@ -77,6 +78,16 @@ export class BatchReviewItemDto {
 
   @IsIn([...REVIEW_GRADES])
   grade: (typeof REVIEW_GRADES)[number];
+
+  /** Client-generated UUID — a re-sent review with the same id applies once. */
+  @IsOptional()
+  @IsUUID()
+  reviewId?: string;
+
+  /** Epoch ms the learner graded the card (validated server-side). */
+  @IsOptional()
+  @IsInt()
+  reviewedAt?: number;
 }
 
 /**

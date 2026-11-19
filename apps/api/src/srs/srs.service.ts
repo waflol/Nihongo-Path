@@ -29,6 +29,9 @@ import {
   type SrsState,
 } from "./srs.algorithm.js";
 import { DAY_MS, localDayKey, localStartOfDay } from "./srs.days.js";
+import { SrsReviewLog, type SrsReviewLogDocument } from "./schemas/review-log.schema.js";
+import { orderReviews, resolveReviewedAt } from "./srs.review-log.js";
+import { randomUUID } from "node:crypto";
 
 /** A card in the review queue, with a computed bucket + SRS snapshot. */
 export interface CardQueueItem {
@@ -120,6 +123,8 @@ export class SrsService {
     private readonly progress: Model<UserCardProgressDocument>,
     @InjectModel("StudySession")
     private readonly session: Model<StudySessionDocument>,
+    @InjectModel(SrsReviewLog.name)
+    private readonly reviewLog: Model<SrsReviewLogDocument>,
     @InjectModel(User.name)
     private readonly user: Model<UserDocument>,
   ) {}
@@ -826,7 +831,14 @@ export class SrsService {
   async reviewBatch(
     caller: AuthUser,
     input: {
-      reviews: { cardId: string; grade: ReviewGrade }[];
+      reviews: {
+        cardId: string;
+        grade: ReviewGrade;
+        /** Client UUID; re-sent batches with the same id apply once. */
+        reviewId?: string;
+        /** Client epoch ms of the grade (validated, plan-fsrs-6 D5). */
+        reviewedAt?: number;
+      }[];
       tz?: string;
       userAgent?: string;
     },
@@ -835,7 +847,7 @@ export class SrsService {
 
     const timezone = await this.resolveTimezone(caller, input.tz);
     const keyUser = new Types.ObjectId(caller.sub);
-    const now = Date.now();
+    const serverNow = Date.now();
 
     // A malformed id is a client error (404), not a 500 — validate before
     // handing them to Mongo.
@@ -858,6 +870,20 @@ export class SrsService {
       await this.resolveAccessibleDeck(caller, deckId);
     }
 
+    // Idempotency (D4): reviews whose `reviewId` is already logged were
+    // applied by an earlier request — skip them, answer from current state.
+    const ids = input.reviews.map((r) => r.reviewId).filter((x): x is string => !!x);
+    const applied = new Set<string>(
+      ids.length === 0
+        ? []
+        : (
+            await this.reviewLog
+              .find({ user: keyUser, reviewId: { $in: ids } }, { reviewId: 1 })
+              .lean()
+              .exec()
+          ).map((l) => l.reviewId),
+    );
+
     // Existing progress for the touched cards, in ONE query.
     const existing = await this.progress
       .find({
@@ -879,13 +905,65 @@ export class SrsService {
     /** Per-deck tally for the session document: grade histogram + review count. */
     const sessionTallies = new Map<string, { cardsReviewed: number; grades: Record<string, number> }>();
 
-    for (const r of input.reviews) {
+    const progressByCard = new Map(existing.map((p) => [String(p.card), p]));
+    const logs: SrsReviewLog[] = [];
+    const resultAt = new Map<string, number>();
+
+    for (const r of orderReviews(input.reviews)) {
       const cardDoc = byId.get(r.cardId);
       if (!cardDoc) throw new NotFoundException("Card not found");
 
+      if (r.reviewId && applied.has(r.reviewId)) {
+        const p = progressByCard.get(r.cardId);
+        if (p) {
+          results.push({
+            cardId: r.cardId,
+            grade: r.grade,
+            state: p.state,
+            dueAt: p.dueAt.toISOString(),
+            dueDay: p.dueDay,
+            relearn: p.dueAt.getTime() - (p.lastReviewedAtMs ?? 0) < 3_600_000,
+          });
+        }
+        continue;
+      }
+
       const prev: SrsState = stateByCard.get(r.cardId) ?? { ...SRS_DEFAULT_STATE };
+      const { at: now, clockAdjusted } = resolveReviewedAt(
+        r.reviewedAt,
+        serverNow,
+        prev.lastReviewAt,
+      );
       const outcome = advanceSrs(prev, { grade: r.grade, now });
       stateByCard.set(r.cardId, outcome.state);
+      resultAt.set(r.cardId, now);
+      logs.push({
+        user: keyUser,
+        card: cardDoc._id,
+        deck: cardDoc.deck,
+        reviewId: r.reviewId ?? randomUUID(),
+        grade: r.grade,
+        reviewedAt: now,
+        ...(clockAdjusted ? { clockAdjusted: true } : {}),
+        day: localDayKey(now, timezone),
+        timezone,
+        elapsedDays:
+          prev.lastReviewAt === undefined
+            ? 0
+            : Math.max(0, (now - prev.lastReviewAt) / DAY_MS),
+        before: {
+          stability: prev.stability,
+          difficulty: prev.difficulty,
+          schemaVersion: prev.schemaVersion,
+        },
+        after: {
+          stability: outcome.state.stability ?? 0,
+          difficulty: outcome.state.difficulty ?? 0,
+          intervalDays: outcome.intervalDays,
+          relearnHours: outcome.relearnHours,
+        },
+        algorithm: "fsrs-4.5",
+      });
 
       const dueAtMs =
         outcome.relearnHours > 0
@@ -928,7 +1006,7 @@ export class SrsService {
                 state: w.state,
                 dueAt: w.dueAt,
                 dueDay: w.dueDay,
-                lastReviewedAtMs: now,
+                lastReviewedAtMs: resultAt.get(cardId) ?? serverNow,
               },
               $inc: { seenCount: w.times },
             },
@@ -962,7 +1040,7 @@ export class SrsService {
             this.progress
               .updateOne(
                 { user: keyUser, card: t._id },
-                { $set: { state: w.state, dueAt: w.dueAt, dueDay: w.dueDay, lastReviewedAtMs: now } },
+                { $set: { state: w.state, dueAt: w.dueAt, dueDay: w.dueDay, lastReviewedAtMs: serverNow } },
               )
               .exec(),
           ];
@@ -970,6 +1048,18 @@ export class SrsService {
       );
     }
 
+    // Append the review log AFTER the progress write: a crash in between
+    // loses a log row (rare, tolerated) rather than double-applying a review.
+    // E11000 (a concurrent duplicate) is ignored.
+    if (logs.length > 0) {
+      try {
+        await this.reviewLog.insertMany(logs, { ordered: false });
+      } catch (e) {
+        if ((e as { code?: number }).code !== 11000 && !(e as { writeErrors?: unknown }).writeErrors) throw e;
+      }
+    }
+
+    const now = serverNow;
     // Aggregate into today's session, once per deck (P3-SRS-04 / P3-UI-03).
     const sessionDay = localDayKey(now, timezone);
     const device = detectDevice(input.userAgent);
