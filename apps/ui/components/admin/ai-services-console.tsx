@@ -69,7 +69,7 @@ const QUICK_ENDPOINTS: { name: string; url: string; format: "openai" | "anthropi
 ];
 
 const inputClass =
-  "block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:border-[var(--primary-focus)] focus:outline-none focus:ring-1 focus:ring-[var(--primary-focus)]";
+  "block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2.5 text-base text-[var(--foreground)] sm:py-2 sm:text-sm placeholder:text-[var(--muted-foreground)] focus:border-[var(--primary-focus)] focus:outline-none focus:ring-1 focus:ring-[var(--primary-focus)]";
 /** Every action button: same height, never wraps, text centred. */
 const btnBase =
   "inline-flex h-8 items-center justify-center whitespace-nowrap rounded-lg border border-[var(--border)] px-3 text-xs font-medium text-[var(--foreground)] hover:bg-[var(--layer-hover)] disabled:opacity-50";
@@ -679,13 +679,29 @@ export function AiServicesConsole() {
   const ownCount = shown.filter((s) => !s.readOnly).length;
 
   return (
-    <div className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6">
-      <h1 className="text-2xl font-semibold tracking-tight text-[var(--foreground)]">Dịch vụ AI</h1>
-      <p className="mt-1 max-w-3xl text-sm text-[var(--muted-foreground)]">
+    <div className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 sm:py-8">
+      <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between lg:gap-10">
+        <div className="min-w-0">
+          <h1 className="text-2xl font-semibold tracking-tight text-[var(--foreground)] sm:text-3xl">Dịch vụ AI</h1>
+          <p className="mt-2 max-w-2xl text-sm leading-relaxed text-[var(--muted-foreground)]">
         Dùng để dịch, viết câu ví dụ và phân tích ngữ pháp. Mỗi việc có <strong>thứ tự ưu tiên riêng</strong>: hệ thống thử từng dịch vụ
         theo thứ tự của việc đó, từ trên xuống; nếu một dịch vụ hết hạn mức, bị lỗi hoặc từ chối thì tự chuyển sang dịch vụ kế tiếp (dịch vụ lỗi
         được nghỉ một lúc rồi mới thử lại). Khoá API được mã hoá khi lưu và không bao giờ hiển thị lại.
-      </p>
+          </p>
+        </div>
+        <dl className="grid shrink-0 grid-cols-3 gap-2 sm:gap-3">
+          {[
+            { l: "Dịch vụ", v: services.length, c: "text-[var(--foreground)]" },
+            { l: "Đang hoạt động", v: services.filter((x) => x.enabled && x.status === "ok").length, c: "text-[#15803d] dark:text-[#86efac]" },
+            { l: "Cần chú ý", v: services.filter((x) => x.enabled && (x.status === "error" || x.status === "invalid" || x.status === "cooldown")).length, c: "text-[#b45309] dark:text-[#fde047]" },
+          ].map((m) => (
+            <div key={m.l} className="min-w-[5.5rem] rounded-2xl border border-[var(--border)] bg-[var(--background-1)] px-4 py-3 shadow-sm">
+              <dd className={"text-2xl font-semibold tabular-nums leading-none " + m.c}>{m.v}</dd>
+              <dt className="mt-1.5 text-[11px] text-[var(--muted-foreground)]">{m.l}</dt>
+            </div>
+          ))}
+        </dl>
+      </div>
 
       {error && (
         <p role="alert" className="mt-4 rounded-lg bg-[#fef2f2] px-4 py-3 text-sm text-[#b91c1c]">
@@ -709,7 +725,9 @@ export function AiServicesConsole() {
       />
 
       {/* Priority list — one order per task */}
-      <AiTaskTabs className="mt-6" label="Thứ tự ưu tiên theo việc" value={task} onChange={setTask} />
+      <div className="mt-7 xl:grid xl:grid-cols-[minmax(0,1fr)_23rem] xl:items-start xl:gap-8">
+      <div className="min-w-0">
+      <AiTaskTabs className="" label="Thứ tự ưu tiên theo việc" value={task} onChange={setTask} />
       <p className="mt-2 text-xs text-[var(--muted-foreground)]">
         Thứ tự ưu tiên của “{TASK_LABELS[task]}” — dùng mũi tên để đổi. Thứ tự cũng tự sắp lại theo điểm mỗi khi một lần chạy ở{" "}
         <Link href="/admin/ai-eval" className="underline">
@@ -729,18 +747,36 @@ export function AiServicesConsole() {
           const i = ownIndex(s);
           const t = testMsg[s.id];
           return (
-            <div key={s.id} className="rounded-2xl border border-[var(--border)] bg-[var(--background-1)] p-4">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="flex items-start gap-3">
+            <div key={s.id} className={"@container rounded-2xl border border-[var(--border)] bg-[var(--background-1)] p-4 shadow-sm transition-colors hover:border-[color-mix(in_srgb,var(--primary)_35%,var(--border))] sm:p-5 " + (s.enabled ? "" : "opacity-75")}>
+              <div className="flex flex-col gap-4">
+                <div className="flex min-w-0 flex-1 items-start gap-3 sm:gap-4">
+                  <div className="hidden shrink-0 flex-col items-center gap-1 sm:flex">
+                    {!s.readOnly && (
+                      <button type="button" disabled={i <= 0} onClick={() => void move(i, -1)} aria-label="Tăng ưu tiên" title="Tăng ưu tiên" className="grid size-7 place-items-center rounded-lg text-xs text-[var(--muted-foreground)] hover:bg-[var(--layer-hover)] hover:text-[var(--foreground)] disabled:opacity-30">
+                        ▲
+                      </button>
+                    )}
+                    <span
+                      aria-label={`Ưu tiên ${s.readOnly ? "cuối" : i + 1}`}
+                      className="grid size-9 place-items-center rounded-xl bg-[color-mix(in_srgb,var(--primary)_14%,transparent)] text-sm font-bold tabular-nums text-[var(--primary)]"
+                    >
+                      {s.readOnly ? "·" : i + 1}
+                    </span>
+                    {!s.readOnly && (
+                      <button type="button" disabled={i >= ownCount - 1} onClick={() => void move(i, 1)} aria-label="Giảm ưu tiên" title="Giảm ưu tiên" className="grid size-7 place-items-center rounded-lg text-xs text-[var(--muted-foreground)] hover:bg-[var(--layer-hover)] hover:text-[var(--foreground)] disabled:opacity-30">
+                        ▼
+                      </button>
+                    )}
+                  </div>
                   <span
                     aria-label={`Ưu tiên ${s.readOnly ? "cuối" : i + 1}`}
-                    className="mt-0.5 grid size-7 shrink-0 place-items-center rounded-full bg-[var(--layer)] text-sm font-semibold text-[var(--foreground)]"
+                    className="mt-0.5 grid size-7 shrink-0 place-items-center rounded-full bg-[var(--layer)] text-sm font-semibold text-[var(--foreground)] sm:hidden"
                   >
                     {s.readOnly ? "·" : i + 1}
                   </span>
-                  <div>
-                    <p className="flex flex-wrap items-center gap-2 text-sm font-semibold text-[var(--foreground)]">
-                      {s.label}
+                  <div className="min-w-0 flex-1">
+                    <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[0.95rem] font-semibold text-[var(--foreground)] sm:text-base">
+                      <span className="break-words">{s.label}</span>
                       <StatusBadge s={s} />
                       {s.translationOnly && (
                         <span
@@ -756,29 +792,62 @@ export function AiServicesConsole() {
                         </span>
                       )}
                     </p>
-                    <p className="mt-1 text-xs text-[var(--muted-foreground)]">
-                      {s.providerName} · <code>{s.model}</code> · {s.cli ? (s.authorized ? `tài khoản Google: ${s.account ?? "đã ủy quyền"}` : "chưa ủy quyền tài khoản Google") : s.keyHint ? `khoá ····${s.keyHint}` : "không dùng khoá"} · {s.rpm} yêu cầu/phút{s.provider === "custom" && s.baseUrl ? ` · ${s.baseUrl}` : ""}
-                      {(["translate", "write", "grammar", "verify"] as const)
-                        .filter((t) => s.benchTasks?.[t]?.ok)
-                        .map((t) => ` · ${{ translate: "dịch", write: "đặt câu", grammar: "ngữ pháp", verify: "kiểm tra từ vựng" }[t]} ${s.benchTasks![t]!.accuracy.toFixed(0)}`)
-                        .join("")}
-                    </p>
+                    <div className="mt-2 flex flex-wrap gap-1.5 text-[11px] text-[var(--muted-foreground)]">
+                      <span className="inline-flex items-center gap-1.5 rounded-md border border-[var(--border)] bg-[var(--background)] px-2 py-0.5">
+                        <span aria-hidden="true" className="size-1.5 rounded-full bg-[var(--primary)]" />
+                        {s.providerName}
+                      </span>
+                      <span className="inline-flex max-w-full items-center rounded-md border border-[var(--border)] bg-[var(--background)] px-2 py-0.5">
+                        <code className="truncate font-mono text-[var(--foreground)]">{s.model}</code>
+                      </span>
+                      <span className="inline-flex items-center rounded-md border border-[var(--border)] bg-[var(--background)] px-2 py-0.5">
+                        {s.cli ? (s.authorized ? `Google: ${s.account ?? "đã ủy quyền"}` : "Chưa ủy quyền Google") : s.keyHint ? `Khoá ····${s.keyHint}` : "Không dùng khoá"}
+                      </span>
+                      <span className="inline-flex items-center rounded-md border border-[var(--border)] bg-[var(--background)] px-2 py-0.5 tabular-nums">
+                        {s.rpm} yêu cầu/phút
+                      </span>
+                      {s.provider === "custom" && s.baseUrl && (
+                        <span className="inline-flex max-w-full items-center rounded-md border border-[var(--border)] bg-[var(--background)] px-2 py-0.5">
+                          <span className="truncate">{s.baseUrl}</span>
+                        </span>
+                      )}
+                    </div>
+                    {(["translate", "write", "grammar", "verify"] as const).some((k) => s.benchTasks?.[k]?.ok) && (
+                      <div className="mt-3 grid grid-cols-2 gap-x-5 gap-y-2.5 @lg:grid-cols-4" aria-label="Điểm đánh giá">
+                        {(["translate", "write", "grammar", "verify"] as const)
+                          .filter((k) => s.benchTasks?.[k]?.ok)
+                          .map((k) => {
+                            const acc = Math.max(0, Math.min(100, s.benchTasks![k]!.accuracy));
+                            return (
+                              <div key={k}>
+                                <div className="flex items-baseline justify-between gap-2 text-[11px] text-[var(--muted-foreground)]">
+                                  <span>{{ translate: "Dịch", write: "Đặt câu", grammar: "Ngữ pháp", verify: "Kiểm tra từ" }[k]}</span>
+                                  <strong className="font-semibold tabular-nums text-[var(--foreground)]">{acc.toFixed(0)}</strong>
+                                </div>
+                                <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-[var(--layer)]">
+                                  <div className="h-full rounded-full bg-[var(--primary)]" style={{ width: `${acc}%` }} />
+                                </div>
+                              </div>
+                            );
+                          })}
+                      </div>
+                    )}
                   </div>
                 </div>
-                <div className="flex flex-wrap items-center gap-2">
+                <div className="grid grid-cols-2 gap-2 max-sm:[&>button]:!h-10 max-sm:[&>button]:!w-full max-sm:[&>button]:!min-w-0 sm:flex sm:flex-wrap sm:items-center sm:border-t sm:border-[var(--border)] sm:pt-4">
                   {!s.readOnly && (
                     <>
-                      <button type="button" className={btnIcon} disabled={i <= 0} onClick={() => void move(i, -1)} aria-label="Tăng ưu tiên" title="Tăng ưu tiên">
+                      <button type="button" className={`${btnIcon} sm:hidden`} disabled={i <= 0} onClick={() => void move(i, -1)} aria-label="Tăng ưu tiên" title="Tăng ưu tiên">
                         ▲
                       </button>
-                      <button type="button" className={btnIcon} disabled={i >= ownCount - 1} onClick={() => void move(i, 1)} aria-label="Giảm ưu tiên" title="Giảm ưu tiên">
+                      <button type="button" className={`${btnIcon} sm:hidden`} disabled={i >= ownCount - 1} onClick={() => void move(i, 1)} aria-label="Giảm ưu tiên" title="Giảm ưu tiên">
                         ▼
                       </button>
                       <button
                         type="button"
                         role="switch"
                         aria-checked={s.enabled}
-                        className={btn}
+                        className={btn + (s.enabled ? " !border-[#16a34a]/50 !bg-[#16a34a]/10 !text-[#15803d] dark:!text-[#86efac]" : "")}
                         disabled={busy === s.id}
                         onClick={() => void patch(s.id, { enabled: !s.enabled })}
                       >
@@ -826,7 +895,7 @@ export function AiServicesConsole() {
                       <button
                         type="button"
                         onClick={() => setDeleting(s)}
-                        className="inline-flex h-8 min-w-[5.5rem] items-center justify-center whitespace-nowrap rounded-lg border border-[var(--destructive)] px-3 text-xs font-medium text-[var(--destructive)] hover:bg-[#fef2f2] dark:hover:bg-[#2a1215]"
+                        className="inline-flex h-8 min-w-[5.5rem] items-center justify-center whitespace-nowrap rounded-lg border border-[var(--destructive)] sm:ml-auto px-3 text-xs font-medium text-[var(--destructive)] hover:bg-[#fef2f2] dark:hover:bg-[#2a1215]"
                       >
                         Xoá
                       </button>
@@ -902,10 +971,13 @@ export function AiServicesConsole() {
         })}
       </div>
 
+      </div>
+
       {/* Add from the preset list */}
-      <form onSubmit={add} className="mt-8 rounded-2xl border border-[var(--border)] bg-[var(--background-1)] p-5">
+      <aside className="mt-8 xl:sticky xl:top-20 xl:mt-0 xl:max-h-[calc(100dvh-6rem)] xl:overflow-y-auto xl:rounded-2xl">
+      <form onSubmit={add} className="xl:[&_.grid]:!grid-cols-1 xl:[&_.grid>*]:!col-span-1 rounded-2xl rounded-2xl border border-[var(--border)] bg-[var(--background-1)] p-4 shadow-sm sm:p-5">
         <h2 className="text-sm font-semibold text-[var(--foreground)]">Thêm dịch vụ AI</h2>
-        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
           <label className="text-sm">
             <span className="text-[var(--muted-foreground)]">Dịch vụ (chọn từ danh sách)</span>
             <select className={`mt-1 ${inputClass}`} value={pid} onChange={(e) => setPid(e.target.value)}>
@@ -945,7 +1017,7 @@ export function AiServicesConsole() {
           )}
           {provider?.custom && (
             <div className="space-y-2 sm:col-span-2">
-              <div className="grid gap-3 sm:grid-cols-[1fr_14rem]">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_14rem]">
                 <label className="text-sm">
                   <span className="text-[var(--muted-foreground)]">Base URL</span>
                   <input
@@ -994,7 +1066,7 @@ export function AiServicesConsole() {
               <input className={`mt-1 ${inputClass}`} value={model} onChange={(e) => setModel(e.target.value)} />
             </label>
           )}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <label className="text-sm">
               <span className="text-[var(--muted-foreground)]">Tên hiển thị (tuỳ chọn)</span>
               <input className={`mt-1 ${inputClass}`} value={label} onChange={(e) => setLabel(e.target.value)} />
@@ -1040,6 +1112,8 @@ export function AiServicesConsole() {
           {busy === "add" ? "Đang thêm…" : "Thêm dịch vụ"}
         </button>
       </form>
+      </aside>
+      </div>
     </div>
   );
 }

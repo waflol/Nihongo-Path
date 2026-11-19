@@ -210,7 +210,7 @@ export function AdminContentConsole() {
         <h2 className="text-sm font-semibold text-[var(--foreground)]">
           {editingId ? "Sửa bản ghi" : `Tạo ${spec.label.toLowerCase()}`}
         </h2>
-        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
           {spec.fields
             .filter((f) => f !== "status")
             .map((field) => (

@@ -83,7 +83,7 @@ export function ProtectionPanel() {
         </label>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div className="rounded-2xl border border-[var(--border)] bg-[var(--background-1)] p-4 text-sm">
           <p className="text-xs font-medium uppercase tracking-wide text-[var(--muted-foreground)]">Ngưỡng hiện tại</p>
           <p className="mt-1">

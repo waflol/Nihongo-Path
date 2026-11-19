@@ -55,6 +55,16 @@ const NAV: NavItem[] = [
     ),
   },
   {
+    href: "/admin/exams",
+    label: "Đề thi",
+    desc: "Soạn đề, ngân hàng câu hỏi 問題",
+    icon: (
+      <svg {...iconProps}>
+        <path d="M9 5h6a1 1 0 0 1 1 1v2h1a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h1V6a1 1 0 0 1 1-1zM9 5v2h6V5M12 12v4m0 0-2-2m2 2 2-2" />
+      </svg>
+    ),
+  },
+  {
     href: "/admin/import",
     label: "Nhập thẻ từ file",
     desc: "CSV / XLSX → xem trước → xác nhận",
@@ -282,7 +292,7 @@ export function AdminShell({
         })}
       </nav>
 
-      <div className="min-w-0 flex-1 md:border-l md:border-[var(--border)]">{children}</div>
+      <div className="min-w-0 max-w-full flex-1 overflow-x-clip md:border-l md:border-[var(--border)]">{children}</div>
     </div>
   );
 }

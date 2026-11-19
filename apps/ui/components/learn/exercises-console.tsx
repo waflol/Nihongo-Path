@@ -743,7 +743,7 @@ export function ExercisesConsole({ variant = "exercises" }: { variant?: "exercis
 
             {mode !== "type" && question ? (
               <>
-                <div className="mt-6 grid gap-2 sm:grid-cols-2">
+                <div className="mt-6 grid grid-cols-1 gap-2 sm:grid-cols-2">
                   {question.options.map((opt, idx) => {
                     const isRight = opt === question.answer;
                     const isPicked = picked === opt;

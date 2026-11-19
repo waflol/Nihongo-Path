@@ -16,8 +16,8 @@ const btn =
   "inline-flex h-8 items-center justify-center whitespace-nowrap rounded-lg border border-[var(--border)] px-3 text-xs font-medium text-[var(--foreground)] hover:bg-[var(--layer-hover)] disabled:opacity-50";
 const btnPrimary =
   "inline-flex h-9 items-center justify-center whitespace-nowrap rounded-lg bg-[var(--primary,#2563eb)] px-4 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50";
-const field = "h-8 rounded-lg border border-[var(--border)] bg-[var(--background)] px-2 text-xs text-[var(--foreground)]";
-const card = "rounded-2xl border border-[var(--border)] bg-[var(--background-1)] p-5";
+const field = "h-10 min-w-0 max-w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-2.5 text-base text-[var(--foreground)] sm:h-8 sm:px-2 sm:text-xs";
+const card = "min-w-0 rounded-2xl border border-[var(--border)] bg-[var(--background-1)] p-4 sm:p-5";
 const th = "px-2 py-1.5 text-left text-xs font-medium text-[var(--muted-foreground)]";
 const td = "px-2 py-1.5 align-top";
 const muted = "text-[var(--muted-foreground)]";
@@ -943,7 +943,7 @@ function RunProgressPanel({ runId, embedded = false, onDone }: { runId: string; 
         </div>
       )}
 
-      <div className="mt-4 grid gap-4 lg:grid-cols-2">
+      <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
         <div>
           <div className={`mb-1.5 text-xs font-medium ${muted}`}>Theo dịch vụ</div>
           <div className="flex flex-col gap-2">
@@ -1308,15 +1308,15 @@ function NewRunTab({ services, datasets, onCreated, onNeedDataset }: { services:
 
 
   return (
-    <form onSubmit={submit} className="flex flex-col gap-5">
+    <form onSubmit={submit} className="flex min-w-0 flex-col gap-5">
       <section className={card}>
         <h2 className="text-sm font-semibold">1. Bộ câu hỏi</h2>
-        <div className="mt-3 grid gap-4 sm:grid-cols-2">
-          <label className="flex flex-col gap-1 text-xs">
+        <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <label className="flex min-w-0 flex-col gap-1 text-xs">
             <span className={muted}>Tên lần chạy</span>
             <input className={field} value={label} onChange={(e) => setLabel(e.target.value)} placeholder="vd. So sánh Gemini vs Claude — prompt v1" />
           </label>
-          <label className="flex flex-col gap-1 text-xs">
+          <label className="flex min-w-0 flex-col gap-1 text-xs">
             <span className={muted}>Bộ dữ liệu</span>
             <select className={field} value={datasetKey} onChange={(e) => setDatasetKey(e.target.value)}>
               {datasets.map((d) => (
@@ -1327,7 +1327,7 @@ function NewRunTab({ services, datasets, onCreated, onNeedDataset }: { services:
             </select>
           </label>
         </div>
-        <div className="mt-4 grid gap-4 sm:grid-cols-3">
+        <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
           <div>
             <div className={`mb-1 text-xs ${muted}`}>Việc</div>
             <Checks all={TASKS} value={tasks} onChange={setTasks} label={(t) => TASK_LABEL[t]} />
@@ -1730,7 +1730,7 @@ function ReportTab({ runId, run, reloadRuns }: { runId: string; run?: Run; reloa
               ))}
             </select>
           </div>
-          <div className="mt-4 grid gap-5 lg:grid-cols-3">
+          <div className="mt-4 grid grid-cols-1 gap-5 lg:grid-cols-3">
             <div className="lg:col-span-2">
               <div className={`text-xs font-medium ${muted}`}>Điểm theo việc và trình độ (càng xanh đậm càng cao)</div>
               <div className="mt-2 max-w-xl">
@@ -2179,7 +2179,7 @@ function ResultDetailView({ id, pass, onReviewed }: { id: string; pass: number; 
         {crit.length > 0 && (
           <div>
             <div className={`mb-1 font-medium ${muted}`}>Điểm từng tiêu chí</div>
-            <table className="w-full">
+            <div className="overflow-x-auto"><table className="w-full">
               <thead>
                 <tr className="border-b border-[var(--border)]">
                   <th className={th}>Tiêu chí</th>
@@ -2209,7 +2209,7 @@ function ResultDetailView({ id, pass, onReviewed }: { id: string; pass: number; 
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </table></div>
             <div className="mt-1 flex items-center gap-2">
               Tổng <Score v={d.total} pass={pass} />
             </div>
@@ -2506,7 +2506,7 @@ function PricesTab({ services }: { services: Service[] }) {
         Dùng để ước tính chi phí trong báo cáo. Khoá dạng <code>provider:model</code>, hoặc <code>provider:*</code> cho mọi model của nhà cung cấp. Bỏ trống = chưa có giá (báo cáo ghi “chưa có
         giá”); gói miễn phí nhập 0.
       </p>
-      <table className="mt-3 w-full text-xs">
+      <div className="mt-3 overflow-x-auto"><table className="w-full text-xs">
         <thead>
           <tr className="border-b border-[var(--border)]">
             <th className={th}>provider:model</th>
@@ -2535,7 +2535,7 @@ function PricesTab({ services }: { services: Service[] }) {
             </tr>
           ))}
         </tbody>
-      </table>
+      </table></div>
       <div className="mt-3 flex gap-2">
         <button type="button" className={btn} onClick={() => setRows([...rows, { key: "", input: "", output: "" }])}>
           + Thêm dòng

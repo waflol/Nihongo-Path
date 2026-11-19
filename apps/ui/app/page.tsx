@@ -105,11 +105,11 @@ export default function Home() {
           </h2>
           <FadeContent blur duration={0.8} className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             {features.map((f) => (
-              <Link key={f.title} href={f.href} className="block rounded-xl focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--primary)]">
+              <Link key={f.title} href={f.href} className="flex h-full rounded-xl focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--primary)]">
               <SpotlightCard
                 theme="light"
                 spotlightColor="var(--primary)"
-                className="learn-tile !rounded-xl !p-3 sm:!p-4"
+                className="learn-tile !flex !h-full !w-full !flex-col !justify-center !rounded-xl !p-3 sm:!p-4"
                 style={{ "--spotlight-card-surface": "var(--card)", "--spotlight-card-border": "var(--border)" } as CSSProperties}
               >
                 <div className="flex items-center gap-2.5">

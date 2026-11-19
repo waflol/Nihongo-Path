@@ -300,7 +300,7 @@ function RunCard({ run: r }: { run: Run }) {
               <p lang="ja" className="text-lg text-[var(--foreground)]">{d.reading}</p>
             </div>
           )}
-          <div className="grid gap-2 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             {d.romaji && (
               <div className="rounded-lg bg-[var(--background)] px-3 py-2">
                 <p className="text-[11px] font-medium uppercase tracking-wide text-[var(--muted-foreground)]">Romaji</p>

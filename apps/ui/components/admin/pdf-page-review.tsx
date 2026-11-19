@@ -209,7 +209,7 @@ export function PdfPageReview({
         {msg && <span className="text-xs text-[var(--muted-foreground)]">{msg}</span>}
       </div>
 
-      <div className="mt-4 grid gap-4 lg:grid-cols-2">
+      <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
         {(
         <div
           ref={leftRef}

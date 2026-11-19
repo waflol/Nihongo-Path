@@ -101,7 +101,7 @@ export function AiActivityPanel() {
         </p>
       </div>
 
-      <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+      <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
         {data?.services.map((s) => {
           const b = BADGE[s.state];
           const wait = s.state === "cooldown" ? left(s.cooldownUntil, now) : "";

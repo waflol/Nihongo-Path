@@ -429,7 +429,7 @@ export function RedisConsole() {
               </button>
             </form>
 
-            <div className="mt-3 grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+            <div className="mt-3 grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
               <div className="relative min-h-[30rem] overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--background-1)]">
                 {scanning && !loadingMore ? (
                   <div className="absolute inset-0 flex items-center justify-center">

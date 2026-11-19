@@ -67,7 +67,7 @@ export function AdminOverview() {
         Quản lý nội dung dùng chung cho tất cả người học.
       </p>
 
-      <dl className="mt-6 grid gap-3 sm:grid-cols-3">
+      <dl className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
         {stats.map((s) => (
           <div key={s.label} className="rounded-2xl border border-[var(--border)] bg-[var(--background-1)] p-5">
             <dt className="text-xs font-medium uppercase tracking-wide text-[var(--muted-foreground)]">{s.label}</dt>
@@ -79,7 +79,7 @@ export function AdminOverview() {
       <h2 className="mt-10 text-sm font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">
         Việc thường làm
       </h2>
-      <div className="mt-3 grid gap-3 sm:grid-cols-3">
+      <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
         {actions.map((a) => (
           <Link
             key={a.href}

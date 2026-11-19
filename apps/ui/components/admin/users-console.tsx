@@ -358,7 +358,7 @@ export function UsersConsole({ meId, meRole }: { meId: string; meRole: string })
       {error && <p role="alert" className="mt-4 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-2.5 text-sm text-red-500">{error}</p>}
       {notice && <p role="status" className="mt-4 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-2.5 text-sm text-emerald-500">{notice}</p>}
 
-      <div className="mt-4 rounded-2xl border-[var(--border)] bg-[var(--background)]">
+      <div className="mt-4 overflow-x-auto rounded-2xl border-[var(--border)] bg-[var(--background)]">
         <table className="w-full table-auto text-left text-sm">
           <thead className="bg-[var(--background-1)] text-xs text-[var(--muted-foreground)]">
             <tr>

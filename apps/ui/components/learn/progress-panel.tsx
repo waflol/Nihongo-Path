@@ -166,7 +166,7 @@ export function ProgressPanel({ compact = false, dense = false }: { compact?: bo
       aria-busy={loading}
       className={
         (compact
-          ? "flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--background-1)] p-4 transition-opacity "
+          ? "flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border lg:flex-initial border-[var(--border)] bg-[var(--background-1)] p-4 transition-opacity "
           : dense
             ? "mt-0 rounded-2xl border border-[var(--border)] bg-[var(--background-1)] p-4 transition-opacity [&_.mt-4]:!mt-2 [&_.mt-5]:!mt-3 [&_.mt-6]:!mt-3 [&_.space-y-6>*+*]:!mt-3 "
             : "mt-8 rounded-2xl border border-[var(--border)] bg-[var(--background-1)] p-6 transition-opacity ") +
@@ -282,13 +282,34 @@ export function ProgressPanel({ compact = false, dense = false }: { compact?: bo
                 { v: stats.newToday, l: "Mới hôm nay" },
               ];
         return (
-          <div className="mt-3 hidden grid-cols-2 gap-2 lg:grid [@media(min-height:950px)]:grid">
+          <div className={"mt-3 hidden gap-2 lg:grid [@media(min-height:950px)]:grid " + (items.length === 3 ? "grid-cols-3" : "grid-cols-2")}>
             {items.map((t) => (
-              <div key={t.l} className="rounded-lg border border-[var(--border)] px-2.5 py-1.5">
+              <div key={t.l} className="rounded-xl border border-[var(--border)] bg-[var(--background)] px-2.5 py-2">
                 <p className="text-lg font-semibold leading-tight tabular-nums text-[var(--foreground)]">{t.v}</p>
-                <p className="text-[11px] text-[var(--muted-foreground)]">{t.l}</p>
+                <p className="mt-0.5 text-[11px] leading-tight text-[var(--muted-foreground)]">{t.l}</p>
               </div>
             ))}
+          </div>
+        );
+      })()}
+
+      {compact && stats && range !== "all" && stats.series.length > 0 && (() => {
+        const series = stats.series;
+        const max = Math.max(1, ...series.map((b) => b.reviews));
+        const unit = range === "year" ? "tháng" : "ngày";
+        return (
+          <div className="mt-4 hidden lg:block">
+            <p className="text-[11px] font-medium text-[var(--muted-foreground)]">Lượt ôn theo {unit}</p>
+            <div className={"mt-2 flex h-28 items-end rounded-xl border border-[var(--border)] bg-[var(--background)] px-2 pt-2 " + (series.length > 14 ? "gap-px" : "gap-1.5")} role="img" aria-label={`Biểu đồ lượt ôn theo ${unit}`}>
+              {series.map((b) => (
+                <div key={b.key} className="flex h-full flex-1 items-end" title={`${b.key}: ${b.reviews} lượt ôn`}>
+                  <div
+                    className={"w-full rounded-t-sm " + (b.reviews > 0 ? "bg-[var(--primary)]" : "bg-[var(--border)]")}
+                    style={{ height: b.reviews > 0 ? `${Math.max(6, (b.reviews / max) * 100)}%` : "3px" }}
+                  />
+                </div>
+              ))}
+            </div>
           </div>
         );
       })()}
@@ -540,7 +561,7 @@ export function ProgressPanel({ compact = false, dense = false }: { compact?: bo
       </div>
 
       {compact && (
-      <div className="mt-auto shrink-0 border-t border-[var(--border)] pt-3">
+      <div className="mt-4 shrink-0 border-t border-[var(--border)] pt-3 lg:mt-5">
         <label htmlFor="new-per-day" className="text-sm font-medium text-[var(--foreground)]">
           Số từ mới mỗi ngày
         </label>

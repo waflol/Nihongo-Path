@@ -56,7 +56,7 @@ export function KanjiGroups({
   }
 
   return (
-    <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+    <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
       {groups.map(([key, list]) => {
         const start = key * GROUP_SIZE + 1;
         const published = list.filter((k) => k.status === "PUBLISHED").length;

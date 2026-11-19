@@ -266,7 +266,7 @@ export function SystemMonitor() {
       {!stats && !error && <p className="mt-6 text-sm text-[var(--muted-foreground)]">Đang tải…</p>}
       {stats && (
         <>
-          <div className="mt-6 grid gap-4 sm:grid-cols-3">
+          <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
             <Meter
               title="CPU"
               percent={stats.cpu.usagePercent}

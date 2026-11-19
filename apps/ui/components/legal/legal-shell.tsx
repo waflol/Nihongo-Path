@@ -50,7 +50,7 @@ export function LegalShell({
           {highlights}
         </section>
 
-        <div className="mt-10 grid gap-8 lg:grid-cols-[16.5rem_minmax(0,1fr)] lg:gap-12">
+        <div className="mt-10 grid grid-cols-1 gap-8 lg:grid-cols-[16.5rem_minmax(0,1fr)] lg:gap-12">
           <aside className="lg:sticky lg:top-24 lg:self-start">
             <LegalNav items={toc} label={tocLabel} />
           </aside>

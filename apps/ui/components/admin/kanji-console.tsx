@@ -967,7 +967,7 @@ export function KanjiAdminConsole({
             <p className="mt-3 text-xs text-[var(--muted-foreground)]">Đang tải chi tiết nét vẽ và từ vựng…</p>
           )}
 
-          <div className="mt-4 grid gap-5 lg:grid-cols-3">
+          <div className="mt-4 grid grid-cols-1 gap-5 lg:grid-cols-3">
             {/* Left column: Kanji char, stroke preview, level, status */}
             <div className="space-y-3">
               <div className="flex items-start gap-4">
@@ -1374,7 +1374,7 @@ export function KanjiAdminConsole({
       ) : (
         <>
       {/* Kanji Table */}
-      <div className="mt-4 overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--background-1)] shadow-sm">
+      <div className="mt-4 overflow-x-auto rounded-2xl border border-[var(--border)] bg-[var(--background-1)] shadow-sm">
         <table className="w-full table-fixed text-left text-sm">
           <thead className="sticky top-0 border-b border-[var(--border)] bg-[var(--layer)] text-[11px] font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">
             <tr>

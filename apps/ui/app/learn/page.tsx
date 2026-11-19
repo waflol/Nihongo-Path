@@ -25,13 +25,13 @@ type Tile = { href: string | null; kanji: string; title: string; desc: string; a
 
 // Bento layout: one featured tile, the rest sized by how often they are used.
 const tiles: Tile[] = [
-  { href: "/learn/decks", kanji: "札", title: "Flashcard", desc: "Bộ thẻ cá nhân, ôn theo thuật toán lặp lại ngắt quãng.", area: "lg:col-span-2 lg:row-span-2" },
+  { href: "/learn/decks", kanji: "札", title: "Flashcard", desc: "Bộ thẻ cá nhân, ôn theo thuật toán lặp lại ngắt quãng.", area: "col-span-2 lg:row-span-2" },
   { href: "/learn/review", kanji: "復", title: "Ôn tập hôm nay", desc: "Những từ đã đến hạn ôn.", area: "" },
   { href: "/learn/exercises", kanji: "練", title: "Bài tập", desc: "Trắc nghiệm, gõ đáp án, đặt câu.", area: "" },
   { href: "/learn/exam", kanji: "試", title: "Luyện thi", desc: "6 dạng 問題 kiểu JLPT.", area: "" },
   { href: "/learn/kanji", kanji: "漢", title: "Kanji N5–N1", desc: "Tra theo cấp, Hán Việt, thứ tự nét, on/kun.", area: "" },
-  { href: "/learn/exams", kanji: "試", title: "Đề thi có thời gian", desc: "Làm đề, chấm điểm trên máy chủ, xem lại lỗi.", area: "" },
-  { href: null, kanji: "聴", title: "Luyện nghe", desc: "Đang chuẩn bị, sẽ có ở Sprint 6.", area: "" },
+  { href: "/learn/exams", kanji: "試", title: "Đề thi có thời gian", desc: "Làm đề, chấm điểm trên máy chủ, xem lại lỗi.", area: "lg:col-span-2" },
+  { href: null, kanji: "聴", title: "Luyện nghe", desc: "Đang chuẩn bị, sẽ có ở Sprint 6.", area: "lg:col-span-2" },
 ];
 
 function TileBody({ t, featured }: { t: Tile; featured: boolean }) {
@@ -60,11 +60,18 @@ function TileBody({ t, featured }: { t: Tile; featured: boolean }) {
         </div>
       )}
 
+      <span
+        aria-hidden="true"
+        style={{ fontFamily: SERIF }}
+        className="relative mb-1.5 flex size-8 shrink-0 items-center justify-center rounded-lg bg-[color-mix(in_srgb,var(--primary)_16%,transparent)] text-lg font-bold text-[var(--primary)] lg:hidden"
+      >
+        {t.kanji}
+      </span>
       <div className="relative mt-auto">
-        <h2 className={(featured ? "text-sm sm:text-base lg:text-3xl" : "text-sm sm:text-base lg:text-lg") + " font-semibold tracking-tight text-[var(--foreground)]"}>
+        <h2 className={(featured ? "text-sm sm:text-base lg:text-3xl" : "text-[13px] leading-tight sm:text-base lg:text-lg") + " font-semibold tracking-tight text-[var(--foreground)]"}>
           {t.title}
         </h2>
-        <p className={(featured ? "max-w-xs lg:text-base" : "max-w-[16rem]") + " mt-1 hidden text-sm sm:block text-[var(--muted-foreground)]"}>
+        <p className={(featured ? "block max-w-xs lg:text-base" : "hidden max-w-[16rem] sm:block") + " mt-0.5 line-clamp-2 text-xs leading-snug text-[var(--muted-foreground)] sm:mt-1 sm:text-sm"}>
           {t.desc}
         </p>
       </div>
@@ -89,8 +96,8 @@ export default function LearnPage() {
       className="mx-auto flex h-[calc(100dvh-4rem)] min-h-0 w-full max-w-7xl flex-col overflow-hidden px-3 py-3 sm:px-6 lg:py-5"
     >
       <FitScreen lg />
-      <div className="flex shrink-0 items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
+      <div className="flex shrink-0 flex-col gap-3 max-lg:gap-2.5 max-lg:rounded-2xl max-lg:border max-lg:border-[var(--border)] max-lg:bg-[var(--background-1)] max-lg:p-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex min-w-0 items-center gap-3">
           <span
             aria-hidden="true"
             style={{ fontFamily: SERIF }}
@@ -100,14 +107,14 @@ export default function LearnPage() {
           </span>
           <TodayStrip />
         </div>
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="flex shrink-0 flex-wrap items-center gap-2 [&>*:first-child]:flex-1 sm:[&>*:first-child]:flex-none">
         <DueButton />
         <ExtraDialog label="Chi tiết" title="Tiến độ ghi nhớ"><ProgressPanel dense /></ExtraDialog>
         </div>
       </div>
 
       <div className="mt-3 flex min-h-0 flex-1 flex-col gap-3 lg:mt-5 lg:grid lg:grid-cols-[minmax(0,1fr)_22rem] lg:gap-4">
-      <div className="grid h-[clamp(8.5rem,30dvh,15rem)] shrink-0 grid-cols-3 grid-rows-2 gap-2 lg:h-auto lg:min-h-0 lg:grid-rows-3 lg:gap-3">
+      <div className="grid h-[clamp(10.5rem,28dvh,15rem)] shrink-0 grid-cols-4 grid-rows-2 gap-2 lg:h-auto lg:min-h-0 lg:grid-rows-3 lg:gap-3">
         {tiles.map((t, i) => {
           const featured = i === 0;
           const cls =

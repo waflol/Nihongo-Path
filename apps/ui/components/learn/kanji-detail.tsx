@@ -42,7 +42,7 @@ export function KanjiDetail({ char }: { char: string }) {
       <Link href="/learn/kanji" className="text-sm text-[var(--muted-foreground)] hover:underline">
         ← Danh sách kanji
       </Link>
-      <div className="mt-4 grid gap-8 md:grid-cols-2">
+      <div className="mt-4 grid grid-cols-1 gap-8 md:grid-cols-2">
         <div>
           <div className="text-8xl leading-none text-[var(--foreground)]">{k.char}</div>
           {k.strokes && k.strokes.length > 0 && (

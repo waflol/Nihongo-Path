@@ -688,7 +688,7 @@ export function ImportWizard({ learner = false }: { learner?: boolean }) {
       {/* ── Step 1: file + target deck ─────────────────────────────── */}
       {step === 1 && (
       <section className="mt-6 rounded-2xl border border-[var(--border)] bg-[var(--background-1)] p-5">
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
             <div className="flex items-center justify-between gap-2">
               <label className="block text-sm font-medium text-[var(--foreground)]">
@@ -846,7 +846,7 @@ export function ImportWizard({ learner = false }: { learner?: boolean }) {
           <h2 className="text-sm font-semibold text-[var(--foreground)]">
             Ánh xạ cột ({preview.format.toUpperCase()}, {preview.totalRows} dòng)
           </h2>
-          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
             {(
               [
                 ["front", "Mặt trước / từ vựng (bắt buộc)"],
@@ -865,7 +865,7 @@ export function ImportWizard({ learner = false }: { learner?: boolean }) {
           <p className="mt-4 text-xs font-medium uppercase tracking-wide text-[var(--muted-foreground)]">
             Cột tuỳ chọn
           </p>
-          <div className="mt-2 grid gap-3 sm:grid-cols-3">
+          <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-3">
             {OPTIONAL_COLUMNS.map(([key, label]) => (
               <ColumnSelect
                 key={key}

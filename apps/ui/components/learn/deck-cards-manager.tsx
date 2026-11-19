@@ -769,7 +769,7 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
       {canWrite && editInfo && (
         <form onSubmit={saveInfo} className="mt-5 rounded-2xl border border-[var(--border)] bg-[var(--background-1)] p-4">
           <h2 className="text-sm font-semibold text-[var(--foreground)]">Thông tin bộ thẻ</h2>
-          <div className="mt-3 grid gap-3 sm:grid-cols-3">
+          <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
             <label className="block text-sm sm:col-span-3">
               <span className="text-[var(--muted-foreground)]">Tên bộ thẻ</span>
               <input
@@ -822,7 +822,7 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
       {canWrite && showAdd && (
         <form onSubmit={addCard} className="mt-5 rounded-2xl border border-[var(--border)] bg-[var(--background-1)] p-4">
           <h2 className="text-sm font-semibold text-[var(--foreground)]">Thêm thẻ vào bộ này</h2>
-          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
             <label className="block text-sm">
               <span className="text-[var(--muted-foreground)]">Mặt trước (câu hỏi)</span>
               <input

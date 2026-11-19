@@ -543,7 +543,44 @@ export function LogsConsole() {
           )}
         </ul>
       ) : (
-      <div className="mt-4 rounded-2xl border border-[var(--border)]">
+      <>
+      <ul className="mt-4 space-y-3 md:hidden">
+        {data?.items.map((r) => (
+          <li key={r.id} className="rounded-2xl border border-[var(--border)] bg-[var(--background-1)] p-3.5 shadow-sm">
+            <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
+              <span className={"text-base font-semibold tabular-nums " + statusColor(r.status)}>{r.status}</span>
+              <span className="rounded-md bg-[var(--layer)] px-1.5 py-0.5 font-mono text-[11px] font-semibold">{r.method}</span>
+              <span className="text-xs tabular-nums text-[var(--muted-foreground)]">{r.durationMs} ms</span>
+              <span className="ml-auto text-[11px] tabular-nums text-[var(--muted-foreground)]">
+                {new Date(r.createdAt).toLocaleString("vi-VN")}
+              </span>
+            </div>
+            <p className="mt-2 break-all font-mono text-xs text-[var(--foreground)]">{r.path}</p>
+            {r.error && <p className="mt-1 line-clamp-2 break-words text-xs text-red-500">{r.error}</p>}
+            <p className="mt-2 break-words text-xs text-[var(--muted-foreground)]">
+              {[r.user ?? "—", r.ipv4 ?? r.ip ?? "—", deviceLabel(r.userAgent)].filter(Boolean).join(" · ")}
+            </p>
+            <button
+              type="button"
+              className="mt-3 inline-flex min-h-10 w-full items-center justify-center rounded-xl border border-[var(--border)] text-sm font-medium hover:bg-[var(--layer-hover)]"
+              onClick={() => void toggle(r.id)}
+            >
+              {openId === r.id ? "Ẩn chi tiết" : "Xem chi tiết"}
+            </button>
+            {openId === r.id && (
+              <div className="mt-3 min-w-0 border-t border-[var(--border)] pt-3 text-sm">
+                {detailErr ? <div className="text-red-500">{detailErr}</div> : !detail ? <div className="text-[var(--muted-foreground)]">Đang tải…</div> : (
+                  <DetailTabs detail={detail} />
+                )}
+              </div>
+            )}
+          </li>
+        ))}
+        {data && data.items.length === 0 && (
+          <li className="rounded-2xl border border-dashed border-[var(--border)] px-3 py-8 text-center text-sm text-[var(--muted-foreground)]">Chưa có bản ghi.</li>
+        )}
+      </ul>
+      <div className="mt-4 hidden overflow-x-auto rounded-2xl border border-[var(--border)] md:block">
         <table className="w-full text-left text-sm">
           <thead className="bg-[var(--background-1)] text-xs uppercase tracking-wide text-[var(--muted-foreground)]">
             <tr>
@@ -601,6 +638,7 @@ export function LogsConsole() {
           </tbody>
         </table>
       </div>
+      </>
       )}
 
       <div className="mt-4 flex items-center justify-between text-sm text-[var(--muted-foreground)]">

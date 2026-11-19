@@ -16,7 +16,7 @@ export function ExtraDialog({ label, title, children }: { label: string; title: 
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="rounded-full border border-[var(--border)] px-4 py-1.5 text-sm font-medium text-[var(--foreground)] transition-colors hover:border-[var(--primary)] hover:text-[var(--primary)]"
+        className="inline-flex h-11 items-center justify-center rounded-xl border border-[var(--border)] px-4 text-sm font-medium sm:h-auto sm:rounded-full sm:py-1.5 text-[var(--foreground)] transition-colors hover:border-[var(--primary)] hover:text-[var(--primary)]"
       >
         {label}
       </button>

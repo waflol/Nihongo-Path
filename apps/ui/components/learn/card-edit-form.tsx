@@ -96,7 +96,7 @@ export function CardEditForm({
   return (
     <form onSubmit={submit} className="w-full">
       {dialog}
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <label className="block text-sm">
           <span className="text-[var(--muted-foreground)]">Mặt trước (câu hỏi)</span>
           <input
