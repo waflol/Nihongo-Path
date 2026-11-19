@@ -26,7 +26,7 @@ module.exports = {
       // the same across restarts.
       name: "ngrok",
       script: "ngrok",
-      args: "http 3001 --log stdout",
+      args: "http 3002 --log stdout",
       interpreter: "none",
       autorestart: true,
     },
