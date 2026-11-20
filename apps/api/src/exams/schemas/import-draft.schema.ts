@@ -34,6 +34,13 @@ export class ExamImportDraft {
   @Prop({ type: String, required: true, index: 1 })
   jobId: string;
 
+  /**
+   * The block's position in the segmented paper (0-based). Makes re-running a
+   * job idempotent: a block already drafted is skipped, never re-structured.
+   */
+  @Prop({ type: Number, default: 0, index: 1 })
+  blockIndex: number;
+
   /** The source file name (e.g. `De_Chinh_Thuc_N3.pdf`). */
   @Prop({ type: String, required: true })
   file: string;

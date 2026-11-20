@@ -109,6 +109,57 @@ export function parseCompactKey(block: string): AnswerKeyBlock | null {
 }
 
 /**
+ * The 問題 marker a compact-key heading carries, NFKC-normalised (so the
+ * mark-preserved ①/Ⅰ becomes `1`/`I`, matching the segmented block's
+ * instruction, which is already NFKC-cleaned). `""` when the heading has no
+ * marker.
+ */
+export function keyMarker(heading: string): string {
+  const m = heading.normalize("NFKC").match(/問題\s*([0-9]{1,2}|I{1,3}|IV|V)/);
+  return m ? m[1] : "";
+}
+
+/**
+ * The 問題 marker of a segmented block's instruction (already NFKC-cleaned):
+ * the token after `問題`. `""` when there is none. Used to line a block up
+ * with the matching key block.
+ */
+export function blockMarker(instruction: string): string {
+  const m = (instruction ?? "").match(/問題\s*([0-9]{1,2}|I{1,3}|IV|V)/);
+  return m ? m[1] : "";
+}
+
+/**
+ * Split the whole 答案 section into one compact key per 問題, in order. A
+ * paper's key lists `問題Ⅰ … 問題Ⅲ` back to back (one 問題 block per
+ * section); `segmentBlocks` produces the same 問題s in the same order, so the
+ * i-th split key aligns with the i-th block. A line that starts with the
+ * 問題 heading opens a new section; everything until the next is that
+ * section's answers.
+ */
+export function splitCompactKey(answerKey: string): AnswerKeyBlock[] {
+  const lines = (answerKey ?? "")
+    .split(/\n/)
+    .map(cleanAnswerLine)
+    .filter(Boolean);
+  const blocks: AnswerKeyBlock[] = [];
+  let currentLines: string[] = [];
+  const flush = () => {
+    if (currentLines.length === 0) return;
+    const parsed = parseCompactKey(currentLines.join("\n"));
+    if (parsed) blocks.push(parsed);
+    currentLines = [];
+  };
+  for (const line of lines) {
+    const isHeading = /^(?:文法|文字|語彙|読解|聴解)?\s*問題\s*(?:\d{1,2}|[①②③④⑤⑥⑦⑧⑨⑩ⅠⅡⅢⅣⅤ])/.test(line);
+    if (isHeading && currentLines.length > 0) flush();
+    currentLines.push(line);
+  }
+  flush();
+  return blocks;
+}
+
+/**
  * Parse the broken-OCR-grid form (b): a table of question numbers down the
  * left and scattered marks. Best-effort — any cell we cannot match is `null`.
  * `cells` are raw grid cells (NFKC-folding is NOT applied, so circled marks
