@@ -710,11 +710,40 @@ export class AiExampleService {
   }
 
   /**
-   * Synonym drill data: for each word, one Japanese synonym plus three words
-   * that are NOT synonyms (plausible but different meaning). Tries the
-   * available services in order; returns `null` when none could answer.
-   * Keyed by the word as sent.
+   * Transcribe one page of a JLPT exam PDF to PLAIN TEXT (NP-407) — unlike
+   * `ocrVocabPage` there is no table to fit: the page is exam prose (問題
+   * blocks, passages, option lines). Keeps the printed structure verbatim:
+   * 問題 headings, circled option marks ①②③④, cloze blanks [1]…, ★, the
+   * answer-key lines. Headers / watermarks / page numbers are kept too —
+   * the import's `clean.ts` removes repeated noise by frequency afterwards.
+   * `null` when no vision service could read it.
    */
+  async ocrExamPageText(png: Buffer, page?: number): Promise<string | null> {
+    const base = [
+      "This image is one page of a Japanese JLPT exam paper.",
+      "Transcribe the text verbatim, keeping the line structure. Preserve exactly:",
+      "- the 問題 headings (問題Ⅰ, 問題①, 問題 1: …),",
+      "- circled option marks ①②③④ and their option text, on one line each where printed that way,",
+      "- cloze blank markers [1] [2] … and the ★ mark,",
+      "- the 答案/解答 lines (number + circled mark, e.g. `1① 2④`).",
+      "Rules: do NOT translate, do NOT fix typos, do NOT renumber anything. Keep Japanese/Japanese text as printed (kanji stay kanji).",
+      "Output plain text only, one line per printed line, no JSON, no commentary.",
+    ];
+    for (const svc of await this.services.available()) {
+      if (this.isTranslator(svc)) continue;
+      try {
+        await this.pace(svc);
+        const text = await this.call(svc, base.join("\n"), "exam-import", page ? [`Trang ${page}`] : [], png);
+        await this.services.reportOk(svc.id);
+        const t = (text ?? "").trim();
+        if (t) return t;
+      } catch (err) {
+        if (err instanceof AiFailure) await this.services.reportFailure(svc.id, err.kind, err.message, err.retryAfterMs);
+        // else: unparsable answer — try the next service
+      }
+    }
+    return null;
+  }
   async synonymQuiz(
     items: { term: string; reading: string; meaning: string }[],
   ): Promise<Map<string, { synonym: string; wrong: string[] }> | null> {

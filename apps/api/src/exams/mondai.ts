@@ -130,22 +130,23 @@ export function classifyInstruction(
   if (n.length === 0) return null;
   const sec = ctx.section;
 
+  // Global, unambiguous markers that hold in ANY section: a 音声 instruction is
+  // listening, and the cloze marker 「全体の内容を考えて」 is text-grammar even
+  // when the 問題 sits under a vocab block (Migii model tests).
+  if (n.includes("音声")) return "listening";
+  if (n.includes("全体の内容を考えて")) return "text-grammar";
+
   // No block hint: try the families in a fixed priority (reading → grammar → vocab).
   if (sec === undefined || sec === null) {
     return classifyReading(n, level) ?? classifyGrammar(n, level) ?? classifyVocab(n, level);
   }
-  switch (sec) {
-    case "vocab":
-      return classifyVocab(n, level);
-    case "grammar":
-      return classifyGrammar(n, level);
-    case "reading":
-      return classifyReading(n, level);
-    case "listening":
-      return "listening";
-    default:
-      return null;
-  }
+  if (sec === "listening") return "listening";
+  const primary = sec === "vocab" ? classifyVocab : sec === "grammar" ? classifyGrammar : classifyReading;
+  const hit = primary(n, level);
+  if (hit) return hit;
+  // The block hint didn't decide (the 問題 is really another family's form):
+  // fall through to the cross-family markers rather than `null`.
+  return classifyReading(n, level) ?? classifyGrammar(n, level) ?? classifyVocab(n, level);
 }
 
 function classifyVocab(n: string, level: string | undefined): MondaiType | null {
@@ -163,8 +164,8 @@ function classifyVocab(n: string, level: string | undefined): MondaiType | null 
 function classifyGrammar(n: string, _level: string | undefined): MondaiType | null {
   // A star question: one sentence with four ＿＿ blanks, one marked ★.
   if (n.includes("★") && (n.includes("最もよいもの") || n.includes("最も適している"))) return "star-order";
-  // A cloze across a whole passage.
-  if (n.includes("文章全体の内容を考えて")) return "text-grammar";
+  // A cloze across a whole passage (文章全体 / 文全体).
+  if (n.includes("全体の内容を考えて")) return "text-grammar";
   // A single sentence's blank.
   if (n.includes("次の文の()に入れる") || n.includes("次の文の()に入る")) return "grammar-form";
   return null;
@@ -186,8 +187,8 @@ function classifyReading(n: string, level: string | undefined): MondaiType | nul
   if (isN1N2(level) && (n.includes("次の文を読んで") || n.includes("次の長文を読んで"))) return "reading-thematic";
   // One passage, questions keyed (1)..(n).
   if (n.includes("次の文章を読んで")) return "reading-long";
-  // Multiple short passages, questions grouped (1)-(3).
-  if (n.includes("(1)から(3)") || (n.includes("(1)と(2)") && !n.includes("から"))) return "reading-mid";
+  // Multiple short passages, questions grouped (1)-(2)/(3).
+  if (n.includes("(1)から(3)") || n.includes("(1)から(2)") || (n.includes("(1)と(2)") && !n.includes("から"))) return "reading-mid";
   // Short passages, questions (1)-(4)/(5).
   if (n.includes("(1)から(4)") || n.includes("(1)から(5)")) return "reading-short";
   return null;
