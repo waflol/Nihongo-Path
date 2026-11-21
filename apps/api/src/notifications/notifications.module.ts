@@ -4,6 +4,7 @@ import { buildDatabaseModule } from "../database/database.module.js";
 import { Flashcard, FlashcardSchema } from "../flashcards/schemas/card.schema.js";
 import { FlashcardDeck, FlashcardDeckSchema } from "../flashcards/schemas/deck.schema.js";
 import { UserCardProgress, UserCardProgressSchema } from "../srs/schemas/progress.schema.js";
+import { SrsReviewLog, SrsReviewLogSchema } from "../srs/schemas/review-log.schema.js";
 import { StudySession, StudySessionSchema } from "../srs/schemas/session.schema.js";
 import { SrsService } from "../srs/srs.service.js";
 import { User, UserSchema } from "../users/schemas/user.schema.js";
@@ -37,6 +38,7 @@ export function buildNotificationsModule(): DynamicModule {
         { name: FlashcardDeck.name, schema: FlashcardDeckSchema },
         { name: UserCardProgress.name, schema: UserCardProgressSchema },
         { name: StudySession.name, schema: StudySessionSchema },
+        { name: SrsReviewLog.name, schema: SrsReviewLogSchema },
         { name: User.name, schema: UserSchema },
       ]),
     ],

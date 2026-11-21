@@ -132,6 +132,14 @@ class AdminExamDto {
  * One shared reading passage (NP-406). Admin auth + review only — the sit
  * payload serves the passage body to learners, answer-free.
  */
+// Declared before `StimulusDto`: its `sourceRef` property metadata reads the
+// class at module load, so a later declaration hits the TDZ and crashes boot.
+class SourceRefDto {
+  @IsString() @MinLength(1) @MaxLength(300) file: string;
+  @IsOptional() @IsString() @MaxLength(40) sitting?: string;
+  @IsOptional() @IsString() @MaxLength(40) no?: string;
+}
+
 class StimulusDto {
   @IsOptional() @IsString() @MaxLength(8) level?: string;
 
@@ -159,12 +167,6 @@ class StimulusDto {
   @ValidateNested()
   @Type(() => SourceRefDto)
   sourceRef?: SourceRefDto;
-}
-
-class SourceRefDto {
-  @IsString() @MinLength(1) @MaxLength(300) file: string;
-  @IsOptional() @IsString() @MaxLength(40) sitting?: string;
-  @IsOptional() @IsString() @MaxLength(40) no?: string;
 }
 
 class StimuliQuery {
