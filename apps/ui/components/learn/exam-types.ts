@@ -45,6 +45,34 @@ export interface SitQuestion {
   sub?: string;
   /** Options in the order the learner sees them (served order). */
   options: string[];
+  /** JLPT bank fields (NP-406) — absent on legacy flat questions. */
+  mondai?: string;
+  section?: string;
+  /** The question belongs to the shared passage with this id. */
+  stimulusId?: string;
+  groupOrder?: number;
+  sectionKey?: string;
+}
+
+/** An exam part (文字・語彙 / 文法 / 読解 / 聴解) as the sit payload describes it. */
+export interface SitSection {
+  key: string;
+  title?: string;
+  /** Cumulative absolute deadline (ms); null = untimed. */
+  deadlineMs: number | null;
+  remainingMs: number;
+}
+
+/** A shared passage (answer-free). `audioUrl` is reserved for the media phase (P6). */
+export interface Stimulus {
+  id: string;
+  kind: string;
+  title?: string;
+  body: string;
+  bodyB?: string;
+  notes?: string;
+  imageUrl?: string;
+  audioUrl?: string;
 }
 
 interface ExamMeta {
@@ -64,6 +92,10 @@ export interface ExamSit {
   remainingMs: number;
   exam: ExamMeta;
   questions: SitQuestion[];
+  /** JLPT sectional layout; absent on flat exams. */
+  sections?: SitSection[];
+  stimuli?: Stimulus[];
+  maxPoints?: number;
   /** question id → served option index (null = unanswered). */
   answers: Record<string, number | null>;
   flagged: string[];
@@ -84,6 +116,10 @@ export interface ExamResult extends Omit<ExamSit, "remainingMs"> {
   score: number;
   total: number;
   percent: number;
+  points?: number;
+  sectionScores?: Record<string, { score: number; total: number; points: number; maxPoints: number }>;
+  /** JLPT-style 0–60 estimate per section — an ESTIMATE, not the official scale. */
+  sectionEstimates?: Record<string, number>;
   results: ResultQuestion[];
 }
 

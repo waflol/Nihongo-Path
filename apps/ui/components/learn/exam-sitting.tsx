@@ -14,6 +14,7 @@ import {
   type ExamResult,
   type ResultQuestion,
 } from "./exam-types";
+import { SectionedSitting, SectionScoreTable } from "./exam-sectioned";
 
 /**
  * One exam sitting (P4-UI-01/02): the timed question flow with per-question
@@ -236,6 +237,29 @@ export function ExamSitting({ attemptId }: { attemptId: string }) {
     );
   }
 
+  // JLPT sectional exam (NP-409): parts, passages and a number grid.
+  if (sit!.sections && sit!.sections.length > 0) {
+    return (
+      <>
+        {error && (
+          <p role="alert" className="mx-auto mt-4 max-w-6xl rounded-lg bg-[#fef2f2] px-4 py-3 text-sm text-[#b91c1c]">{error}</p>
+        )}
+        <SectionedSitting
+          sit={sit!}
+          now={now}
+          remaining={remaining}
+          answers={answers}
+          setAnswers={setAnswers}
+          flagged={flagged}
+          toggleFlag={toggleFlag}
+          busy={busy}
+          saveState={saveState}
+          onSubmit={() => void submit(false)}
+        />
+      </>
+    );
+  }
+
   const questions = sit!.questions;
   const q = questions[current];
 
@@ -433,6 +457,11 @@ function ResultView({
           Đúng {result.score}/{result.total} câu
           {result.status === "timed_out" ? " · qua hạn, câu chưa trả lời tính 0" : ""}
         </p>
+        {result.points !== undefined && result.maxPoints !== undefined && (
+          <p className="mt-1 text-sm text-[var(--muted-foreground)]">
+            Điểm {result.points}/{result.maxPoints}
+          </p>
+        )}
         <div className="mt-5 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-center">
           <button
             type="button"
@@ -456,6 +485,8 @@ function ResultView({
           </button>
         </div>
       </div>
+
+      <SectionScoreTable result={result} />
 
       <div className="mt-5 space-y-3">
         {shown.length === 0 && (
