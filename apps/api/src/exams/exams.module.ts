@@ -9,6 +9,16 @@ import { User, UserSchema } from "../users/schemas/user.schema.js";
 import { Exam, ExamSchema } from "./schemas/exam.schema.js";
 import { ExamAttempt, ExamAttemptSchema } from "./schemas/attempt.schema.js";
 import { ExamStimulus, ExamStimulusSchema } from "./schemas/stimulus.schema.js";
+import { buildAiModule } from "../ai/ai.module.js";
+import { ExamImportController } from "./exam-import.controller.js";
+import { ExamImportService } from "./exam-import.service.js";
+import { ExamImportDraft, ExamImportDraftSchema } from "./schemas/import-draft.schema.js";
+import {
+  ExamImportJob,
+  ExamImportJobSchema,
+  ExamImportJobPage,
+  ExamImportJobPageSchema,
+} from "./schemas/import-job.schema.js";
 import { ExamsController } from "./exams.controller.js";
 import { ExamsService } from "./exams.service.js";
 import { StimuliService } from "./stimuli.service.js";
@@ -30,16 +40,20 @@ export function buildExamsModule(): DynamicModule {
     module: ExamsModule,
     imports: [
       buildDatabaseModule(),
+      buildAiModule(),
       MongooseModule.forFeature([
         { name: ExerciseQuestion.name, schema: ExerciseQuestionSchema },
         { name: Exam.name, schema: ExamSchema },
         { name: ExamAttempt.name, schema: ExamAttemptSchema },
         { name: ExamStimulus.name, schema: ExamStimulusSchema },
+        { name: ExamImportJob.name, schema: ExamImportJobSchema },
+        { name: ExamImportJobPage.name, schema: ExamImportJobPageSchema },
+        { name: ExamImportDraft.name, schema: ExamImportDraftSchema },
         { name: User.name, schema: UserSchema },
       ]),
     ],
-    controllers: [ExamsController],
-    providers: [ExamsService, StimuliService],
+    controllers: [ExamsController, ExamImportController],
+    providers: [ExamsService, StimuliService, ExamImportService],
   };
 }
 
