@@ -131,87 +131,128 @@ export function ExamImportTracker() {
   const visible = jobs.filter((j) => j.status === "running" || !seen.includes(j._id));
   if (visible.length === 0) return null;
 
+  const btn = "flex h-7 w-7 items-center justify-center rounded-md border text-sm transition-colors";
+  const tone = {
+    cancel: `${btn} border-[#ef4444]/40 bg-[#ef4444]/10 text-[#dc2626] hover:bg-[#ef4444]/25 dark:text-[#fca5a5]`,
+    log: `${btn} border-[#3b82f6]/40 bg-[#3b82f6]/10 text-[#2563eb] hover:bg-[#3b82f6]/25 dark:text-[#93c5fd]`,
+    page: `${btn} border-[color-mix(in_srgb,var(--primary)_40%,transparent)] bg-[color-mix(in_srgb,var(--primary)_12%,transparent)] text-[var(--primary)] hover:bg-[color-mix(in_srgb,var(--primary)_25%,transparent)]`,
+  };
+
   return (
     <div className="flex flex-col gap-2" aria-live="polite">
       {visible.map((j) => {
         const pct = percent(j);
-        const running = j.status === "running";
-        const label =
+        const active = j.status === "running";
+        const failed = j.status === "error";
+        const cancelled = j.status === "cancelled";
+        const showLog = logFor === j._id;
+        const badge = failed
+          ? "bg-[#ef4444]/15 text-[#dc2626] dark:text-[#fca5a5]"
+          : active
+            ? "bg-[color-mix(in_srgb,var(--primary)_16%,transparent)] text-[var(--primary)]"
+            : cancelled
+              ? "bg-[#f59e0b]/20 text-[#b45309] dark:text-[#fbbf24]"
+              : "bg-[#22c55e]/15 text-[#15803d] dark:text-[#86efac]";
+        const glyph = failed ? "✕" : cancelled ? "⏹" : active ? "試" : "✓";
+        const subtitle = active
+          ? `Đề ${j.level} · ${j.fileName}`
+          : failed
+            ? (j.error ?? "Nhập PDF thất bại")
+            : cancelled
+              ? "Đã hủy"
+              : "Hoàn tất";
+        const progress =
           j.phase === "structuring"
-            ? `Cấu trúc hoá khối ${j.blocksOk + j.blocksError}/${j.blocksFound}`
+            ? `${j.blocksOk + j.blocksError}/${j.blocksFound} khối`
             : j.numPages > 0
-              ? `Đọc trang ${j.pagesDone}/${j.numPages}`
+              ? `${j.pagesDone}/${j.numPages} trang`
               : "Đang chuẩn bị…";
         return (
-          <div key={j._id} className="rounded-xl border border-[var(--border)] bg-[var(--background-1)] p-3 text-sm shadow-lg">
-            <div className="flex items-start justify-between gap-2">
-              <p className="min-w-0 truncate font-medium text-[var(--foreground)]" title={j.fileName}>
-                Đề {j.level}: {j.fileName}
-              </p>
-              {!running && (
+          <div key={j._id} className="overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--background-1)] shadow-xl">
+            <div className="flex items-center gap-3 p-3">
+              <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-lg font-semibold ${badge}`} aria-hidden="true">
+                {glyph}
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-semibold text-[var(--foreground)]">Nhập đề JLPT từ PDF</p>
+                <p className="truncate text-xs text-[var(--muted-foreground)]" title={`${j.level} · ${j.fileName}`}>
+                  {subtitle}
+                </p>
+              </div>
+              {active && <span className="text-lg font-semibold tabular-nums text-[var(--foreground)]">{j.numPages > 0 ? `${pct}%` : "…"}</span>}
+              {!active && (
                 <button
                   type="button"
                   onClick={() => dismiss(j._id)}
                   aria-label="Đóng"
-                  className="text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+                  className="rounded-md px-1.5 py-0.5 text-[var(--muted-foreground)] hover:bg-[var(--layer)] hover:text-[var(--foreground)]"
                 >
                   ✕
                 </button>
               )}
             </div>
-            {running && (
-              <>
+
+            <div className="px-3 pb-3">
+              <div role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100} className="h-2 overflow-hidden rounded-full bg-[var(--layer)]">
                 <div
-                  role="progressbar"
-                  aria-valuenow={pct}
-                  aria-valuemin={0}
-                  aria-valuemax={100}
-                  className="mt-2 h-2 overflow-hidden rounded-full bg-[var(--layer)]"
-                >
-                  <div className="h-full bg-[var(--primary)] transition-all" style={{ width: `${Math.max(pct, 3)}%` }} />
-                </div>
-                <p className="mt-1 flex flex-wrap items-center gap-x-3 text-xs text-[var(--muted-foreground)]">
-                  <span>
-                    {label} ({pct}%) — bạn có thể sang trang khác
-                  </span>
-                  <button type="button" onClick={() => cancel(j._id)} className="font-medium text-[var(--foreground)] underline">
-                    Hủy
+                  className={`h-full rounded-full transition-all duration-500 ${
+                    failed || cancelled
+                      ? "bg-[var(--muted-foreground)]"
+                      : !active
+                        ? "bg-[#22c55e]"
+                        : `bg-gradient-to-r from-[var(--primary)] to-[color-mix(in_srgb,var(--primary)_55%,#22c55e)] ${j.numPages === 0 ? "animate-pulse" : ""}`
+                  }`}
+                  style={{ width: `${active ? Math.max(pct, 4) : pct}%` }}
+                />
+              </div>
+              <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-[var(--muted-foreground)]">
+                <span className="tabular-nums">{progress}</span>
+                {j.blocksOk > 0 && (
+                  <span className="rounded-full bg-[#22c55e]/15 px-2 py-0.5 font-semibold text-[#15803d] dark:text-[#86efac]">{j.blocksOk} khối ok</span>
+                )}
+                {j.blocksError > 0 && (
+                  <span className="rounded-full bg-[#f59e0b]/20 px-2 py-0.5 font-semibold text-[#b45309] dark:text-[#fbbf24]">{j.blocksError} cần xem xét</span>
+                )}
+              </div>
+
+              <div className="mt-3 flex items-center gap-1.5">
+                {active && (
+                  <button type="button" className={tone.cancel} onClick={() => cancel(j._id)} title="Hủy" aria-label="Hủy">
+                    ✕
                   </button>
-                </p>
-              </>
-            )}
-            {j.status === "done" && (
-              <p className="mt-1 text-xs text-[var(--muted-foreground)]">
-                Đã nhập xong · {j.blocksOk} khối ok{j.blocksError > 0 ? ` · ${j.blocksError} khối cần xem lại` : ""}.{" "}
-                <Link href="/admin/exams" onClick={() => dismiss(j._id)} className="font-medium text-[var(--primary)] hover:underline">
-                  Xem kết quả →
+                )}
+                <Link
+                  href="/admin/exams/import"
+                  onClick={active ? undefined : () => dismiss(j._id)}
+                  className={`${tone.page} ml-auto`}
+                  title="Mở trang nhập đề"
+                  aria-label="Mở trang nhập đề"
+                >
+                  ▤
                 </Link>
-              </p>
-            )}
-            {j.status === "cancelled" && (
-              <p className="mt-1 text-xs text-[var(--muted-foreground)]">
-                Đã hủy ở {j.phase === "structuring" ? `khối ${j.blocksOk + j.blocksError}/${j.blocksFound}` : `trang ${j.pagesDone}/${j.numPages}`}.
-              </p>
-            )}
-            {j.status === "error" && <p className="mt-1 text-xs text-[#b91c1c]">{j.error ?? "Nhập PDF thất bại"}</p>}
-            <button
-              type="button"
-              onClick={() => toggleLog(j._id)}
-              aria-expanded={logFor === j._id}
-              className="mt-1 text-xs font-medium text-[var(--muted-foreground)] underline hover:text-[var(--foreground)]"
-            >
-              {logFor === j._id ? "Ẩn nhật ký" : "Nhật ký"}
-            </button>
-            {logFor === j._id && (
-              <ul className="mt-1 max-h-40 overflow-y-auto rounded-md bg-[var(--layer)] p-2 font-mono text-[11px] leading-snug">
-                {log.length === 0 && <li className="text-[var(--muted-foreground)]">Chưa có dòng nhật ký.</li>}
-                {[...log].reverse().map((l, i) => (
-                  <li key={i} className={l.level === "error" ? "text-[#b91c1c]" : l.level === "warn" ? "text-[#b45309]" : "text-[var(--foreground)]"}>
-                    <span className="text-[var(--muted-foreground)]">{new Date(l.at).toLocaleTimeString("vi-VN")}</span> {l.msg}
-                  </li>
-                ))}
-              </ul>
-            )}
+                <button
+                  type="button"
+                  className={`${tone.log} ${showLog ? "ring-2 ring-[#3b82f6]/40" : ""}`}
+                  onClick={() => toggleLog(j._id)}
+                  title={showLog ? "Ẩn log" : "Xem log"}
+                  aria-label={showLog ? "Ẩn log" : "Xem log"}
+                  aria-pressed={showLog}
+                >
+                  ☰
+                </button>
+              </div>
+              {showLog && (
+                <ul className="mt-2 max-h-56 space-y-1 overflow-y-auto rounded-lg bg-[var(--layer)] p-2 text-xs">
+                  {log.length === 0 && <li className="text-[var(--muted-foreground)]">Chưa có dòng log.</li>}
+                  {[...log].reverse().map((l, i) => (
+                    <li key={i} className="text-[var(--foreground)]">
+                      <span className="mr-1 tabular-nums text-[var(--muted-foreground)]">{new Date(l.at).toLocaleTimeString("vi-VN")}</span>
+                      <span className={l.level === "error" ? "text-[#dc2626] dark:text-[#fca5a5]" : l.level === "warn" ? "text-[#b45309] dark:text-[#fbbf24]" : ""}>{l.msg}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
           </div>
         );
       })}
