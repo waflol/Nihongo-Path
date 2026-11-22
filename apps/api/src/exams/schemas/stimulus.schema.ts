@@ -54,6 +54,10 @@ export class ExamStimulus {
   @Prop({ type: String })
   imageUrl?: string;
 
+  /** Listening clip shared by the whole group (NP-410). */
+  @Prop({ type: Object })
+  audio?: { assetId: string; startSec?: number; endSec?: number } | null;
+
   /** How many bank questions attach to this passage — the generator matches on it. */
   @Prop({ type: Number, required: true })
   questionCount: number;

@@ -47,6 +47,8 @@ export interface BankQuestion {
   groupOrder?: number;
   /** points the question is worth (default 1). */
   points?: number;
+  /** Listening clip (NP-410). */
+  audio?: { assetId: string; startSec?: number; endSec?: number };
 }
 
 /** A shared reading passage, as the engine serves it (no answers). */
@@ -58,6 +60,8 @@ export interface StimulusView {
   bodyB?: string;
   notes?: string;
   imageUrl?: string;
+  /** Listening clip shared by the group (NP-410). */
+  audio?: { assetId: string; startSec?: number; endSec?: number };
 }
 
 /** The attempt snapshot the engine works on (plain, lean-shaped). */
@@ -113,6 +117,8 @@ export interface SitQuestion {
   groupOrder?: number;
   /** Section key this question was drawn for (exam sections, NP-406). */
   sectionKey?: string;
+  /** Listening clip (NP-410): the UI plays `assetId` from `startSec` to `endSec`. */
+  audio?: { assetId: string; startSec?: number; endSec?: number };
 }
 
 /** An exam part as the sit payload describes it (NP-406). */
@@ -327,6 +333,7 @@ export function buildSitPayload(
     stimulusId: q.stimulusId,
     groupOrder: q.groupOrder,
     sectionKey: attempt.questionSections?.[q._id],
+    audio: q.audio,
   }));
   const payload: SitPayload = {
     attemptId: String(attempt._id ?? ""),
@@ -1039,7 +1046,7 @@ export class ExamsService {
   private async loadBank(ids: Types.ObjectId[]): Promise<BankQuestion[]> {
     const rows = await this.bank
       .find({ _id: { $in: ids } })
-      .select("kind prompt sub options answer explain mondai section stimulus groupOrder points")
+      .select("kind prompt sub options answer explain mondai section stimulus groupOrder points audio")
       .lean()
       .exec();
     return rows.map((r) => ({
@@ -1055,6 +1062,7 @@ export class ExamsService {
       stimulusId: r.stimulus ? String(r.stimulus) : undefined,
       groupOrder: r.groupOrder,
       points: r.points,
+      audio: r.audio ?? undefined,
     }));
   }
 
@@ -1082,7 +1090,7 @@ export class ExamsService {
     if (stimulusIds.length > 0) {
       const rows = await this.stimuli
         .find({ _id: { $in: stimulusIds } })
-        .select("kind title body bodyB notes imageUrl")
+        .select("kind title body bodyB notes imageUrl audio")
         .lean()
         .exec();
       const byId = new Map(rows.map((s) => [String(s._id), s]));
@@ -1097,6 +1105,7 @@ export class ExamsService {
           bodyB: s.bodyB || undefined,
           notes: s.notes || undefined,
           imageUrl: s.imageUrl || undefined,
+          audio: s.audio ?? undefined,
         };
         return [view];
       });

@@ -127,6 +127,10 @@ export class ExerciseQuestion {
   sourceRef?: { file: string; sitting?: string; no?: string } | null;
 
   /** Cross-source duplicate fingerprint (sha1 of prompt + sorted options). */
+  /** Listening clip (NP-410): which `exam_audio_assets` file, and which stretch of it. */
+  @Prop({ type: Object })
+  audio?: { assetId: string; startSec?: number; endSec?: number } | null;
+
   @Prop({ type: String, index: { unique: true, sparse: true } })
   contentHash?: string;
 

@@ -72,6 +72,12 @@ export function ExamsConsole() {
       {dialog}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-semibold tracking-tight text-[var(--foreground)]">Đề thi</h1>
+        <Link
+          href="/admin/exams/import"
+          className="rounded-lg border border-[var(--border)] px-3 py-1.5 text-sm font-medium text-[var(--foreground)] hover:bg-[var(--layer-hover)]"
+        >
+          Nhập PDF / file nghe
+        </Link>
       </div>
       <p className="mt-1 text-sm text-[var(--muted-foreground)]">
         Soạn đề từ ngân hàng câu hỏi 問題, đặt thời gian / xáo trộn / công

@@ -42,6 +42,32 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   const cancel = new URL(request.url).searchParams.get("cancel");
-  if (!cancel || !ID.test(cancel)) return NextResponse.json({ error: "id không hợp lệ" }, { status: 400 });
-  return forward(`/${cancel}/cancel`, "POST");
+  if (cancel) {
+    if (!ID.test(cancel)) return NextResponse.json({ error: "id không hợp lệ" }, { status: 400 });
+    return forward(`/${cancel}/cancel`, "POST");
+  }
+  // Upload: forward the multipart body as bytes (a stream needs `duplex`).
+  const session = await getSession();
+  if (!session.authenticated || !session.accessToken) {
+    return NextResponse.json({ error: "Không đăng nhập" }, { status: 401 });
+  }
+  const bytes = await request.arrayBuffer();
+  const r = await fetch(`${API_BASE_URL}/exams/admin/import`, {
+    method: "POST",
+    headers: {
+      ...(await clientIpHeaders()),
+      Authorization: `Bearer ${session.accessToken}`,
+      "Content-Type": request.headers.get("content-type") ?? "",
+    },
+    body: bytes,
+    cache: "no-store",
+  });
+  const t = await r.text();
+  let body: unknown = t;
+  try {
+    body = t ? JSON.parse(t) : null;
+  } catch {
+    /* keep text */
+  }
+  return NextResponse.json(body, { status: r.status });
 }

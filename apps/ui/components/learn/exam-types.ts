@@ -52,6 +52,8 @@ export interface SitQuestion {
   stimulusId?: string;
   groupOrder?: number;
   sectionKey?: string;
+  /** Listening clip of this question (NP-410). */
+  audio?: AudioRef;
 }
 
 /** An exam part (文字・語彙 / 文法 / 読解 / 聴解) as the sit payload describes it. */
@@ -63,7 +65,20 @@ export interface SitSection {
   remainingMs: number;
 }
 
-/** A shared passage (answer-free). `audioUrl` is reserved for the media phase (P6). */
+/** A listening clip: the asset, and the stretch of it this question/passage plays (NP-410). */
+export interface AudioRef {
+  assetId: string;
+  startSec?: number;
+  endSec?: number;
+}
+
+/** Player URL for a clip; the `#t=` media fragment makes the browser play only the stretch. */
+export function audioSrc(a: AudioRef): string {
+  const t = a.startSec !== undefined || a.endSec !== undefined ? `#t=${a.startSec ?? 0}${a.endSec !== undefined ? `,${a.endSec}` : ""}` : "";
+  return `/api/exam-audio/${encodeURIComponent(a.assetId)}${t}`;
+}
+
+/** A shared passage (answer-free). */
 export interface Stimulus {
   id: string;
   kind: string;
@@ -73,6 +88,8 @@ export interface Stimulus {
   notes?: string;
   imageUrl?: string;
   audioUrl?: string;
+  /** Listening clip shared by the group. */
+  audio?: AudioRef;
 }
 
 interface ExamMeta {

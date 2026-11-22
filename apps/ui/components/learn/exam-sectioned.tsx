@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState, type Dispatch, type SetStateAction } from "react";
-import type { ExamResult, ExamSit, SitQuestion, Stimulus } from "./exam-types";
+import { audioSrc, type ExamResult, type ExamSit, type SitQuestion, type Stimulus } from "./exam-types";
 
 /**
  * JLPT sectional sitting (NP-409): tabs per part (文字・語彙 / 文法 / 読解 / 聴解),
@@ -79,8 +79,8 @@ function PassageView({ s }: { s: Stimulus }) {
   return (
     <div className="space-y-3 text-base leading-relaxed text-[var(--foreground)]" lang="ja">
       {s.title && <p className="font-semibold">{s.title}</p>}
-      {s.audioUrl ? (
-        <audio controls preload="none" src={s.audioUrl} className="w-full" />
+      {s.audio || s.audioUrl ? (
+        <audio controls preload="none" src={s.audio ? audioSrc(s.audio) : s.audioUrl} className="w-full" />
       ) : s.kind === "listening" ? (
         <p className="rounded-lg bg-[var(--layer)] px-3 py-2 text-sm text-[var(--muted-foreground)]" lang="vi">
           Âm thanh của câu này chưa có (phần media đang chờ).
@@ -137,6 +137,13 @@ function QuestionCard({
         {q.prompt}
       </p>
       {q.sub && <p className="mt-1 text-sm text-[var(--muted-foreground)]">{q.sub}</p>}
+      {q.audio ? (
+        <audio controls preload="none" src={audioSrc(q.audio)} className="mt-3 w-full" />
+      ) : q.mondai === "listening" && !q.stimulusId ? (
+        <p className="mt-3 rounded-lg bg-[var(--layer)] px-3 py-2 text-sm text-[var(--muted-foreground)]">
+          Âm thanh của câu này chưa có.
+        </p>
+      ) : null}
       <div role="radiogroup" aria-label={`Câu ${no}`} className="mt-3 grid gap-2">
         {q.options.map((opt, idx) => {
           const on = picked === idx;

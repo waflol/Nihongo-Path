@@ -158,3 +158,6 @@ apps/api/data/kanji/
 # Antigravity CLI state of each service (sign-in data) - never commit
 apps/api/data/antigravity-cli/
 apps/api/data/gemini-cli/
+
+# Uploaded listening clips (NP-410)
+apps/api/storage/
