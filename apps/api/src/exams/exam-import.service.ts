@@ -93,11 +93,12 @@ export class ExamImportService implements OnApplicationBootstrap {
       .exec()) as unknown as Record<string, unknown>[];
   }
 
-  /** The event log of one job. */
-  async jobLog(caller: AuthUser, jobId: string): Promise<{ status: string; log: unknown[] }> {
-    const job = await this.jobs.findOne({ _id: jobId, user: caller.sub }).select("status log").lean().exec();
+  /** The event log of one job, with its progress counters for the log page. */
+  async jobLog(caller: AuthUser, jobId: string): Promise<{ status: string; log: unknown[]; job: Record<string, unknown> }> {
+    const job = await this.jobs.findOne({ _id: jobId, user: caller.sub }).lean().exec();
     if (!job) throw new NotFoundException("Import job not found");
-    return { status: job.status, log: job.log ?? [] };
+    const { log, ...rest } = job as unknown as { log?: unknown[] } & Record<string, unknown>;
+    return { status: job.status, log: log ?? [], job: rest };
   }
 
   /** Stop a running job; the work already done (pages, drafts) is kept. */

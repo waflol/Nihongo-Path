@@ -243,6 +243,9 @@ export function ExamImportTracker() {
                 >
                   ☰
                 </button>
+                <Link href={`/admin/exams/import/${j._id}/log`} className={tone.page} title="Mở trang log" aria-label="Mở trang log">
+                  ↗
+                </Link>
               </div>
               {showLog && (
                 <ul className="mt-2 max-h-56 space-y-1 overflow-y-auto rounded-lg bg-[var(--layer)] p-2 text-xs">
