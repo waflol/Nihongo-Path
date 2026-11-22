@@ -61,6 +61,13 @@ export class ExamImportController {
     return this.imports.startJob(caller, file.buffer, { fileName: file.originalname, level, rights });
   }
 
+  @Get()
+  @ContentAdmin()
+  @ApiOperation({ summary: "My recent import jobs (progress only)" })
+  list(@CurrentUser() caller: AuthUser) {
+    return this.imports.listJobs(caller);
+  }
+
   @Get("drafts")
   @ContentAdmin()
   @ApiOperation({ summary: "Drafts of an import job (optionally by status)" })
@@ -81,6 +88,21 @@ export class ExamImportController {
   @HttpCode(HttpStatus.OK)
   discard(@CurrentUser() caller: AuthUser, @Param("id") id: string) {
     return this.imports.discard(caller, id);
+  }
+
+  @Get(":jobId/log")
+  @ContentAdmin()
+  @ApiOperation({ summary: "Event log of an import job" })
+  log(@CurrentUser() caller: AuthUser, @Param("jobId") jobId: string) {
+    return this.imports.jobLog(caller, jobId);
+  }
+
+  @Post(":jobId/cancel")
+  @ContentAdmin()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: "Cancel a running import job (work done so far is kept)" })
+  cancel(@CurrentUser() caller: AuthUser, @Param("jobId") jobId: string) {
+    return this.imports.cancel(caller, jobId);
   }
 
   @Get(":jobId")

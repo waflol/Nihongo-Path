@@ -1,7 +1,7 @@
 import { Prop, Schema, SchemaFactory } from "@nestjs/mongoose";
 import { HydratedDocument } from "mongoose";
 
-export const EXAM_IMPORT_JOB_STATUSES = ["running", "done", "error"] as const;
+export const EXAM_IMPORT_JOB_STATUSES = ["running", "done", "error", "cancelled"] as const;
 
 /**
  * A background JLPT exam-PDF import job (NP-407). Persisted so the progress
@@ -47,6 +47,14 @@ export class ExamImportJob {
 
   @Prop({ type: String })
   error?: string;
+
+  /** What the job is doing now: `reading` pages → `structuring` blocks. */
+  @Prop({ type: String, default: "reading" })
+  phase: string;
+
+  /** Capped event log (newest last) for the admin to check what happened. */
+  @Prop({ type: [Object], default: [] })
+  log: { at: Date; level: "info" | "warn" | "error"; msg: string }[];
 
   @Prop({ type: Date })
   finishedAt?: Date;

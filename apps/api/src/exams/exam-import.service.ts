@@ -68,6 +68,52 @@ export class ExamImportService implements OnApplicationBootstrap {
     private readonly services: AiServicesService,
   ) {}
 
+  /** Append to the job's event log (capped at the newest 400 lines). */
+  private async log(id: string, level: "info" | "warn" | "error", msg: string): Promise<void> {
+    await this.jobs
+      .updateOne({ _id: id }, { $push: { log: { $each: [{ at: new Date(), level, msg: msg.slice(0, 400) }], $slice: -400 } } })
+      .exec()
+      .catch(() => undefined);
+  }
+
+  /** The admin pressed Cancel (status flipped by `cancel`). */
+  private async isCancelled(id: string): Promise<boolean> {
+    const j = await this.jobs.findById(id).select("status").lean().exec();
+    return !j || j.status === "cancelled";
+  }
+
+  /** My recent jobs (progress only — no drafts, no log) for the global tracker. */
+  async listJobs(caller: AuthUser): Promise<Record<string, unknown>[]> {
+    return (await this.jobs
+      .find({ user: caller.sub })
+      .select("-log")
+      .sort({ createdAt: -1 })
+      .limit(10)
+      .lean()
+      .exec()) as unknown as Record<string, unknown>[];
+  }
+
+  /** The event log of one job. */
+  async jobLog(caller: AuthUser, jobId: string): Promise<{ status: string; log: unknown[] }> {
+    const job = await this.jobs.findOne({ _id: jobId, user: caller.sub }).select("status log").lean().exec();
+    if (!job) throw new NotFoundException("Import job not found");
+    return { status: job.status, log: job.log ?? [] };
+  }
+
+  /** Stop a running job; the work already done (pages, drafts) is kept. */
+  async cancel(caller: AuthUser, jobId: string): Promise<{ cancelled: boolean }> {
+    const r = await this.jobs
+      .updateOne({ _id: jobId, user: caller.sub, status: "running" }, { $set: { status: "cancelled", finishedAt: new Date() } })
+      .exec();
+    if (r.matchedCount === 0) {
+      const exists = await this.jobs.exists({ _id: jobId, user: caller.sub });
+      if (!exists) throw new NotFoundException("Import job not found");
+      return { cancelled: false };
+    }
+    await this.log(jobId, "warn", "Đã hủy theo yêu cầu — trang/bản nháp đã có được giữ lại");
+    return { cancelled: true };
+  }
+
   /** A job left `running` by a crash is resumed on boot (best effort). */
   async onApplicationBootstrap() {
     const stuck = await this.jobs.find({ status: "running" }).select("_id").lean().exec().catch(() => []);
@@ -117,13 +163,22 @@ export class ExamImportService implements OnApplicationBootstrap {
       //    before the first draft re-reads nothing new — the pages already
       //    checkpointed are kept and the rest are marked for re-upload.
       let numPages = job.numPages;
+      if (!seed && job.pagesDone < job.numPages) {
+        // The PDF bytes are not stored, so a restart cannot read the rest.
+        await this.jobs.updateOne({ _id: id }, { $set: { status: "error", error: "Máy chủ khởi động lại khi đang đọc — hãy tải PDF lên lại", finishedAt: new Date() } }).exec();
+        await this.log(id, "error", `Máy chủ khởi động lại ở trang ${job.pagesDone}/${job.numPages} — cần tải PDF lên lại`);
+        return;
+      }
       if (seed) {
         const pdf = await openProsePdf(seed.buffer, (png, n) => this.ai.ocrExamPageText(png, n));
         numPages = pdf.numPages;
         await this.jobs.updateOne({ _id: id }, { $set: { numPages } }).exec();
+        await this.log(id, "info", `Mở PDF: ${numPages} trang — đọc từng trang`);
         for (let n = 1; n <= pdf.numPages; n += 1) {
+          if (await this.isCancelled(id)) return;
           if (await this.pageExists(id, n)) continue; // already checkpointed
           const text = await pdf.pageText(n);
+          await this.log(id, text ? "info" : "warn", text ? `Trang ${n}/${numPages}: ${text.length} ký tự` : `Trang ${n}/${numPages}: trống`);
           await this.pages.updateOne(
             { job: id, n },
             {
@@ -138,6 +193,7 @@ export class ExamImportService implements OnApplicationBootstrap {
         }
       }
 
+      await this.jobs.updateOne({ _id: id, status: "running" }, { $set: { phase: "structuring" } }).exec();
       // 2. Segment the checkpointed pages into 問題 blocks + the answer key.
       const pageRows = await this.pages.find({ job: id }).sort({ n: 1 }).lean().exec();
       const pageTexts = new Map(pageRows.map((p) => [p.n, p.text]));
@@ -155,7 +211,10 @@ export class ExamImportService implements OnApplicationBootstrap {
       };
       let ok = 0;
       let bad = 0;
+      await this.jobs.updateOne({ _id: id }, { $set: { blocksFound: blocks.length } }).exec();
+      await this.log(id, "info", `Tách được ${blocks.length} khối 問題, ${keyBlocks.length} khối bảng đáp án`);
       for (const [i, block] of blocks.entries()) {
+        if (await this.isCancelled(id)) return;
         if (await this.draftExistsForJobBlock(id, i)) continue; // resume: skip
         const draft = await this.structureBlock(
           id,
@@ -169,17 +228,25 @@ export class ExamImportService implements OnApplicationBootstrap {
         );
         if (draft.status === "error") bad += 1;
         else ok += 1;
+        await this.jobs.updateOne({ _id: id }, { $set: { blocksOk: ok, blocksError: bad } }).exec();
+        await this.log(
+          id,
+          draft.status === "error" ? "warn" : "info",
+          `Khối ${i + 1}/${blocks.length} (${block.mondai ?? "?"}): ${draft.status === "error" ? "cần xem lại" : "ok"}`,
+        );
       }
 
       await this.jobs
         .updateOne(
-          { _id: id },
-          { $set: { blocksFound: blocks.length, blocksOk: ok, blocksError: bad, status: "done", finishedAt: new Date() } },
+          { _id: id, status: "running" },
+          { $set: { blocksFound: blocks.length, blocksOk: ok, blocksError: bad, status: "done", phase: "done", finishedAt: new Date() } },
         )
         .exec();
+      await this.log(id, "info", `Xong: ${ok} khối ok, ${bad} cần xem lại`);
       this.logger.log(`exam-import job ${id}: ${blocks.length} blocks, ${ok} ok, ${bad} need review`);
     } catch (err) {
-      await this.jobs.updateOne({ _id: id }, { $set: { status: "error", error: String((err as Error).message).slice(0, 500) } }).exec().catch(() => undefined);
+      await this.jobs.updateOne({ _id: id }, { $set: { status: "error", error: String((err as Error).message).slice(0, 500), finishedAt: new Date() } }).exec().catch(() => undefined);
+      await this.log(id, "error", String((err as Error).message));
     } finally {
       this.running.delete(id);
     }
