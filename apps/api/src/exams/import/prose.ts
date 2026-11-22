@@ -1,4 +1,4 @@
-import { isGarbageText, renderPdfPage } from "../../import/parsers/pdf.js";
+import { isGarbageText, pdfjsWasmUrl, renderPdfPage } from "../../import/parsers/pdf.js";
 import { UnsupportedFormatError } from "../../import/parsers/types.js";
 
 /**
@@ -83,7 +83,7 @@ export async function openProsePdf(
   const pdfjs = await loadPdfjs();
   let doc;
   try {
-    doc = await pdfjs.getDocument({ data: new Uint8Array(buffer), useSystemFonts: false, verbosity: 0 }).promise;
+    doc = await pdfjs.getDocument({ data: new Uint8Array(buffer), useSystemFonts: false, verbosity: 0, wasmUrl: pdfjsWasmUrl() }).promise;
   } catch {
     throw new UnsupportedFormatError("Cannot read this PDF");
   }

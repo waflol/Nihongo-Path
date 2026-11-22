@@ -1,6 +1,19 @@
 import type { OcrRow, Table } from "./types.js";
 import { normalizeWord } from "../normalize-word.js";
 import { EmptyTableError, UnsupportedFormatError, sanitizeHeaderCell } from "./types.js";
+import { createRequire } from "node:module";
+import { dirname } from "node:path";
+
+/**
+ * Directory of pdfjs' WASM decoders (JBIG2 / JPEG2000 / colour). Scanned
+ * exam papers are very often JBIG2: without `wasmUrl` the page image fails to
+ * decode and renders BLANK, so OCR would read an empty page (NP-407).
+ */
+export function pdfjsWasmUrl(): string {
+  const pkg = createRequire(import.meta.url).resolve("pdfjs-dist/package.json");
+  return `${dirname(pkg)}/wasm/`;
+}
+
 
 /**
  * PDF vocabulary-table reader (P3-IMPORT-05).
@@ -273,7 +286,7 @@ export function rowNumberIssues(pages: (OcrRow[] | null)[]): (("nonum" | "dupno"
 /** Render one page of a PDF (1-based) to PNG — for review and single-page retries. */
 export async function renderPdfPage(buffer: Buffer, n: number): Promise<Buffer> {
   const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
-  const doc = await pdfjs.getDocument({ data: new Uint8Array(buffer), useSystemFonts: false, verbosity: 0 }).promise;
+  const doc = await pdfjs.getDocument({ data: new Uint8Array(buffer), useSystemFonts: false, verbosity: 0, wasmUrl: pdfjsWasmUrl() }).promise;
   if (n < 1 || n > doc.numPages) throw new UnsupportedFormatError(`Page ${n} does not exist`);
   try {
     return await renderPage(await doc.getPage(n));
@@ -353,6 +366,7 @@ export async function parsePdf(
       data: new Uint8Array(buffer),
       useSystemFonts: false,
       verbosity: 0,
+      wasmUrl: pdfjsWasmUrl(),
     }).promise;
   } catch {
     throw new UnsupportedFormatError("Cannot read this PDF");
