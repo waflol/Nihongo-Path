@@ -128,7 +128,10 @@ export function ExamImportTracker() {
   }
 
   if (!enabled) return null;
-  const visible = jobs.filter((j) => j.status === "running" || !seen.includes(j._id));
+  // Running jobs, plus only the latest finished one (older cards would pile up
+  // and push the running card + its log off the screen).
+  const latestDone = jobs.find((j) => j.status !== "running" && !seen.includes(j._id));
+  const visible = jobs.filter((j) => j.status === "running" || j._id === latestDone?._id);
   if (visible.length === 0) return null;
 
   const btn = "flex h-7 w-7 items-center justify-center rounded-md border text-sm transition-colors";
