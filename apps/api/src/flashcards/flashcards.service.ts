@@ -343,6 +343,13 @@ export class FlashcardsService implements OnModuleInit {
     return doc;
   }
 
+  /** `getDeck` plus its `cardCount`, so the card manager's header can show "N thẻ". */
+  async getDeckWithCount(caller: AuthUser, id: string): Promise<Record<string, unknown>> {
+    const doc = await this.getDeck(caller, id);
+    const cardCount = await this.card.countDocuments({ deck: doc._id }).exec();
+    return { ...doc.toObject(), cardCount };
+  }
+
   /**
    * Create a personal deck for the caller. Admins may instead seed a shared
    * deck by passing `shared: true` (that is the import path, P3-IMPORT-04,

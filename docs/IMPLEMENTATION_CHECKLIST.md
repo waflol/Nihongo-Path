@@ -270,10 +270,10 @@ chặn route, CRUD nội dung. Test case: `T-P2-01` … `T-P2-10`.
 | P3-UI-01 | Màn hình học flashcard (card flip, phím tắt, a11y) | P3-SRS-04 | `app/learn/study/*`, `components/learn/study-session.tsx` | Lật thẻ, đánh giá (kể cả khi chưa lật), chuyển thẻ prev/next, xáo trộn, đặt lại bộ | bấm thử trình duyệt 05/11/2026 (tài khoản learner local): lật/đánh giá/phím tắt/prev-next, trắc nghiệm + gõ đáp án bỏ dấu, tạo deck/thẻ | `[x]` |
 | P3-UI-07 | Khu bài tập (trắc nghiệm 4 lựa chọn + gõ đáp án) | P3-UI-01 | `app/learn/exercises/*`, `components/learn/exercises-console.tsx`, `components/learn/quiz-utils.ts` | Đúng/sai tức thì; so khớp bỏ dấu; không ghi SRS | bấm thử trình duyệt 05/11/2026 (tài khoản learner local): lật/đánh giá/phím tắt/prev-next, trắc nghiệm + gõ đáp án bỏ dấu, tạo deck/thẻ | `[x]` |
 | P3-SRS-07 | API đặt lại tiến độ học của một bộ thẻ | P3-SRS-03 | `srs.service.ts` (`resetDeck`), `srs.controller.ts` (`POST /srs/decks/:deckId/reset`) | Xoá progress của user trên bộ đó; thẻ giữ nguyên | gọi API live 18/11/2026: reset deck 3 thẻ → cleared 3, tiến độ về new 3, thẻ giữ nguyên | `[x]` |
-| P3-UI-02 | Wizard nhập hàng loạt (upload → map cột → preview → xác nhận) | P3-IMPORT-04 | `app/admin/import/*`, `components/admin/import-wizard.tsx` | 4 bước rõ ràng, huỷ giữa chừng | build + API đã verify (chưa bấm trình duyệt) | `[~]` |
+| P3-UI-02 | Wizard nhập hàng loạt (upload → map cột → preview → xác nhận) | P3-IMPORT-04 | `app/admin/import/*`, `components/admin/import-wizard.tsx` | 4 bước rõ ràng, huỷ giữa chừng | đã bấm trình duyệt 23/11/2026 (xem NP-023) | `[x]` |
 | P3-UI-03 | Danh sách bộ thẻ + tiến độ | P3-CARD-03 | `app/learn/decks/*`, `components/learn/decks-console.tsx` | Hiển thị số thẻ mới/đến hạn | bấm thử trình duyệt 05/11/2026: tạo bộ, thêm thẻ, số thẻ mới/đến hạn | `[x]` |
-| P3-UI-04 | Màn admin quản lý bộ thẻ chung | P3-CARD-03 | `app/admin/decks/*`, `components/admin/shared-decks-console.tsx` | Admin tạo/chỉnh/xoá deck chung + thêm thẻ; người học read-only | build + API đã verify (chưa bấm trình duyệt) | `[~]` |
-| P3-UI-05 | Thêm/xoá thẻ trong UI + đánh giá mượt (optimistic + batch) | P3-CARD-03 | `decks-console.tsx`, `study-session.tsx`, `srs.controller.ts` (`reviews/batch`) | Thêm thẻ trực tiếp từ danh sách bộ; đánh giá không đợi API mỗi thẻ, flush batch | build + API đã verify (chưa bấm trình duyệt) | `[~]` |
+| P3-UI-04 | Màn admin quản lý bộ thẻ chung | P3-CARD-03 | `app/admin/decks/*`, `components/admin/shared-decks-console.tsx` | Admin tạo/chỉnh/xoá deck chung + thêm thẻ; người học read-only | đã bấm trình duyệt 23/11/2026 (xem NP-023) | `[x]` |
+| P3-UI-05 | Thêm/xoá thẻ trong UI + đánh giá mượt (optimistic + batch) | P3-CARD-03 | `decks-console.tsx`, `study-session.tsx`, `srs.controller.ts` (`reviews/batch`) | Thêm thẻ trực tiếp từ danh sách bộ; đánh giá không đợi API mỗi thẻ, flush batch | đã bấm trình duyệt 23/11/2026 (xem NP-023) | `[x]` |
 | P3-UI-08 | Trang hoàn thành khi bộ đã học xong (thống kê Quên/Khó/Tốt/Thuộc), "Học lại phiên này" chỉ học thẻ chưa thuộc (thuộc hết → Đặt lại), popup xác nhận đặt lại | P3-UI-01 | `study-session.tsx`, `study-complete.tsx`, `confirm-dialog.tsx`, `srs.service.ts` (`getQueue`: `total`, `grades`, `reviewAhead`, `nextDueDay`) | Bộ đã học xong không hiện "chưa có thẻ"; nút học lại đúng nhóm thẻ | bấm thử trình duyệt 05/11/2026 (QA Deck) | `[x]` |
 | P3-UI-09 | Người dùng xuất bộ thẻ ra CSV (cùng cột với wizard nhập) | P3-UI-03 | `GET /flashcards/decks/:id/export`, `decks-console.tsx` | Chỉ xuất được bộ của mình/bộ chung đã phát hành | build + gọi API live 18/11/2026: export 200, CSV đủ cột wizard và đủ thẻ (chưa bấm nút tải trên UI) | `[x]` |
 | P3-DOC-01 | Cập nhật `database.md` cho deck/card/progress + SRS state | P3-SRS-02 | `docs/database.md` | Khớp code | đối chiếu | `[x]` |
@@ -326,9 +326,7 @@ chặn route, CRUD nội dung. Test case: `T-P2-01` … `T-P2-10`.
 > luyện thi 問題 (`exercise_questions`, `/learn/exam`), báo lỗi thẻ (`cardreports`, `/admin/reports`), cảnh báo xem xét thẻ nhập (`reviewIssues`, tự điền/sửa Hán Việt từ `packages/shared/han-viet.json`),
 > cho phép nhập từ để trống nghĩa (+ AI gợi ý nghĩa), lưu nháp wizard nhập qua IndexedDB, huỷ job PDF,
 > giám sát máy chủ `/admin/system` (CPU/RAM/ổ đĩa + biểu đồ), quản lý thẻ trong deck, giới hạn thẻ mới/ngày, thống kê tiến độ, ôn chéo deck, điều khoản & bảo mật (`/terms`, `/privacy`). Xem `architecture.md` §8.
-> Thao tác tay trong trình duyệt cho P3-UI-02/04/05 (build xanh + API đã
-> verify live, nhưng chưa bấm chuột) — sẽ bổ sung khi có môi trường
-> duyệt; **không tick `[x]` cho tới khi đó**.
+> Thao tác tay trình duyệt cho P3-UI-02/04/05 đã làm 23/11/2026 — bằng chứng ở [NP-023](./issues/NP-023.md).
 >
 > **Bổ sung 08–18/11/2026 (ngoài checklist gốc):** FSRS-4.5 thay SM-2; PWA cài như app +
 > nhắc ôn hằng ngày qua Web Push (`notifications`, [plan-pwa](./plans/plan-pwa.md)); benchmark AI tiếng Nhật

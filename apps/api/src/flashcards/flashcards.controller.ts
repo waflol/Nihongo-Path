@@ -244,7 +244,7 @@ export class FlashcardsController {
   @Get("decks/:id")
   @ApiOperation({ summary: "Read a deck I may access" })
   getDeck(@CurrentUser() caller: AuthUser, @Param("id") id: string) {
-    return this.flashcards.getDeck(caller, id);
+    return this.flashcards.getDeckWithCount(caller, id);
   }
 
   @Post("decks")
