@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { parseByRules } from "./rules.js";
+import { markCloze, parseByRules } from "./rules.js";
+import { validateParsed } from "./structure.js";
 import { mondaiByNumber, mondaiNumberOf, PartTracker, sheetsOf } from "./mondai-table.js";
 
 describe("official 問題 table (jlpt.jp 大問のねらい)", () => {
@@ -86,5 +87,43 @@ describe("parseByRules — printed variants seen in a 34-paper collection", () =
     const p = parseByRules({ rawText: raw, mondai: "context" });
     expect(p?.questions).toHaveLength(2);
     expect(p?.questions[0].options[3]).toBe("ぐっすり");
+  });
+});
+
+describe("parseByRules — 文章の文法 (cloze)", () => {
+  const rawText = [
+    "もくぜんかつやくオリンピックを目前にして、スポーツ選手たちの活躍がテレビなどで放送されている。",
+    "しちょうしゃそれは視聴者をワクワク、ドキドキ、ハラハラさせて楽しませ、夢を与えてくれるものです。",
+    "50 、私は楽しむよりも、選手たちの気持ちや体調が気になって 51",
+    "のです。プレッシャーから押しつぶされそうになりがちな気持ちと戦っているせいか、疲れ 52 に見える人もいます。",
+    "ファンへのサービスに気をつかわなくてもいいようにそっとしてあげられたら、と 54 のです。",
+    "50)1 それで 2 そこで 3 それに 4 しかし",
+    "51)1 心配することはない 2 心配ではいられない",
+    "3 心配でならない 4 心配してはならない",
+    "52)1 ぎみ 2 っぽい 3 がち 4 げ",
+    "53)1 抜きで 2 かなわないが 3 まだしも 4 しょうがない",
+    "54)1 思ってばかりいられない 2 思わねばならない",
+    "3 思ってはならない 4 思わずにはいられない",
+    "N2",
+    "言語知識(文字・語彙・文法)・読解",
+    "【読解】",
+    "(配点 3点)",
+  ].join("\n");
+
+  it("reads the passage as one cloze stimulus and each blank as a question", () => {
+    const parsed = parseByRules({ rawText, mondai: "text-grammar" })!;
+    expect(parsed.stimuli).toHaveLength(1);
+    expect(parsed.stimuli[0].kind).toBe("cloze");
+    expect(parsed.stimuli[0].body).not.toContain("【読解】");
+    expect(parsed.questions).toHaveLength(5);
+    expect(parsed.questions[1].options).toEqual(["心配することはない", "心配ではいられない", "心配でならない", "心配してはならない"]);
+    expect(validateParsed(parsed, rawText, [4])).toEqual([]);
+  });
+
+  it("marks the blanks as [n] after validation", () => {
+    const marked = markCloze(parseByRules({ rawText, mondai: "text-grammar" })!);
+    expect(marked.stimuli[0].body).toContain("[50] 、私は");
+    expect(marked.stimuli[0].body).toContain("気になって [51]");
+    expect(marked.questions[0].prompt).toBe("[50]");
   });
 });

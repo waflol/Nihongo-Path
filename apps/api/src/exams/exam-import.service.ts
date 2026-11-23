@@ -35,7 +35,7 @@ import {
 import { contentHashOf, optionCountsOf } from "./mondai.js";
 import { blockMarker, keyMarker, splitCompactKey, type AnswerKeyBlock } from "./import/answer-key.js";
 import { openProsePdf } from "./import/prose.js";
-import { parseByRules } from "./import/rules.js";
+import { markCloze, parseByRules } from "./import/rules.js";
 import { segmentBlocks, type Block } from "./import/segment.js";
 import { parseAiJson, structurePrompt, type ParsedBlock, validateParsed } from "./import/structure.js";
 
@@ -325,7 +325,7 @@ export class ExamImportService implements OnApplicationBootstrap {
         ruleIssues.push(`số câu đọc được (${byRules.questions.length}) khác bảng đáp án (${printed})`);
       }
       if (ruleIssues.length === 0) {
-        doc.parsed = byRules;
+        doc.parsed = markCloze(byRules);
         doc.parsedBy = "rules";
         doc.issues = [];
         doc.status = "needs_review";

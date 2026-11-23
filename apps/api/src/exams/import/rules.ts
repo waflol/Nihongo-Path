@@ -79,6 +79,7 @@ interface Group {
  * any other `<n> text` line opens a question.
  */
 export function parseByRules(block: { rawText: string; mondai: string | null }): ParsedBlock | null {
+  if (block.mondai === "text-grammar") return parseCloze(block.rawText);
   if (!block.mondai || !RULE_TYPES.has(block.mondai as MondaiType)) return null;
 
   // The example box (問題例 / 解答の仕方) is fenced by two rule lines of underscores.
@@ -130,4 +131,56 @@ export function parseByRules(block: { rawText: string; mondai: string | null }):
     questions.push({ no: questions.length + 1, prompt, options });
   }
   return questions.length > 0 ? { stimuli: [], questions } : null;
+}
+
+/** Furniture that can sit inside a passage; unlike FURNITURE a bare number may be a blank marker. */
+const PASSAGE_FURNITURE = /^(?:[【\[].*[】\]]|\(\s*配点.*\)|\(\s*解答.*|ページ\s*\d+|N[1-5]|言語知識.*)$/;
+/** `50)1 それで 2 そこで …` — the answer line of one blank. */
+const CLOZE_ANSWER = /^(\d{1,2})\s*[)）]\s*(1(?:\s|[.．]).*)$/;
+const OPTIONS_TAIL = /^1\s*[・･]\s*2\s*[・･]\s*3\s*[・･]\s*4\s*から.*$/;
+
+/**
+ * 文章の文法: ONE passage with numbered blanks (`50 `…`54 `) followed by one
+ * answer line per blank (`50)1 … 2 … 3 … 4 …`). The passage becomes a `cloze`
+ * stimulus; each blank is a question whose prompt is its printed number (turned
+ * into `[50]` by {@link markCloze} once the text has been validated against the block).
+ */
+function parseCloze(rawText: string): ParsedBlock | null {
+  const passage: string[] = [];
+  const answers: { no: number; text: string }[] = [];
+  for (const raw of rawText.split("\n")) {
+    const l = raw.trim().replace(TRAILING_PAGE, "");
+    if (!l || PASSAGE_FURNITURE.test(l) || OPTIONS_TAIL.test(l)) continue;
+    const a = l.match(CLOZE_ANSWER);
+    if (a) {
+      answers.push({ no: Number(a[1]), text: a[2] });
+      continue;
+    }
+    const last = answers[answers.length - 1];
+    if (last && markerCount(last.text) < 4) last.text += " " + l; // a wrapped option line
+    else if (!last) passage.push(l);
+  }
+  const questions: ParsedQuestion[] = [];
+  for (const a of answers) {
+    const options = splitOptions(a.text);
+    if (!options) return null; // unreadable → the AI gets the block
+    questions.push({ no: questions.length + 1, prompt: String(a.no), options, stimulusKey: "s1", groupOrder: questions.length + 1 });
+  }
+  if (questions.length === 0 || passage.length === 0) return null;
+  return { stimuli: [{ key: "s1", kind: "cloze", body: passage.join("\n") }], questions };
+}
+
+/** Turn the printed blank numbers inside a cloze passage into `[n]` (after validation). */
+export function markCloze(parsed: ParsedBlock): ParsedBlock {
+  const stimuli = parsed.stimuli.map((st) => {
+    if (st.kind !== "cloze") return st;
+    let body = st.body;
+    for (const q of parsed.questions) {
+      if (q.stimulusKey !== st.key || !/^\d{1,2}$/.test(q.prompt)) continue;
+      body = body.replace(new RegExp(`(?<=^|\\s)${q.prompt}(?=\\s|$|[、。])`, "m"), `[${q.prompt}]`);
+    }
+    return { ...st, body };
+  });
+  const questions = parsed.questions.map((q) => (/^\d{1,2}$/.test(q.prompt) ? { ...q, prompt: `[${q.prompt}]` } : q));
+  return { stimuli, questions };
 }

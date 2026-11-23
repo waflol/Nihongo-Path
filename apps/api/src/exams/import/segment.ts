@@ -195,6 +195,10 @@ export function segmentBlocks(pages: string[], level?: string): Segmented {
 
   const flush = () => {
     if (!current) return;
+    // The instruction sentence can wrap onto the next line (`…最もよいものを、` / `1・2・3・4から一つ選びなさい。`).
+    if (!/[。]$/.test(current.instruction) && current.body[0] && /^1\s*[・･]\s*2\s*[・･]\s*3\s*[・･]\s*4\s*から/.test(current.body[0].trim())) {
+      current.instruction = `${current.instruction} ${current.body.shift()!.trim()}`;
+    }
     const rawText = current.body.join("\n").trim();
     const head = current.body.slice(0, 3).join(" ");
     // A bare `問題 N:` heading (Migii) needs the first body lines to classify.
