@@ -127,3 +127,34 @@ describe("parseByRules — 文章の文法 (cloze)", () => {
     expect(marked.questions[0].prompt).toBe("[50]");
   });
 });
+
+describe("parseByRules — 読解 (passages + 55)… questions)", () => {
+  const rawText = [
+    "日本の観光地では、猿が人から食べ物を取る問題が起きている。",
+    "建物の屋根の上にも猿たちがいる。",
+    "55)「その中」は何を指しているか。",
+    "1 建物 2 観光客 3 彫刻 4 猿たち",
+    "56)この文章の内容に合うのはどれか。",
+    "1 猿は人を恐れる",
+    "2 猿は夜に活動する 3 猿は屋根にいる 4 猿は食べない",
+    "次に、古い町の歴史について述べる。",
+    "町は川のそばに作られた。",
+    "57)町が作られた場所はどこか。",
+    "1 山 2 海 3 川 4 谷",
+    "＊注：町は小さい。",
+  ].join("\n");
+
+  it("splits passages, links questions, keeps a trailing footnote as notes", () => {
+    const parsed = parseByRules({ rawText, mondai: "reading-mid" })!;
+    expect(parsed.stimuli).toHaveLength(2);
+    expect(parsed.stimuli[1].notes).toBe("＊注：町は小さい。");
+    expect(parsed.questions.map((q) => q.stimulusKey)).toEqual(["s1", "s1", "s2"]);
+    expect(parsed.questions[1].options).toHaveLength(4);
+    expect(parsed.questions[0].prompt).toBe("「その中」は何を指しているか。");
+    expect(validateParsed(parsed, rawText, [4])).toEqual([]);
+  });
+
+  it("leaves the A/B integrated form to the AI", () => {
+    expect(parseByRules({ rawText, mondai: "reading-integrated" })).toBeNull();
+  });
+});

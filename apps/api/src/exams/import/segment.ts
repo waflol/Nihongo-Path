@@ -57,6 +57,8 @@ export interface Segmented {
 
 // NFKC (cleanLine) turns Ⅰ..Ⅴ into I/II/III/IV/V and ①..⑩ into 1..10, so
 // the heading class must match the NORMALISED forms.
+/** `＿＿＿の言葉の読み方として…` — the unnumbered opening 問題 of a collection paper. */
+const UNLABELLED_FIRST = /^[_＿]{2,}の言葉の読み方として/;
 const MONDAI_HEADING = /^問題\s*(?:\d{1,2}|I{1,3}|IV|V)\b/;
 const ANSWER_MARK = /^(?:答案|解答|正答)(?:と説明)?\s*$/;
 const SITTING_YEAR_MONTH = /(?<!\d)(\d{4})年\s*(\d{1,2})月/;
@@ -196,7 +198,7 @@ export function segmentBlocks(pages: string[], level?: string): Segmented {
   const flush = () => {
     if (!current) return;
     // The instruction sentence can wrap onto the next line (`…最もよいものを、` / `1・2・3・4から一つ選びなさい。`).
-    if (!/[。]$/.test(current.instruction) && current.body[0] && /^1\s*[・･]\s*2\s*[・･]\s*3\s*[・･]\s*4\s*から/.test(current.body[0].trim())) {
+    if (!/[。]$/.test(current.instruction) && current.body[0] && /^(?:1\s*[・･]\s*2\s*[・･]\s*3\s*[・･]\s*4\s*から|.{0,12}選びなさい)/.test(current.body[0].trim())) {
       current.instruction = `${current.instruction} ${current.body.shift()!.trim()}`;
     }
     const rawText = current.body.join("\n").trim();
@@ -273,6 +275,14 @@ export function segmentBlocks(pages: string[], level?: string): Segmented {
     if (MONDAI_HEADING.test(n)) {
       flush();
       current = { instruction: n, body: [], pageFrom: page, pageTo: page, part };
+      continue;
+    }
+
+    // The paper's FIRST 問題 (kanji reading) is printed without the words `問題1`: its
+    // instruction opens straight under the part banner. Open the block ourselves.
+    if (UNLABELLED_FIRST.test(n) && (!current || current.body.length > 0)) {
+      flush();
+      current = { instruction: `問題1 ${n}`, body: [], pageFrom: page, pageTo: page, part };
       continue;
     }
 

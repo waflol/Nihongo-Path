@@ -161,3 +161,9 @@ Giai đoạn **đã xong trước** (đừng làm lại):
 - Test 1 file: `pnpm -C apps/api exec vitest run <path>.spec.ts`
 - Probe nhanh (không qua test harness): `cd apps/api && npx tsx /tmp/probe.mts`
 - Commit rồi cập nhật file này (mục 2/3) **cùng commit**.
+
+### NP-407 — cập nhật đọc bằng quy tắc (941f1ec+)
+- N1/N2: dạng 問題 từ nhóm đọc (文章の文法 → 情報検索) lấy theo SỐ 問題 (instruction giống nhau không phân biệt được).
+- Quy tắc mới: `parseCloze` (文章の文法: 1 bài cloze `[50]`…, đáp án `50)1 … 2 … 3 … 4 …`), `parseReading` (bài đọc + `55)câu hỏi` / `1 … 4 …`; số câu liên tục; chú thích cuối → `notes`; 統合理解 vẫn để AI).
+- Dòng yêu cầu bị ngắt được nối lại; 問題1 không in chữ "問題1" → tự mở khối (`UNLABELLED_FIRST`).
+- Còn lỗi: trang 1 mỗi đề, đuôi đáp án 問題1 bị dồn xuống cuối trang (thứ tự chữ) → quy tắc trả null, AI xử lý.

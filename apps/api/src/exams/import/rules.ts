@@ -64,6 +64,8 @@ function splitOptions(text: string): string[] | null {
 }
 
 interface Group {
+  /** Opened by a printed `N)` marker (so it is certainly a question, not stray text). */
+  bracketed?: boolean;
   prompt: string[];
   options: string[];
   count: number;
@@ -80,6 +82,8 @@ interface Group {
  */
 export function parseByRules(block: { rawText: string; mondai: string | null }): ParsedBlock | null {
   if (block.mondai === "text-grammar") return parseCloze(block.rawText);
+  const readingKind = READING_KIND[block.mondai ?? ""];
+  if (readingKind) return parseReading(block.rawText, readingKind);
   if (!block.mondai || !RULE_TYPES.has(block.mondai as MondaiType)) return null;
 
   // The example box (問題例 / 解答の仕方) is fenced by two rule lines of underscores.
@@ -100,7 +104,7 @@ export function parseByRules(block: { rawText: string; mondai: string | null }):
     const cur = groups[groups.length - 1];
     const br = line.match(Q_BRACKET);
     if (br) {
-      groups.push({ prompt: br[2] ? [br[2]] : [], options: [], count: 0 });
+      groups.push({ bracketed: true, prompt: br[2] ? [br[2]] : [], options: [], count: 0 });
       continue;
     }
     // `1.有好 2.優好` (number + dot, no space) can only be an option line.
@@ -127,7 +131,11 @@ export function parseByRules(block: { rawText: string; mondai: string | null }):
   for (const g of groups) {
     const options = splitOptions(g.options.join(" "));
     const prompt = g.prompt.join("\n").trim();
-    if (!options || !prompt) continue; // unreadable → left to the validator / AI
+    if (!options || !prompt) {
+      // A question that certainly exists but cannot be read → the whole block goes to the AI, never a short draft.
+      if (g.bracketed) return null;
+      continue;
+    }
     questions.push({ no: questions.length + 1, prompt, options });
   }
   return questions.length > 0 ? { stimuli: [], questions } : null;
@@ -182,5 +190,78 @@ export function markCloze(parsed: ParsedBlock): ParsedBlock {
     return { ...st, body };
   });
   const questions = parsed.questions.map((q) => (/^\d{1,2}$/.test(q.prompt) ? { ...q, prompt: `[${q.prompt}]` } : q));
+  return { stimuli, questions };
+}
+
+/** Reading forms read by rules → the stimulus kind they produce (統合理解 has an A/B pair: left to the AI). */
+const READING_KIND: Record<string, "passage" | "notice"> = {
+  "reading-short": "passage",
+  "reading-mid": "passage",
+  "reading-long": "passage",
+  "reading-thematic": "passage",
+  "info-retrieval": "notice",
+};
+
+/**
+ * 読解: one or more passages, each followed by its questions printed as
+ * `55)prompt` + `1 … 2 … 3 … 4 …`. Question numbers run on from the previous
+ * 問題 (the cloze ends at 54, the first reading question is 55), so a line opens
+ * a question only when it carries the NEXT number — a passage line that happens
+ * to start with a digit and a bracket is not mistaken for one. Whatever lies
+ * between two question groups is the next passage; a trailing footnote is
+ * kept as that passage's `notes`.
+ */
+function parseReading(rawText: string, kind: "passage" | "notice"): ParsedBlock | null {
+  const passages: { body: string[]; qs: Group[]; notes?: string[] }[] = [];
+  let pending: string[] = [];
+  let cur: Group | null = null;
+  let lastNo: number | null = null;
+  for (const raw of rawText.split("\n")) {
+    const l = raw.trim().replace(TRAILING_PAGE, "");
+    if (!l || PASSAGE_FURNITURE.test(l) || OPTIONS_TAIL.test(l)) continue;
+    const br = l.match(Q_BRACKET);
+    if (br && (lastNo === null || Number(br[1]) === lastNo + 1)) {
+      if (pending.length > 0) {
+        passages.push({ body: pending, qs: [] });
+        pending = [];
+      }
+      if (passages.length === 0) return null;
+      cur = { prompt: br[2] ? [br[2]] : [], options: [], count: 0 };
+      passages[passages.length - 1].qs.push(cur);
+      lastNo = Number(br[1]);
+      continue;
+    }
+    if (cur && cur.count === 0) {
+      if (/^1(?:\s+|\s*[.．](?!\d))\S/.test(l)) {
+        cur.options.push(l);
+        cur.count = markerCount(l);
+      } else cur.prompt.push(l);
+      continue;
+    }
+    if (cur && cur.count < 4) {
+      cur.options.push(l);
+      cur.count = markerCount(cur.options.join(" "));
+      continue;
+    }
+    pending.push(l); // a passage (or its footnote) after a finished question group
+  }
+  if (passages.length === 0) return null;
+  // Text after the last question is a footnote: not contiguous with the passage, so it is kept as `notes`.
+  if (pending.length > 0) passages[passages.length - 1].notes = pending;
+
+  const stimuli: ParsedBlock["stimuli"] = [];
+  const questions: ParsedQuestion[] = [];
+  for (const [pi, ps] of passages.entries()) {
+    const key = `s${pi + 1}`;
+    let order = 0;
+    for (const g of ps.qs) {
+      const options = splitOptions(g.options.join(" "));
+      const prompt = g.prompt.join("\n").trim();
+      if (!options || !prompt) return null; // a question could not be read → the AI gets the block
+      order += 1;
+      questions.push({ no: questions.length + 1, prompt, options, stimulusKey: key, groupOrder: order });
+    }
+    stimuli.push({ key, kind, body: ps.body.join("\n"), ...(ps.notes ? { notes: ps.notes.join("\n") } : {}) });
+  }
   return { stimuli, questions };
 }
