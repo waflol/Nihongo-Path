@@ -90,6 +90,9 @@ interface AuditItem {
   ip: string | null;
   ipv4?: string | null;
   body: Record<string, unknown> | null;
+  summary?: string | null;
+  before?: Record<string, unknown> | null;
+  after?: Record<string, unknown> | null;
   createdAt: string;
 }
 interface AuditPage {
@@ -497,6 +500,16 @@ export function LogsConsole() {
               <p className="mt-1 text-xs text-[var(--muted-foreground)]">
                 {[r.actor ?? "?", r.role, r.ip && `ip: ${r.ip}`, r.ipv4 && `ipv4: ${r.ipv4}`].filter(Boolean).join(" · ")}
               </p>
+              {r.summary && <p className="mt-1 text-xs font-medium text-[var(--foreground)]">{r.summary}</p>}
+              {(r.before || r.after) && (
+                <details className="mt-1">
+                  <summary className="cursor-pointer text-xs text-[var(--primary)]">Trước → Sau</summary>
+                  <div className="mt-1 grid gap-2 sm:grid-cols-2">
+                    <pre className="overflow-x-auto rounded-lg bg-[var(--background-1)] p-3 text-xs leading-relaxed">{JSON.stringify(r.before ?? {}, null, 2)}</pre>
+                    <pre className="overflow-x-auto rounded-lg bg-[var(--background-1)] p-3 text-xs leading-relaxed">{JSON.stringify(r.after ?? {}, null, 2)}</pre>
+                  </div>
+                </details>
+              )}
               {r.body && (
                 <details className="mt-1">
                   <summary className="cursor-pointer text-xs text-[var(--primary)]">Dữ liệu gửi lên</summary>

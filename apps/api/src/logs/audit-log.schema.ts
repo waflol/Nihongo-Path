@@ -38,6 +38,22 @@ export class AuditLog {
   @Prop({ type: Object })
   body?: Record<string, unknown>;
 
+  /**
+   * Target document's field values BEFORE the mutation (P5-ADMIN-03).
+   * Recorded by the service that knows the target, not by the interceptor
+   * (which cannot see DB state) — see `attachAuditNote` in `audit-note.ts`.
+   */
+  @Prop({ type: Object })
+  before?: Record<string, unknown>;
+
+  /** The values AFTER the mutation; same rules as `before`. */
+  @Prop({ type: Object })
+  after?: Record<string, unknown>;
+
+  /** Human-readable summary of the change (e.g. `role: USER → ADMIN`). */
+  @Prop({ type: String })
+  summary?: string;
+
   createdAt: Date;
 }
 

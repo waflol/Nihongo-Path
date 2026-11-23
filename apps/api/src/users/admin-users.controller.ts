@@ -1,10 +1,11 @@
-import { Body, Controller, Get, Param, Patch, Post, Query } from "@nestjs/common";
+import { Body, Controller, Get, Param, Patch, Post, Query, Req } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { Type } from "class-transformer";
 import { IsEmail, IsIn, IsInt, IsOptional, IsString, Max, MaxLength, Min, MinLength } from "class-validator";
 import type { AuthUser } from "../auth/auth.types.js";
 import { CurrentUser } from "../auth/decorators/current-user.decorator.js";
 import { ContentAdmin, Roles } from "../auth/decorators/roles.decorator.js";
+import { attachAuditNote, type AuditRequest } from "../logs/audit-note.js";
 import { AdminUsersService } from "./admin-users.service.js";
 import { USER_STATUSES, type UserStatus } from "./schemas/user.schema.js";
 
@@ -82,28 +83,73 @@ export class AdminUsersController {
   @Patch(":id/password")
   @ContentAdmin()
   @ApiOperation({ summary: "Set a new password for an account (logs it out everywhere)" })
-  setPassword(@CurrentUser() caller: AuthUser, @Param("id") id: string, @Body() body: SetPasswordDto) {
+  async setPassword(
+    @CurrentUser() caller: AuthUser,
+    @Param("id") id: string,
+    @Body() body: SetPasswordDto,
+    @Req() req: AuditRequest,
+  ) {
+    // P5-ADMIN-03: record who reset which account's credential.
+    attachAuditNote(req, {
+      before: { id },
+      after: { id, credential: "password" },
+      summary: "password reset for a user account",
+    });
     return this.service.setPassword(caller, id, body.password);
   }
 
   @Patch(":id/status")
   @ContentAdmin()
   @ApiOperation({ summary: "Suspend or re-activate an account (suspend also logs it out)" })
-  setStatus(@CurrentUser() caller: AuthUser, @Param("id") id: string, @Body() body: SetStatusDto) {
+  async setStatus(
+    @CurrentUser() caller: AuthUser,
+    @Param("id") id: string,
+    @Body() body: SetStatusDto,
+    @Req() req: AuditRequest,
+  ) {
+    // P5-ADMIN-03: before/after status snapshot for the audit row.
+    const before = await this.service.readFields(id, ["status"]);
+    attachAuditNote(req, {
+      before: { id, status: before.status },
+      after: { id, status: body.status },
+      summary: `status: ${before.status ?? "?"} → ${body.status}`,
+    });
     return this.service.setStatus(caller, id, body.status);
   }
 
   @Patch(":id/role")
   @Roles("SUPER_ADMIN")
-  @ApiOperation({ summary: "Grant / revoke ADMIN (SUPER_ADMIN only)" })
-  setRole(@CurrentUser() caller: AuthUser, @Param("id") id: string, @Body() body: SetRoleDto) {
+  @ApiOperation({ summary: "Grant / revoke ADMIN (SUPER_ADMIN only; self-changes refused)" })
+  async setRole(
+    @CurrentUser() caller: AuthUser,
+    @Param("id") id: string,
+    @Body() body: SetRoleDto,
+    @Req() req: AuditRequest,
+  ) {
+    // P5-ADMIN-02/03: least-privilege enforced in the service (SUPER_ADMIN
+    // only, self refused); the before/after snapshot lands in the audit row.
+    const before = await this.service.readFields(id, ["role"]);
+    attachAuditNote(req, {
+      before: { id, role: before.role },
+      after: { id, role: body.role },
+      summary: `role: ${before.role ?? "?"} → ${body.role}`,
+    });
     return this.service.setRole(caller, id, body.role);
   }
 
   @Post(":id/revoke-sessions")
   @ContentAdmin()
   @ApiOperation({ summary: "Force logout: revoke all of a user's refresh sessions" })
-  revokeSessions(@CurrentUser() caller: AuthUser, @Param("id") id: string) {
+  async revokeSessions(
+    @CurrentUser() caller: AuthUser,
+    @Param("id") id: string,
+    @Req() req: AuditRequest,
+  ) {
+    attachAuditNote(req, {
+      before: { id },
+      after: { id, revoked: "all sessions" },
+      summary: "sessions revoked for a user account",
+    });
     return this.service.revokeSessions(caller, id);
   }
 }

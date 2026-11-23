@@ -1,9 +1,52 @@
-# HANDOFF — Nihongo-Path / NP-407 (exam import)
+# HANDOFF — Nihongo-Path
 
-> **Agent mới: đọc hết file này trước khi code.** Trạng thái được cập nhật đúng tại commit `d439ed9`.
-> Quy tắc người dùng đặt ra (từ 19/11): **mỗi tiến trình phải lưu lại (commit + HANDOFF) để agent khác follow tiếp khi hết token.** Không spawn agent phụ (quota 5h chia sẻ, fork cũng chết — đã gặp 429 giữa phiên).
+> **Agent mới: đọc hết file này trước khi code.** Quy tắc: **mỗi tiến trình phải lưu lại (commit + HANDOFF) để agent khác follow tiếp khi hết token.** Không spawn agent phụ (quota 5h chia sẻ, fork cũng chết — đã gặp 429 giữa phiên).
 
-## 1. Ticket & mục tiêu
+---
+
+## P5 — Admin, Feedback & Entitlements (tiến độ hiện tại)
+
+**Trình tự đã duyệt (quota sau, cấu hình hoá):** NP-024 → NP-025 → NP-504 (SEC+ADR/DOC, làm sau) → quota engine NP-501/502/503 (100% cấu hình hoá theo Q-07: mỗi feature có bật/tắt + limit + chu kỳ + tz reset, sửa trong admin, không cần deploy).
+
+### ✅ Commit 1 — NP-024 (P5-ADMIN-01/02/03): RBAC 403 + no-self-privilege + audit before/after
+
+Đã commit. 487 tests xanh, TSC clean, lint clean.
+
+| File | Nội dung |
+|---|---|
+| `src/users/admin-rbac.spec.ts` | **MỚI** — RBAC 403 (RolesGuard: USER→ADMIN route 403, ADMIN→SUPER route 403, pass-through) + no-self-privilege (self-promotion/demotion từ chối, ADMIN không chạm admin, SUPER_ADMIN mới đổi role được, role change revoke sessions) — 11 test |
+| `src/logs/audit.interceptor.spec.ts` | **MỚI** — audit row mang `before`/`after`/`summary` khi có `attachAuditNote`; không có note → undefined; route không `@Roles` → không ghi; hành động thất bại ghi status — 4 test |
+| `src/logs/audit-note.ts` | **MỚI** — `attachAuditNote(req, {before,after,summary})`: snapshot bị `scrub()` (redact secret) + cap 4000 char, gộp vào `request.auditNote`; `AuditRequest = Request & {user?, auditNote?}` |
+| `src/logs/audit-log.schema.ts` | `AuditLog` +`before`/`after`/`summary` (Object, cap) |
+| `src/logs/audit.interceptor.ts` | `record()` gộp `req.auditNote?.before/after/summary` vào bản ghi (1 hành động admin = 1 row who/what/before/after) |
+| `src/users/admin-users.service.ts` | `setRole`: chặn `id===caller.sub` (tự đổi role) + chỉ `SUPER_ADMIN` mới đổi được (lớp service, trên cả `@Roles`); +`readFields(id, fields)` cho controller snapshot before/after |
+| `src/users/admin-users.controller.ts` | 4 endpoint (password/status/role/revoke-sessions) gọi `attachAuditNote` với before/after + summary |
+| `src/logs/logs.service.ts` | `listAudit` + CSV export trả về `before`/`after`/`summary` |
+| `ui/components/admin/logs-console.tsx` | Tab "Thao tác admin" hiện `summary` + khối "Trước → Sau" |
+
+**Bẫy P5 (đọc trước khi code tiếp):**
+- `setRole` service: `@Roles("SUPER_ADMIN")` ở route + check `caller.role` + check `id===caller.sub` ở service → 3 lớp. Test service layer riêng (guard không chạy trong unit test).
+- Interceptor `.record()` là fire-and-forget (`.catch(() => undefined)`) → test phải chờ flush (setTimeout 0) và mock `req.headers={}` (`clientIpv4` đọc `headers["x-client-ipv4"]`).
+- Repo **double-quote** (committed code) nhưng `.prettierrc` ghi `singleQuote:true` và **không được enforce** (file committed fail `prettier --check`). Code mới theo double-quote để khớp. Đừng chạy `prettier --write` (sẽ đổi cả file sang single-quote, diff khổng lồ).
+- VPS 4 GB RAM, không swap. Test full suite: `pnpm -C apps/api exec vitest run --no-file-parallelism`.
+
+**CHƯA LÀM (việc agent kế tiếp, theo thứ tự):**
+1. **NP-024 verify thật**: chạy `/admin/users` trên trình duyệt, đổi role/status thật, mở `/admin/logs` tab audit kiểm row có before/after trong DB (`audit_logs`). (Code + spec đã đủ để đóng khi verify.)
+2. **NP-025 (P5-FEEDBACK-01/02)**: mở rộng `card-reports` (báo lỗi thẻ) → phản hồi chung (từ vựng/transcript/bản dịch), có **trạng thái + lịch sử xử lý** (mỗi lần đổi trạng thái ghi ai/khi nào/giữ), hộp thư admin lọc theo trạng thái. File nền: `src/flashcards/schemas/card-report.schema.ts` (`REPORT_STATUSES`), `card-reports.service.ts`, `ui/components/admin/card-reports-console.tsx`. Xem `docs/issues/NP-025.md`.
+3. **NP-504 (P5-SEC-01 + P5-DOC-01)**: rà least privilege toàn endpoint admin (`grep -L "@Roles"` các controller admin) + ADR entitlement + cập nhật `database.md`. **Làm sau quota** để quét toàn bộ P5.
+4. **Quota engine NP-501/502/503**: theo layout đã duyệt — `feature-config.schema.ts` (featureKey, enabled, limit, period, tz reset) + `quota_reservations`/`usage_records` + `quota.service` (reserve→settle→release, reset theo kỳ/tz) + `EntitlementGuard`/`QuotaGuard` (plan không có quyền→403, hết mức→429/403) + màn admin cấu hình. Q-07/Q-23 chỉ chốt con số (edit trong admin), không chặn kiến trúc. Xem `docs/issues/NP-501.md`, `NP-502.md`, `NP-503.md`.
+
+## 4. Lệnh chuẩn
+
+- `pnpm -C apps/api test` · `pnpm -C apps/api lint` · `pnpm -C apps/api typecheck`
+- Test 1 file: `pnpm -C apps/api exec vitest run <path>.spec.ts`
+- Full suite (RAM): `pnpm -C apps/api exec vitest run --no-file-parallelism`
+- Probe nhanh (không qua test harness): `cd apps/api && npx tsx /tmp/probe.mts`
+- Commit rồi cập nhật file này (mục 2/3) **cùng commit**.
+
+---
+
+# (archive) NP-407 — exam import
 
 **NP-407** — Nhập PDF đề JLPT → draft có người duyệt (plan `docs/plans/plan-jlpt-question-bank.md`, giai đoạn 2).
 Yêu cầu cốt lõi (plan §6/§11): làm sạch text → tách khối theo 問題 → AI **cấu trúc hoá từng khối nhưng KHÔNG BAO GIỜ đoán đáp án** (chặn nội dung bịa) → parser bảng đáp án → collection `exam_import_drafts` → màn admin duyệt/sửa/xuất bản → chống trùng chéo nguồn bằng `contentHash`. Câu nhập mặc định `rights: reference` (Q-12). Xử lý từng trang, RSS < 500 MB (VPS 4 GB, không swap).

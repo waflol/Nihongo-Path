@@ -89,6 +89,9 @@ export class LogsService implements OnModuleInit {
         ip: r.ip ?? null,
         ipv4: r.ipv4 ?? null,
         body: r.body ?? null,
+        before: r.before ?? null,
+        after: r.after ?? null,
+        summary: r.summary ?? null,
         createdAt: r.createdAt,
       })),
     };
@@ -109,8 +112,21 @@ export class LogsService implements OnModuleInit {
       rows = d.items.map((r) => [r.createdAt, r.level, r.context, r.message, r.exception, r.status, r.request, r.user, r.ip, r.details && JSON.stringify(r.details), r.stack]);
     } else {
       const d = await this.listAudit({ ...base, method: query.method });
-      header = ["time", "actor", "role", "method", "path", "ok", "status", "ip", "body"];
-      rows = d.items.map((r) => [r.createdAt, r.actor, r.role, r.method, r.path, r.ok, r.status, r.ip, r.body && JSON.stringify(r.body)]);
+      header = ["time", "actor", "role", "method", "path", "ok", "status", "ip", "body", "summary", "before", "after"];
+      rows = d.items.map((r) => [
+        r.createdAt,
+        r.actor,
+        r.role,
+        r.method,
+        r.path,
+        r.ok,
+        r.status,
+        r.ip,
+        r.body && JSON.stringify(r.body),
+        r.summary ?? "",
+        r.before && JSON.stringify(r.before),
+        r.after && JSON.stringify(r.after),
+      ]);
     }
     return "\uFEFF" + [header, ...rows].map((row) => row.map(csvCell).join(",")).join("\r\n") + "\r\n";
   }

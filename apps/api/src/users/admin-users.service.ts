@@ -139,8 +139,20 @@ export class AdminUsersService {
     return { id, status };
   }
 
+  /**
+   * P5-ADMIN-02 least-privilege: only `SUPER_ADMIN` may change a role, and
+   * nobody may promote themselves — `setRole(caller, caller.sub, …)` is
+   * refused outright, on top of the route-level `@Roles("SUPER_ADMIN")`.
+   */
   async setRole(caller: AuthUser, id: string, role: "USER" | "ADMIN") {
-    const doc = await this.target(caller, id);
+    if (id === caller.sub) {
+      throw new BadRequestException("Không thể tự đổi role của chính mình");
+    }
+    if (caller.role !== "SUPER_ADMIN") {
+      throw new ForbiddenException("Chỉ SUPER_ADMIN được đổi role");
+    }
+    const doc = await this.users.findById(id).exec();
+    if (!Types.ObjectId.isValid(id) || !doc) throw new NotFoundException("User not found");
     if (doc.role === "SUPER_ADMIN") {
       throw new ForbiddenException("Không đổi role của SUPER_ADMIN qua API");
     }
@@ -149,6 +161,18 @@ export class AdminUsersService {
     // Force re-login so the new role lands in the access token.
     await this.revokeAll(doc._id);
     return { id, role };
+  }
+
+  /**
+   * P5-ADMIN-03: project the target's current field values so the controller
+   * can snapshot them as `before` for the audit row. Read-only, no guards
+   * (the controller already passed its role check).
+   */
+  async readFields(id: string, fields: (keyof User)[]) {
+    if (!Types.ObjectId.isValid(id)) throw new NotFoundException("User not found");
+    const doc = await this.users.findById(id, fields).exec();
+    if (!doc) throw new NotFoundException("User not found");
+    return Object.fromEntries(fields.map((f) => [f, (doc as unknown as Record<string, unknown>)[f]]));
   }
 
   async createAdmin(input: { email: string; password: string; displayName?: string }) {

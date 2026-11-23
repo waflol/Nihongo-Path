@@ -7,12 +7,11 @@ import {
 } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
 import { InjectModel } from "@nestjs/mongoose";
-import type { Request } from "express";
 import { Model, Types } from "mongoose";
 import { catchError, type Observable, tap, throwError } from "rxjs";
-import type { AuthUser } from "../auth/auth.types.js";
 import { REQUIRED_ROLES } from "../auth/guards/guards.constants.js";
 import { AuditLog } from "./audit-log.schema.js";
+import { type AuditRequest } from "./audit-note.js";
 import { clientIpv4, normalizeIp } from "./ip-block.service.js";
 import { scrub } from "./scrub.js";
 
@@ -23,6 +22,11 @@ const SKIP = [/^\/admin\/logs\/simulate/];
  * Audits every non-GET call to a role-protected (admin) route — the route's
  * own `@Roles` metadata decides, so new admin endpoints are covered
  * automatically. Failed attempts are recorded too.
+ *
+ * P5-ADMIN-03: when the action's controller/service called
+ * `attachAuditNote(req, …)` (role / status / password writes, …) the record
+ * also carries `before` / `after` snapshots of the target document's fields
+ * plus a short `summary` (e.g. `role: USER → ADMIN`).
  */
 @Injectable()
 export class AuditInterceptor implements NestInterceptor {
@@ -33,7 +37,7 @@ export class AuditInterceptor implements NestInterceptor {
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
     if (context.getType() !== "http") return next.handle();
-    const req = context.switchToHttp().getRequest<Request & { user?: AuthUser }>();
+    const req = context.switchToHttp().getRequest<AuditRequest>();
     const roles = this.reflector.getAllAndOverride<string[] | undefined>(REQUIRED_ROLES, [
       context.getHandler(),
       context.getClass(),
@@ -51,7 +55,7 @@ export class AuditInterceptor implements NestInterceptor {
     );
   }
 
-  private record(req: Request & { user?: AuthUser }, path: string, ok: boolean, status?: number) {
+  private record(req: AuditRequest, path: string, ok: boolean, status?: number) {
     const u = req.user;
     const body = req.body && typeof req.body === "object" ? (scrub(req.body) as Record<string, unknown>) : undefined;
     void this.model
@@ -65,6 +69,9 @@ export class AuditInterceptor implements NestInterceptor {
         ip: normalizeIp(req.ip),
         ipv4: clientIpv4(req),
         body: body && JSON.stringify(body).length <= 4000 ? body : undefined,
+        before: req.auditNote?.before,
+        after: req.auditNote?.after,
+        summary: req.auditNote?.summary,
       })
       .catch(() => undefined);
   }
