@@ -52,12 +52,26 @@ async function errorOf(res: Response): Promise<string> {
   return Array.isArray(m) ? m.join("; ") : (m ?? `Lỗi ${res.status}`);
 }
 
+/** Every question of the block has a picked answer (and there is at least one question). */
+function isReady(d: Draft, answers: number[] | undefined): boolean {
+  const qs = d.parsed?.questions ?? [];
+  return qs.length > 0 && qs.every((q) => (answers?.[q.no - 1] ?? 0) > 0);
+}
+function fillAnswers(d: Draft, answers: number[] | undefined): number[] {
+  const qs = d.parsed?.questions ?? [];
+  return Array.from({ length: Math.max(0, ...qs.map((q) => q.no)) }, (_, i) => answers?.[i] ?? 0);
+}
+
 /** Review screen of one exam-PDF import (NP-407): check each 問題 block, type the printed answers, publish or discard. */
 export function ExamImportDrafts({ jobId }: { jobId: string }) {
   const [job, setJob] = useState<Job | null>(null);
   const [drafts, setDrafts] = useState<Draft[] | null>(null);
   const [filter, setFilter] = useState<"open" | "all">("open");
   const [failed, setFailed] = useState(false);
+  const [sittingFilter, setSittingFilter] = useState("");
+  /** The reviewer's answers per draft, kept here so "publish the whole paper" sees every card's picks. */
+  const [answersById, setAnswersById] = useState<Record<string, number[]>>({});
+  const [bulk, setBulk] = useState<{ busy: boolean; ok: boolean; text: string } | null>(null);
 
   const load = useCallback(async () => {
     const [dr, lr] = await Promise.all([
@@ -69,7 +83,19 @@ export function ExamImportDrafts({ jobId }: { jobId: string }) {
       return;
     }
     setFailed(false);
-    setDrafts((await dr.json()) as Draft[]);
+    const list = (await dr.json()) as Draft[];
+    setDrafts(list);
+    // Seed answers from the server without overwriting what the reviewer already picked.
+    setAnswersById((prev) => {
+      const next = { ...prev };
+      for (const d of list) {
+        if (next[d._id]) continue;
+        const a: number[] = [];
+        for (const q of d.parsed?.questions ?? []) a[q.no - 1] = d.answers[q.no - 1] ?? 0;
+        next[d._id] = a;
+      }
+      return next;
+    });
     const body = lr?.ok ? ((await lr.json().catch(() => null)) as { job?: Job } | null) : null;
     if (body?.job) setJob(body.job);
   }, [jobId]);
@@ -79,7 +105,48 @@ export function ExamImportDrafts({ jobId }: { jobId: string }) {
     return () => clearTimeout(t);
   }, [load]);
 
-  const shown = (drafts ?? []).filter((d) => filter === "all" || d.status === "needs_review" || d.status === "error");
+  const inFilter = (d: Draft) => !sittingFilter || d.sitting === sittingFilter;
+  const shown = (drafts ?? []).filter(
+    (d) => inFilter(d) && (filter === "all" || d.status === "needs_review" || d.status === "error"),
+  );
+  // One group per sitting, in the order the paper presents them.
+  const groups = new Map<string, Draft[]>();
+  for (const d of shown) groups.set(d.sitting, [...(groups.get(d.sitting) ?? []), d]);
+  const sittings = [...new Set((drafts ?? []).map((d) => d.sitting))];
+  const sittingStats = (name: string) => {
+    const all = (drafts ?? []).filter((d) => d.sitting === name);
+    return { total: all.length, done: all.filter((d) => d.status === "published" || d.status === "discarded").length };
+  };
+
+  async function publishSitting(name: string) {
+    const ready = (drafts ?? []).filter(
+      (d) => d.sitting === name && d.status === "needs_review" && isReady(d, answersById[d._id]),
+    );
+    if (ready.length === 0) return;
+    if (!window.confirm(`Xuất bản ${ready.length} khối đã đủ đáp án của đề "${name}"?`)) return;
+    setBulk({ busy: true, ok: true, text: `Đang xuất bản 0/${ready.length}…` });
+    let n = 0;
+    for (const d of ready) {
+      const res = await fetch(`/api/exam-import?publish=${d._id}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ answers: fillAnswers(d, answersById[d._id]) }),
+      }).catch(() => null);
+      if (!res?.ok) {
+        setBulk({
+          busy: false,
+          ok: false,
+          text: `Dừng ở khối #${d.blockIndex + 1} (đã xuất bản ${n}/${ready.length}): ${res ? await errorOf(res) : "mất kết nối"}`,
+        });
+        await load();
+        return;
+      }
+      n += 1;
+      setBulk({ busy: true, ok: true, text: `Đang xuất bản ${n}/${ready.length}…` });
+    }
+    setBulk({ busy: false, ok: true, text: `Đã xuất bản ${n} khối của đề "${name}".` });
+    await load();
+  }
   const counts = (drafts ?? []).reduce<Record<string, number>>((m, d) => ({ ...m, [d.status]: (m[d.status] ?? 0) + 1 }), {});
 
   return (
@@ -118,21 +185,78 @@ export function ExamImportDrafts({ jobId }: { jobId: string }) {
             : "Không còn khối nào cần duyệt."}
         </p>
       )}
-      {shown.map((d) => (
-        <DraftCard key={d._id} draft={d} onChanged={load} />
-      ))}
+      {sittings.length > 1 && (
+        <label className="flex flex-wrap items-center gap-2 text-sm text-[var(--muted-foreground)]">
+          Lọc theo đề
+          <select
+            value={sittingFilter}
+            onChange={(e) => setSittingFilter(e.target.value)}
+            className="rounded-lg border border-[var(--border)] bg-[var(--background)] px-2 py-1 text-[var(--foreground)]"
+          >
+            <option value="">Tất cả ({sittings.length} đề)</option>
+            {sittings.map((n) => (
+              <option key={n} value={n}>
+                {n} ({sittingStats(n).done}/{sittingStats(n).total} khối xong)
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+      {bulk && (
+        <p role="status" className={`text-sm ${bulk.ok ? "text-[var(--muted-foreground)]" : "text-[#b91c1c]"}`}>
+          {bulk.text}
+        </p>
+      )}
+      {[...groups.entries()].map(([name, items]) => {
+        const stats = sittingStats(name);
+        const ready = (drafts ?? []).filter(
+          (d) => d.sitting === name && d.status === "needs_review" && isReady(d, answersById[d._id]),
+        ).length;
+        return (
+          <div key={name} className="space-y-3">
+            <div className="flex flex-wrap items-center gap-2 border-b border-[var(--border)] pb-2">
+              <h2 className="text-lg font-semibold text-[var(--foreground)]">Đề {name}</h2>
+              <span className="text-sm text-[var(--muted-foreground)]">
+                {stats.done}/{stats.total} khối đã xử lý
+              </span>
+              <button
+                type="button"
+                className={`${btnPrimary} ml-auto`}
+                disabled={ready === 0 || bulk?.busy}
+                onClick={() => void publishSitting(name)}
+              >
+                {ready === 0 ? "Chưa khối nào đủ đáp án" : `Xuất bản ${ready} khối đã đủ đáp án`}
+              </button>
+            </div>
+            {items.map((d) => (
+              <DraftCard
+                key={d._id}
+                draft={d}
+                answers={answersById[d._id] ?? []}
+                setAnswers={(a) => setAnswersById((m) => ({ ...m, [d._id]: a }))}
+                onChanged={load}
+              />
+            ))}
+          </div>
+        );
+      })}
     </div>
   );
 }
 
-function DraftCard({ draft, onChanged }: { draft: Draft; onChanged: () => Promise<void> }) {
+function DraftCard({
+  draft,
+  answers,
+  setAnswers,
+  onChanged,
+}: {
+  draft: Draft;
+  answers: number[];
+  setAnswers: (a: number[]) => void;
+  onChanged: () => Promise<void>;
+}) {
   const questions = draft.parsed?.questions ?? [];
   const stimuli = draft.parsed?.stimuli ?? [];
-  const [answers, setAnswers] = useState<number[]>(() => {
-    const a: number[] = [];
-    for (const q of questions) a[q.no - 1] = draft.answers[q.no - 1] ?? 0;
-    return a;
-  });
   const [raw, setRaw] = useState(draft.status === "error");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
@@ -144,7 +268,7 @@ function DraftCard({ draft, onChanged }: { draft: Draft; onChanged: () => Promis
     if (kind === "discard" && !window.confirm("Loại khối này? Bạn không nhập khối này vào ngân hàng câu hỏi.")) return;
     setBusy(true);
     setMsg(null);
-    const filled = Array.from({ length: Math.max(0, ...questions.map((q) => q.no)) }, (_, i) => answers[i] ?? 0);
+    const filled = fillAnswers(draft, answers);
     const res = await fetch(`/api/exam-import?${kind}=${draft._id}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -203,7 +327,7 @@ function DraftCard({ draft, onChanged }: { draft: Draft; onChanged: () => Promis
                     type="button"
                     disabled={!open || busy}
                     aria-pressed={picked}
-                    onClick={() => setAnswers((a) => Object.assign([...a], { [q.no - 1]: picked ? 0 : i + 1 }))}
+                    onClick={() => setAnswers(Object.assign([...answers], { [q.no - 1]: picked ? 0 : i + 1 }))}
                     className={`rounded-lg border px-2.5 py-1 text-left ${
                       picked
                         ? "border-[var(--primary)] bg-[color-mix(in_srgb,var(--primary)_16%,transparent)] font-semibold"

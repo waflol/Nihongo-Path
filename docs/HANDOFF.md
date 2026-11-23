@@ -10,6 +10,7 @@ Trước đây import PDF tạo `exam_import_drafts` nhưng UI không có chỗ 
 - `apps/ui/app/admin/(panel)/exams/import/[id]/drafts/page.tsx` + `components/admin/exam-import-drafts.tsx`: xem khối 問題, text gốc, chọn đáp án, Xuất bản / Loại.
 - `app/api/exam-import/route.ts`: gateway `?drafts=`, `?publish=`, `?discard=`.
 - Link "Duyệt bản nháp" ở tracker (✎), trang log, và danh sách "Các lần nhập gần đây" trên `/admin/exams/import`.
+- Một PDF nhiều đề: bản nháp nhóm theo `sitting`, lọc theo đề, nút "Xuất bản N khối đã đủ đáp án" (xuất bản tuần tự, dừng ở lỗi đầu tiên). Chưa có sửa nhãn đề; chưa ghép các câu cùng đề thành bài thi (NP-408/409).
 - File nghe: form ghi chú chỉ thêm sau khi duyệt xong (AudioLibrary vẫn ở cùng trang, chưa khoá cứng).
 - **Chưa verify trình duyệt/DB thật** (chỉ tsc + eslint sạch).
 
