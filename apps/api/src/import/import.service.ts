@@ -56,6 +56,8 @@ interface ImportTask {
   total: number;
   cancelled: boolean;
   finishedAt?: number;
+  /** A finished preview, kept so the wizard can fetch it when its long request was cut by a gateway (503). */
+  result?: unknown;
 }
 
 /** What the floating tracker shows of a run that is checking an import file. */
@@ -1347,6 +1349,15 @@ export class ImportService implements OnApplicationBootstrap {
     return t && t.owner === caller.sub ? { phase: t.phase, done: t.done, total: t.total } : null;
   }
 
+  /** The finished preview of a run: `running` while the AI check is still going, `gone` when forgotten. */
+  taskResult(caller: AuthUser, id: string): { state: "running" | "gone" | "error" | "done"; error?: string; result?: unknown } {
+    const t = this.tasks.get(id);
+    if (!t || t.owner !== caller.sub) return { state: "gone" };
+    if (t.status === "running") return { state: "running" };
+    if (t.status === "error") return { state: "error", error: t.error };
+    return t.result ? { state: "done", result: t.result } : { state: "gone" };
+  }
+
   /** The caller's runs that did real work (a lookup phase started) and are not cancelled. */
   listTasks(caller: AuthUser): ImportTaskView[] {
     return [...this.tasks.values()]
@@ -1668,6 +1679,7 @@ export class ImportService implements OnApplicationBootstrap {
     const task = this.beginTask(caller.sub, progressId, file.originalname, deckId);
     try {
       const out = await this.previewRun(caller, file, deckId, mapping, task);
+      if (task) task.result = out;
       this.endTask(task);
       return out;
     } catch (err) {

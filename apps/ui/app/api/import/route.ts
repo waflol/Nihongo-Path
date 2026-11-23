@@ -108,7 +108,7 @@ export async function GET(request: Request) {
   const job = progress ? null : params.get("job");
   const page = params.get("page");
   const deck = params.get("deck");
-  let path = params.get("tasks") ? "progress" : progress ? `progress/${encodeURIComponent(progress)}` : job ? `jobs/${encodeURIComponent(job)}` : deck ? `decks/${encodeURIComponent(deck)}/review` : "jobs";
+  let path = params.get("tasks") ? "progress" : progress ? `progress/${encodeURIComponent(progress)}${params.get("result") ? "/result" : ""}` : job ? `jobs/${encodeURIComponent(job)}` : deck ? `decks/${encodeURIComponent(deck)}/review` : "jobs";
   if (job && page && /^\d{1,4}$/.test(page)) {
     path += params.get("kind") === "image" ? `/pages/${page}/image` : `/pages/${page}`;
     if (params.get("kind") === "image") {

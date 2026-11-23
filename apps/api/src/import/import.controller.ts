@@ -228,6 +228,12 @@ export class ImportController {
     return this.imports.taskProgress(caller, id) ?? {};
   }
 
+  @Get("progress/:id/result")
+  @ApiOperation({ summary: "Result of a finished preview run (the wizard's long request may have been cut by a gateway)" })
+  progressResult(@CurrentUser() caller: AuthUser, @Param("id") id: string) {
+    return this.imports.taskResult(caller, id);
+  }
+
   @Delete("progress/:id")
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: "Cancel a running preview / confirm" })

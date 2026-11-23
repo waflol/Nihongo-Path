@@ -409,6 +409,21 @@ export function ImportWizard({ learner = false }: { learner?: boolean }) {
     applyDecks(await fetchDecks(), created?._id);
   }
 
+  /** Poll the server run `id` until its preview is ready; a Response-like with that preview, or null. */
+  async function recoverPreview(id: string, signal: AbortSignal): Promise<Response | null> {
+    for (let i = 0; i < 360 && !signal.aborted; i++) {
+      await new Promise((r) => setTimeout(r, 5000));
+      const r = await fetch(`/api/import?progress=${id}&result=1`, { cache: "no-store" }).catch(() => null);
+      const body = (await r?.json().catch(() => null)) as { state?: string; error?: string; result?: unknown } | null;
+      if (!body) continue; // API restarting / network blip: keep waiting
+      if (body.state === "running") continue;
+      if (body.state === "done") return new Response(JSON.stringify(body.result), { status: 200 });
+      if (body.state === "error") return new Response(JSON.stringify({ message: body.error }), { status: body.error === "Đã hủy" ? 409 : 500 });
+      return null; // gone: the server forgot it (restart)
+    }
+    return null;
+  }
+
   // Step 2: fetch the columns for the chosen mapping (no mapping sent yet →
   // the API returns just the header row's names).
   async function runPreview(revealed: boolean, override?: Record<string, string>) {
@@ -457,12 +472,19 @@ export function ImportWizard({ learner = false }: { learner?: boolean }) {
       );
     }
 
-    const res = await fetch("/api/import?action=preview", {
+    let res = await fetch("/api/import?action=preview", {
       method: "POST",
       body: form,
       signal: ctl.signal,
     }).catch(() => null);
     if (ctl.signal.aborted) return; // cancelled by the user
+    // A long AI check can outlive the gateway (ngrok / proxy 502-504, dropped socket) while the server
+    // keeps working: wait for that run and take its result instead of reporting a failure.
+    if (!res || res.status === 502 || res.status === 503 || res.status === 504) {
+      const recovered = await recoverPreview(ctl.id, ctl.signal);
+      if (ctl.signal.aborted) return;
+      if (recovered) res = recovered;
+    }
     stopRunCtl();
     setRunning(null);
     if (!res) {
