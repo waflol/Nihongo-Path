@@ -77,3 +77,13 @@ describe("cleanAllPages", () => {
     expect(out).toEqual(["A", "B", "C", "D", "Other", "E"]);
   });
 });
+
+describe("running header with a page number", () => {
+  it("is learned as noise even though the number differs per page", () => {
+    const hdr = (n: number) => `Tổng hợp đề thi chính thức N3 kỳ thi năng lực tiếng Nhật các năm ${n}`;
+    const pages = [1, 2, 3, 4].map((n) => `${hdr(120 + n)}\n問題${n} 本文です。`);
+    const out = cleanAllPages(pages);
+    expect(out.some((l) => l.includes("Tổng hợp"))).toBe(false);
+    expect(out).toContain("問題1 本文です。");
+  });
+});

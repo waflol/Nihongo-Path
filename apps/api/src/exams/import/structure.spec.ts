@@ -145,3 +145,11 @@ describe("parseAiJson", () => {
     expect(parseAiJson("no braces here")).toBeNull();
   });
 });
+
+describe("parseAiJson: null stimulusKey", () => {
+  it("treats null as 'no passage', not a dangling pointer", () => {
+    const parsed = parseAiJson('{"questions":[{"no":1,"prompt":"A","options":["a","b","c","d"],"stimulusKey":null}]}');
+    expect(parsed).not.toBeNull();
+    expect(validateParsed(parsed, "A a b c d").map((i) => i.path)).not.toContain("questions[0].stimulusKey");
+  });
+});

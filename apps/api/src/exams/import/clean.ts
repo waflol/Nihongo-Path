@@ -42,6 +42,16 @@ export function cleanAnswerLine(raw: string): string {
 }
 
 /**
+ * A line's repeat signature: a running header/footer carries the page number
+ * (`Tổng hợp đề thi … các năm 129`), so the raw text differs on every page.
+ * Strip a leading/trailing 1–3 digit number when real text remains.
+ */
+export function noiseKey(line: string): string {
+  const k = line.replace(/^\d{1,3}\s+/, "").replace(/\s+\d{1,3}$/, "").trim();
+  return k.length >= 8 ? k : line;
+}
+
+/**
  * Which lines are repeated noise: a line (NFKC-normalised) that appears at
  * least `NOISE_RATIO` of the pages **and on at least 2 pages**. The second
  * condition matters for short files: on a 1-page file every line is "on 100%
@@ -51,7 +61,7 @@ export function cleanAnswerLine(raw: string): string {
 export function learnNoise(pages: string[], ratio = 0.3): Set<string> {
   const seen = new Map<string, number>();
   for (const page of pages) {
-    const unique = new Set(page.split(/\n/).map(cleanLine).filter((l) => l && !isJunkLine(l)));
+    const unique = new Set(page.split(/\n/).map(cleanLine).filter((l) => l && !isJunkLine(l)).map(noiseKey));
     for (const l of unique) seen.set(l, (seen.get(l) ?? 0) + 1);
   }
   const total = pages.length || 1;
@@ -71,7 +81,7 @@ export function cleanPage(rawPage: string, noise: Set<string>): string[] {
   const lines = rawPage
     .split(/\n/)
     .map(cleanLine)
-    .filter((l) => l && !noise.has(l) && !isJunkLine(l));
+    .filter((l) => l && !noise.has(l) && !noise.has(noiseKey(l)) && !isJunkLine(l));
   const out: string[] = [];
   for (const l of lines) {
     const prev = out[out.length - 1];

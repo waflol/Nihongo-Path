@@ -131,7 +131,7 @@ export function validateParsed(parsed: ParsedBlock | null, rawText: string, expe
         issues.push({ path: `${at}.options[${oi}]`, message: "phương án không có trong khối gốc — có thể AI bịa" });
       }
     }
-    if (q.stimulusKey !== undefined && !keys.has(q.stimulusKey)) {
+    if (q.stimulusKey != null && !keys.has(q.stimulusKey)) {
       issues.push({ path: `${at}.stimulusKey`, message: `trỏ bài đọc không tồn tại: ${q.stimulusKey}` });
     }
   });
@@ -160,7 +160,16 @@ export function parseAiJson(raw: string): ParsedBlock | null {
     if (Array.isArray(o.questions)) {
       return {
         stimuli: Array.isArray(o.stimuli) ? o.stimuli : [],
-        questions: o.questions,
+        // The model often writes `"stimulusKey": null` for a standalone
+        // question — that means "no passage", not a dangling pointer.
+        questions: o.questions.map((q: ParsedBlock["questions"][number]) => {
+          if (q && (q as { stimulusKey?: unknown }).stimulusKey === null) {
+            const { stimulusKey: _drop, ...rest } = q;
+            void _drop;
+            return rest;
+          }
+          return q;
+        }),
       };
     }
     return null;
