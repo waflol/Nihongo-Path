@@ -202,9 +202,9 @@ export class FlashcardsController {
 
   @Patch("admin/card-reports/:id")
   @ContentAdmin()
-  @ApiOperation({ summary: "Mark a report resolved / rejected / open (admin)" })
-  adminSetReportStatus(@Param("id") id: string, @Body() body: ReportStatusDto) {
-    return this.reports.adminSetStatus(id, body.status);
+  @ApiOperation({ summary: "Mark a report resolved / rejected / open (admin; recorded in its history)" })
+  adminSetReportStatus(@CurrentUser() caller: AuthUser, @Param("id") id: string, @Body() body: ReportStatusDto) {
+    return this.reports.adminSetStatus(caller, id, body.status);
   }
 
   @Get("image-suggestions")

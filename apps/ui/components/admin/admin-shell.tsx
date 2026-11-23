@@ -55,6 +55,16 @@ const NAV: NavItem[] = [
     ),
   },
   {
+    href: "/admin/feedback",
+    label: "Hộp thư phản hồi",
+    desc: "Góp ý chung: từ vựng, transcript, bản dịch + lịch sử xử lý",
+    icon: (
+      <svg {...iconProps}>
+        <path d="M4 4h16v12H7l-3 4zM8 8h8M8 11h5" />
+      </svg>
+    ),
+  },
+  {
     href: "/admin/exams",
     label: "Đề thi",
     desc: "Soạn đề, ngân hàng câu hỏi 問題",

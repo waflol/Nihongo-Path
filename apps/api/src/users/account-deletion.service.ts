@@ -22,6 +22,7 @@ import { RequestLog } from "../logs/request-log.schema.js";
 import { PushSubscription } from "../notifications/schemas/push-subscription.schema.js";
 import { UserCardProgress } from "../srs/schemas/progress.schema.js";
 import { StudySession } from "../srs/schemas/session.schema.js";
+import { UserFeedback } from "../feedback/schemas/user-feedback.schema.js";
 import { AuthAccount, AuthAccountDocument } from "./schemas/auth-account.schema.js";
 import { User, UserDocument } from "./schemas/user.schema.js";
 
@@ -37,6 +38,7 @@ export interface AccountDeletionResult {
     progress: number;
     sessions: number;
     reports: number;
+    feedback: number;
     pushSubscriptions: number;
     importJobs: number;
   };
@@ -71,6 +73,7 @@ export class AccountDeletionService {
     @InjectModel(PdfJobPage.name) private readonly jobPage: Model<PdfJobPage>,
     @InjectModel(AuditLog.name) private readonly audit: Model<AuditLog>,
     @InjectModel(RequestLog.name) private readonly requestLog: Model<RequestLog>,
+    @InjectModel(UserFeedback.name) private readonly feedback: Model<UserFeedback>,
   ) {}
 
   /** Whether the self-service button / endpoint is allowed for this role. */
@@ -130,6 +133,7 @@ export class AccountDeletionService {
     const progress = (await this.progress.deleteMany({ user: uid }).exec()).deletedCount ?? 0;
     const sessions = (await this.study.deleteMany({ user: uid }).exec()).deletedCount ?? 0;
     const reports = (await this.report.deleteMany({ user: uid }).exec()).deletedCount ?? 0;
+    const feedback = (await this.feedback.deleteMany({ user: uid }).exec()).deletedCount ?? 0;
     const pushSubscriptions = (await this.push.deleteMany({ user: uid }).exec()).deletedCount ?? 0;
 
     // 3. Import jobs (user is stored as a string) + their pages + the file on disk.
@@ -161,6 +165,7 @@ export class AccountDeletionService {
         progress,
         sessions,
         reports,
+        feedback,
         pushSubscriptions,
         importJobs: jobs.length,
       },

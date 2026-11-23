@@ -25,6 +25,7 @@ function setup(user: { role: string; passwordHash?: string | null } | null) {
     gone() as never, // jobPage
     empty() as never, // audit
     empty() as never, // requestLog
+    gone() as never, // feedback
   );
   return { svc, userModel, caller: { sub: id.toString(), role: "USER" as const, lang: "vi" } };
 }

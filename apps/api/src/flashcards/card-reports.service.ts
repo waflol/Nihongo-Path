@@ -103,18 +103,27 @@ export class CardReportsService {
         cardBack: d.cardBack,
         cardHanViet: d.cardHanViet,
         status: d.status,
+        historyCount: Array.isArray(d.history) ? d.history.length : 0,
         reporter: u?.displayName || u?.email || "—",
         createdAt: (d as unknown as { createdAt?: Date }).createdAt,
       };
     });
   }
 
-  async adminSetStatus(id: string, status: ReportStatus) {
+  async adminSetStatus(caller: AuthUser, id: string, status: ReportStatus) {
     if (!Types.ObjectId.isValid(id)) throw new NotFoundException("Report not found");
-    const doc = await this.reports
-      .findByIdAndUpdate(id, { $set: { status } }, { new: true })
-      .exec();
+    const doc = await this.reports.findById(id).exec();
     if (!doc) throw new NotFoundException("Report not found");
-    return { id: String(doc._id), status: doc.status };
+    const from = doc.status;
+    doc.status = status;
+    doc.history = doc.history ?? [];
+    doc.history.push({
+      from: from === status ? undefined : from,
+      to: status,
+      by: new Types.ObjectId(caller.sub),
+      at: new Date(),
+    });
+    await doc.save();
+    return { id: String(doc._id), status: doc.status, history: doc.history.length };
   }
 }

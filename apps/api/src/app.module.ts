@@ -15,6 +15,7 @@ import { buildSrsModule } from "./srs/srs.module.js";
 import { buildImportModule } from "./import/import.module.js";
 import { buildExamsModule } from "./exams/exams.module.js";
 import { buildLogsModule } from "./logs/logs.module.js";
+import { buildFeedbackModule } from "./feedback/feedback.module.js";
 import { buildSystemModule } from "./system/system.module.js";
 import { buildEvalModule } from "./eval/eval.module.js";
 import { buildNotificationsModule } from "./notifications/notifications.module.js";
@@ -59,6 +60,8 @@ import { buildNotificationsModule } from "./notifications/notifications.module.j
     buildExamsModule(),
     // Admin request-log viewer (GET /admin/logs).
     buildLogsModule(),
+    // General learner feedback + admin inbox (P5-FEEDBACK-01/02, NP-025).
+    buildFeedbackModule(),
     // Admin server monitor (GET /admin/system/stats).
     buildSystemModule(),
     buildEvalModule(),

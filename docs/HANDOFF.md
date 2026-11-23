@@ -11,7 +11,6 @@
 ### ✅ Commit 1 — NP-024 (P5-ADMIN-01/02/03): RBAC 403 + no-self-privilege + audit before/after
 
 Đã commit. 487 tests xanh, TSC clean, lint clean.
-
 | File | Nội dung |
 |---|---|
 | `src/users/admin-rbac.spec.ts` | **MỚI** — RBAC 403 (RolesGuard: USER→ADMIN route 403, ADMIN→SUPER route 403, pass-through) + no-self-privilege (self-promotion/demotion từ chối, ADMIN không chạm admin, SUPER_ADMIN mới đổi role được, role change revoke sessions) — 11 test |
@@ -30,11 +29,27 @@
 - Repo **double-quote** (committed code) nhưng `.prettierrc` ghi `singleQuote:true` và **không được enforce** (file committed fail `prettier --check`). Code mới theo double-quote để khớp. Đừng chạy `prettier --write` (sẽ đổi cả file sang single-quote, diff khổng lồ).
 - VPS 4 GB RAM, không swap. Test full suite: `pnpm -C apps/api exec vitest run --no-file-parallelism`.
 
+### ✅ Commit 2 — NP-025 (P5-FEEDBACK-01/02): phản hồi chung + trạng thái + lịch sử xử lý
+
+Code + spec + UI đã có; còn verify API/trình duyệt thật.
+
+| File | Nội dung |
+|---|---|
+| `src/feedback/schemas/user-feedback.schema.ts` | **MỚI** — `user_feedbacks`: `source` (vocabulary/grammar/transcript/translation/exam/general), `status` (OPEN→IN_PROGRESS→RESOLVED/REJECTED), `history[]` (from→to, by, note, at), index `{status,createdAt:-1}` |
+| `src/feedback/feedback.service.ts` | `create` (anti-spam 30/ngày), `myList`, `adminList` (lọc status/source, phân trang), `adminSetStatus` (mỗi đổi trạng thái push 1 entry `history`), `adminDetail` (history đầy đủ) — 6 spec |
+| `src/feedback/feedback.controller.ts` | `/feedback` POST + `/feedback/me` (learner) |
+| `src/feedback/admin-feedback.controller.ts` | `/admin/feedback` GET/GET:id/PATCH:id, `@ContentAdmin()` |
+| `src/flashcards/schemas/card-report.schema.ts` | `CardReport` +`history[]` — đổi trạng thái báo lỗi thẻ cũng ghi lịch sử |
+| `src/flashcards/card-reports.service.ts` | `adminSetStatus(caller,id,status)` ghi history (thay findByIdAndUpdate); `adminList` trả `historyCount` |
+| `src/users/account-deletion.service.ts` | Xoá `user_feedbacks` khi xoá tài khoản (+ count) |
+| `ui/components/account/feedback-panel.tsx` | **MỚI** — panel gửi góp ý + danh sách góp ý của mình (trạng thái + lần xử lý) ở `/account` |
+| `ui/components/admin/feedback-console.tsx` | **MỚI** — hộp thư admin `/admin/feedback`: lọc nguồn/trạng thái, đổi trạng thái có ghi chú, mở lịch sử xử lý (ai, từ→đến, khi nào, note) |
+| `ui/app/api/feedback/[[...route]]/route.ts` + `ui/app/api/admin/feedback/[[...route]]/route.ts` | **MỚI** — gateway Next → API `/feedback*` (learner) và `/admin/feedback*` (admin) |
+
 **CHƯA LÀM (việc agent kế tiếp, theo thứ tự):**
-1. **NP-024 verify thật**: chạy `/admin/users` trên trình duyệt, đổi role/status thật, mở `/admin/logs` tab audit kiểm row có before/after trong DB (`audit_logs`). (Code + spec đã đủ để đóng khi verify.)
-2. **NP-025 (P5-FEEDBACK-01/02)**: mở rộng `card-reports` (báo lỗi thẻ) → phản hồi chung (từ vựng/transcript/bản dịch), có **trạng thái + lịch sử xử lý** (mỗi lần đổi trạng thái ghi ai/khi nào/giữ), hộp thư admin lọc theo trạng thái. File nền: `src/flashcards/schemas/card-report.schema.ts` (`REPORT_STATUSES`), `card-reports.service.ts`, `ui/components/admin/card-reports-console.tsx`. Xem `docs/issues/NP-025.md`.
-3. **NP-504 (P5-SEC-01 + P5-DOC-01)**: rà least privilege toàn endpoint admin (`grep -L "@Roles"` các controller admin) + ADR entitlement + cập nhật `database.md`. **Làm sau quota** để quét toàn bộ P5.
-4. **Quota engine NP-501/502/503**: theo layout đã duyệt — `feature-config.schema.ts` (featureKey, enabled, limit, period, tz reset) + `quota_reservations`/`usage_records` + `quota.service` (reserve→settle→release, reset theo kỳ/tz) + `EntitlementGuard`/`QuotaGuard` (plan không có quyền→403, hết mức→429/403) + màn admin cấu hình. Q-07/Q-23 chỉ chốt con số (edit trong admin), không chặn kiến trúc. Xem `docs/issues/NP-501.md`, `NP-502.md`, `NP-503.md`.
+1. **Verify thật NP-024 + NP-025** (chạy được trên VPS là đóng): API `/admin/users` đổi role + `/admin/logs` kiểm before/after; API `/feedback` POST + `/admin/feedback` đổi trạng thái → kiểm `history`; trình duyệt `/account` (gửi góp ý), `/admin/feedback` (lọc + lịch sử), `/admin/reports` (báo lỗi thẻ, giờ có history).
+2. **NP-504 (P5-SEC-01 + P5-DOC-01)**: rà least privilege toàn endpoint admin (`grep -L "@Roles"` các controller admin) + ADR entitlement + cập nhật `database.md`. **Làm sau quota** để quét toàn bộ P5.
+3. **Quota engine NP-501/502/503**: theo layout đã duyệt — `feature-config.schema.ts` (featureKey, enabled, limit, period, tz reset) + `quota_reservations`/`usage_records` + `quota.service` (reserve→settle→release, reset theo kỳ/tz) + `EntitlementGuard`/`QuotaGuard` (plan không có quyền→403, hết mức→429/403) + màn admin cấu hình. Q-07/Q-23 chỉ chốt con số (edit trong admin), không chặn kiến trúc. Xem `docs/issues/NP-501.md`, `NP-502.md`, `NP-503.md`.
 
 ## 4. Lệnh chuẩn
 

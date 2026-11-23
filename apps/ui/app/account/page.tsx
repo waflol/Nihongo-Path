@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { DeleteAccountPanel } from "@/components/auth/delete-account-panel";
+import { FeedbackPanel } from "@/components/account/feedback-panel";
 import { getSession } from "@/lib/session";
 
 export const metadata: Metadata = {
@@ -31,6 +32,8 @@ export default async function AccountPage() {
           <dd className="font-medium text-[var(--foreground)]">{user.timezone}</dd>
         </dl>
       </section>
+
+      <FeedbackPanel />
 
       <div className="mt-6">{canDelete ? <DeleteAccountPanel /> : null}</div>
 
