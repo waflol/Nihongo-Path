@@ -101,6 +101,51 @@ function PdfUpload() {
   );
 }
 
+interface RecentJob {
+  _id: string;
+  fileName: string;
+  level: string;
+  status: string;
+  blocksFound?: number;
+  blocksOk?: number;
+  blocksError?: number;
+}
+
+/** Past imports, each linking to its draft review screen. */
+function RecentImports() {
+  const [jobs, setJobs] = useState<RecentJob[]>([]);
+  useEffect(() => {
+    void fetch("/api/exam-import", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : []))
+      .then((j) => setJobs(Array.isArray(j) ? (j as RecentJob[]) : []))
+      .catch(() => undefined);
+  }, []);
+  if (jobs.length === 0) return null;
+  return (
+    <section className="rounded-2xl border border-[var(--border)] bg-[var(--background-1)] p-4 sm:p-5">
+      <h2 className="text-base font-semibold text-[var(--foreground)]">Các lần nhập gần đây</h2>
+      <ul className="mt-2 divide-y divide-[var(--border)] text-sm">
+        {jobs.map((j) => (
+          <li key={j._id} className="flex flex-wrap items-center gap-2 py-2">
+            <span className="min-w-0 flex-1 truncate text-[var(--foreground)]">
+              {j.level} · {j.fileName}
+            </span>
+            <span className="text-xs text-[var(--muted-foreground)]">
+              {j.status} · {j.blocksFound ?? 0} khối ({j.blocksOk ?? 0} ổn, {j.blocksError ?? 0} lỗi)
+            </span>
+            <Link href={`/admin/exams/import/${j._id}/drafts`} className="font-medium text-[var(--primary)] hover:underline">
+              Duyệt bản nháp
+            </Link>
+            <Link href={`/admin/exams/import/${j._id}/log`} className="text-[var(--muted-foreground)] hover:underline">
+              Log
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 /** Listening clips: upload, list, and attach a stretch of a clip to a question / passage. */
 function AudioLibrary() {
   const [assets, setAssets] = useState<AudioAsset[]>([]);
@@ -278,6 +323,10 @@ export function ExamImportForm() {
         <h1 className="mt-1 text-2xl font-semibold tracking-tight text-[var(--foreground)]">Nhập đề JLPT</h1>
       </div>
       <PdfUpload />
+      <RecentImports />
+      <p className="text-sm text-[var(--muted-foreground)]">
+        File nghe: chỉ thêm sau khi đã duyệt và xuất bản xong bản nháp của đề (bước duyệt ở trên).
+      </p>
       <AudioLibrary />
     </div>
   );

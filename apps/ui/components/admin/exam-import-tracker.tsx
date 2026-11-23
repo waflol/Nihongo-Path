@@ -225,9 +225,17 @@ export function ExamImportTracker() {
                   </button>
                 )}
                 <Link
+                  href={`/admin/exams/import/${j._id}/drafts`}
+                  className={tone.page}
+                  title="Duyệt bản nháp"
+                  aria-label="Duyệt bản nháp"
+                >
+                  ✎
+                </Link>
+                <Link
                   href="/admin/exams/import"
                   onClick={active ? undefined : () => dismiss(j._id)}
-                  className={`${tone.page} ml-auto`}
+                  className={tone.page}
                   title="Mở trang nhập đề"
                   aria-label="Mở trang nhập đề"
                 >

@@ -112,6 +112,9 @@ export function ExamImportLogPanel({ jobId }: { jobId: string }) {
       <Link href="/admin/exams/import" className="text-xs font-medium text-[var(--primary)] hover:underline">
         ← Quay lại nhập đề
       </Link>
+      <Link href={`/admin/exams/import/${jobId}/drafts`} className="ml-4 text-xs font-medium text-[var(--primary)] hover:underline">
+        Duyệt bản nháp →
+      </Link>
       <div className="mt-3 flex items-center gap-3">
         <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-[color-mix(in_srgb,var(--primary)_16%,transparent)] text-2xl font-semibold text-[var(--primary)]" aria-hidden="true">
           試

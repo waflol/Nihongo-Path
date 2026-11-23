@@ -4,6 +4,17 @@
 
 ---
 
+## P4 — NP-407: màn duyệt bản nháp đề (mới thêm)
+
+Trước đây import PDF tạo `exam_import_drafts` nhưng UI không có chỗ xem → thêm:
+- `apps/ui/app/admin/(panel)/exams/import/[id]/drafts/page.tsx` + `components/admin/exam-import-drafts.tsx`: xem khối 問題, text gốc, chọn đáp án, Xuất bản / Loại.
+- `app/api/exam-import/route.ts`: gateway `?drafts=`, `?publish=`, `?discard=`.
+- Link "Duyệt bản nháp" ở tracker (✎), trang log, và danh sách "Các lần nhập gần đây" trên `/admin/exams/import`.
+- File nghe: form ghi chú chỉ thêm sau khi duyệt xong (AudioLibrary vẫn ở cùng trang, chưa khoá cứng).
+- **Chưa verify trình duyệt/DB thật** (chỉ tsc + eslint sạch).
+
+---
+
 ## P5 — Admin, Feedback & Entitlements (tiến độ hiện tại)
 
 **Trình tự đã duyệt (quota sau, cấu hình hoá):** NP-024 → NP-025 → NP-504 (SEC+ADR/DOC, làm sau) → quota engine NP-501/502/503 (100% cấu hình hoá theo Q-07: mỗi feature có bật/tắt + limit + chu kỳ + tz reset, sửa trong admin, không cần deploy).

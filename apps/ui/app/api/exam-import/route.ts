@@ -7,18 +7,25 @@ import { getSession } from "@/lib/session";
  *   GET  /api/exam-import             → my recent jobs
  *   GET  /api/exam-import?log=<id>    → one job's event log
  *   POST /api/exam-import?cancel=<id> → stop a running job
+ *   GET  /api/exam-import?drafts=<jobId>[&status=] → the job's review drafts
+ *   POST /api/exam-import?publish=<draftId> {answers} / ?discard=<draftId>
  * The access token stays server-side (same pattern as /api/import).
  */
 const ID = /^[\w-]{8,40}$/;
 
-async function forward(path: string, method: "GET" | "POST") {
+async function forward(path: string, method: "GET" | "POST", json?: string) {
   const session = await getSession();
   if (!session.authenticated || !session.accessToken) {
     return NextResponse.json({ error: "Không đăng nhập" }, { status: 401 });
   }
   const r = await fetch(`${API_BASE_URL}/exams/admin/import${path}`, {
     method,
-    headers: { ...(await clientIpHeaders()), Authorization: `Bearer ${session.accessToken}` },
+    headers: {
+      ...(await clientIpHeaders()),
+      Authorization: `Bearer ${session.accessToken}`,
+      ...(json !== undefined ? { "Content-Type": "application/json" } : {}),
+    },
+    body: json,
     cache: "no-store",
   });
   const t = await r.text();
@@ -37,6 +44,14 @@ export async function GET(request: Request) {
     if (!ID.test(log)) return NextResponse.json({ error: "id không hợp lệ" }, { status: 400 });
     return forward(`/${log}/log`, "GET");
   }
+  const drafts = new URL(request.url).searchParams.get("drafts");
+  if (drafts) {
+    if (!ID.test(drafts)) return NextResponse.json({ error: "id không hợp lệ" }, { status: 400 });
+    const status = new URL(request.url).searchParams.get("status");
+    const q = new URLSearchParams({ jobId: drafts });
+    if (status && /^[a-z_]{3,20}$/.test(status)) q.set("status", status);
+    return forward(`/drafts?${q}`, "GET");
+  }
   return forward("", "GET");
 }
 
@@ -45,6 +60,13 @@ export async function POST(request: Request) {
   if (cancel) {
     if (!ID.test(cancel)) return NextResponse.json({ error: "id không hợp lệ" }, { status: 400 });
     return forward(`/${cancel}/cancel`, "POST");
+  }
+  const sp = new URL(request.url).searchParams;
+  for (const action of ["publish", "discard"] as const) {
+    const id = sp.get(action);
+    if (!id) continue;
+    if (!ID.test(id)) return NextResponse.json({ error: "id không hợp lệ" }, { status: 400 });
+    return forward(`/drafts/${id}/${action}`, "POST", action === "publish" ? await request.text() : "{}");
   }
   // Upload: forward the multipart body as bytes (a stream needs `duplex`).
   const session = await getSession();
