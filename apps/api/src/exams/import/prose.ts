@@ -36,14 +36,74 @@ async function loadPdfjs(): Promise<Pdfjs> {
   }
 }
 
-/** Group a page's fragments into visual lines, top → bottom, left → right. */
+type Frag = { x: number; y: number; w: number; s: string };
+
+/**
+ * The x of the gutter between two text columns, or `null` for a one-column
+ * page. A gutter is a ≥10pt strip in the middle third that (almost) no
+ * fragment crosses, with real text on both sides.
+ */
+function findGutter(frags: Frag[]): number | null {
+  if (frags.length < 12) return null;
+  const minX = Math.min(...frags.map((f) => f.x));
+  const maxX = Math.max(...frags.map((f) => f.x + f.w));
+  const width = maxX - minX;
+  if (width < 200) return null;
+  const lo = Math.floor(minX + width * 0.35);
+  const hi = Math.ceil(minX + width * 0.65);
+  let best: { from: number; to: number } | null = null;
+  let runFrom = -1;
+  for (let x = lo; x <= hi + 1; x += 1) {
+    const covered = x <= hi ? frags.filter((f) => f.x <= x && f.x + f.w >= x).length : Infinity;
+    if (covered <= 2) {
+      if (runFrom < 0) runFrom = x;
+    } else if (runFrom >= 0) {
+      if (!best || x - runFrom > best.to - best.from) best = { from: runFrom, to: x };
+      runFrom = -1;
+    }
+  }
+  if (!best || best.to - best.from < 10) return null;
+  const g = (best.from + best.to) / 2;
+  // Both columns must hold real prose lines (a table of digits has a gap too, but no long runs).
+  const longLines = (side: Frag[]) => side.filter((f) => f.w >= 60).length;
+  const left = frags.filter((f) => f.x + f.w / 2 < g);
+  const right = frags.filter((f) => f.x + f.w / 2 >= g);
+  return longLines(left) >= 6 && longLines(right) >= 6 ? g : null;
+}
+
+/** Group a page's fragments into visual lines, top → bottom; a two-column page reads the left column, then the right. */
 function linesOf(items: { str: string; x: number; y: number; w: number }[]): string[] {
-  type Frag = { x: number; y: number; w: number; s: string };
   const frags: Frag[] = [];
   for (const it of items) {
     if (!it.str || it.str.trim() === "") continue;
     frags.push({ x: it.x, y: it.y, w: it.w, s: it.str });
   }
+  const g = findGutter(frags);
+  if (g === null) return lineBuckets(frags);
+
+  // Lines that run across the gutter (titles, 問題 headings) split the page into bands;
+  // inside each band the left column is read before the right one.
+  const spans = (f: Frag) => f.x < g - 3 && f.x + f.w > g + 3;
+  const spanning = frags.filter(spans);
+  const rest = frags.filter((f) => !spans(f));
+  const cuts = [...new Set(spanning.map((f) => Math.round(f.y)))].sort((a, b) => b - a);
+  const out: string[] = [];
+  let upper = Infinity;
+  const band = (top: number, bottom: number) => {
+    const inBand = rest.filter((f) => f.y < top && f.y >= bottom);
+    out.push(...lineBuckets(inBand.filter((f) => f.x + f.w / 2 < g)), ...lineBuckets(inBand.filter((f) => f.x + f.w / 2 >= g)));
+  };
+  for (const cut of cuts) {
+    band(upper, cut + 4);
+    out.push(...lineBuckets(spanning.filter((f) => Math.round(f.y) === cut)));
+    upper = cut - 4;
+  }
+  band(upper, -Infinity);
+  return out;
+}
+
+/** Group a page's fragments into visual lines, top → bottom, left → right. */
+function lineBuckets(frags: Frag[]): string[] {
   if (frags.length === 0) return [];
 
   // Bucket fragments that share a line (within a small y band), top first.
@@ -100,7 +160,7 @@ export async function openProsePdf(
       const lines = linesOf(
         (content.items as { str?: string; transform: number[] }[])
           .filter((it) => "str" in it)
-          .map((it) => ({ str: (it as { str?: string }).str ?? "", x: it.transform[4], y: it.transform[5], w: 0 })),
+          .map((it) => ({ str: (it as { str?: string }).str ?? "", x: it.transform[4], y: it.transform[5], w: (it as { width?: number }).width ?? 0 })),
       );
       if (lines.length > 0 && !isGarbageText(lines.join(" "))) return lines.join("\n");
       // No usable text layer → render + OCR (the scan path).

@@ -28,6 +28,7 @@ interface Draft {
   answers: number[];
   issues: string[];
   status: "needs_review" | "error" | "published" | "discarded";
+  parsedBy?: "rules" | "ai";
 }
 interface Job {
   fileName: string;
@@ -290,6 +291,14 @@ function DraftCard({
         </h2>
         <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${st.cls}`}>{st.label}</span>
         <span className="text-xs text-[var(--muted-foreground)]">{questions.length} câu</span>
+        {draft.parsedBy && (
+          <span
+            className="text-xs text-[var(--muted-foreground)]"
+            title={draft.parsedBy === "rules" ? "Đọc đúng theo bố cục in, không dùng AI" : "AI tách khối, đã đối chiếu với text gốc"}
+          >
+            · {draft.parsedBy === "rules" ? "đọc bằng quy tắc" : "AI tách"}
+          </span>
+        )}
       </div>
       {draft.instruction && <p className="mt-1 text-sm text-[var(--muted-foreground)]">{draft.instruction}</p>}
 

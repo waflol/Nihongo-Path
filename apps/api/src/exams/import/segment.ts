@@ -1,4 +1,5 @@
-import { classifyInstruction, type MondaiType, type SectionKey } from "../mondai.js";
+import { classifyInstruction, SECTION_OF, type MondaiType, type SectionKey } from "../mondai.js";
+import { mondaiByNumber, mondaiNumberOf, PartTracker, sheetsOf } from "./mondai-table.js";
 import { type AnswerKeyBlock } from "./answer-key.js";
 import { cleanAnswerLine, cleanLine, isJunkLine, learnNoise } from "./clean.js";
 
@@ -179,23 +180,43 @@ export function segmentBlocks(pages: string[], level?: string): Segmented {
   let current: { instruction: string; body: string[]; pageFrom: number; pageTo: number; part: SectionKey } | null =
     null;
 
+  // N3–N5 print two sheets whose 問題 numbering restarts; one tracker per paper.
+  const tracker = new PartTracker(sheetsOf(level));
+
   const flush = () => {
     if (!current) return;
     const rawText = current.body.join("\n").trim();
     const head = current.body.slice(0, 3).join(" ");
     // A bare `問題 N:` heading (Migii) needs the first body lines to classify.
-    const mondai = classifyInstruction(current.instruction + " " + head, level, {
+    const byText = classifyInstruction(current.instruction + " " + head, level, {
       section: current.part,
     });
+    // The official layout names the type of every 問題 NUMBER (jlpt.jp 大問のねらい):
+    // it fills in a type the (possibly OCR-damaged) instruction could not give.
+    const no = mondaiNumberOf(current.instruction);
+    let mondai = byText;
+    let note: string | undefined;
+    let section: SectionKey = current.part;
+    if (no !== null && sheetsOf(level) > 0) {
+      const byNo = mondaiByNumber(level, tracker.next(no), no);
+      // N1/N2 print 語形成 and 文脈規定 with the SAME instruction (`( )に入れるのに最もよいもの`):
+      // only the number tells them apart.
+      if (byNo && (!byText || (byNo === "word-formation" && byText === "context"))) {
+        mondai = byNo;
+        section = SECTION_OF[byNo];
+      } else if (byNo && byText && byNo !== byText) {
+        note = `dạng theo lời dẫn (${byText}) khác dạng theo số 問題 ${no} của ${level} (${byNo}) — kiểm tra lại`;
+      }
+    }
     blocks.push({
       sitting: sitting || "unknown",
-      sectionHint: current.part,
+      sectionHint: section,
       instruction: current.instruction,
       rawText,
       pageFrom: current.pageFrom,
       pageTo: current.pageTo,
       mondai,
-      note: mondai ? undefined : "không nhận dạng được dạng 問題 — cần duyệt tay",
+      note: note ?? (mondai ? undefined : "không nhận dạng được dạng 問題 — cần duyệt tay"),
     });
     current = null;
   };
@@ -211,7 +232,10 @@ export function segmentBlocks(pages: string[], level?: string): Segmented {
 
     const sittingLine = sittingOf(n);
     if (sittingLine) {
-      if (sitting !== sittingLine) flush(); // a new paper starts: close the previous block
+      if (sitting !== sittingLine) {
+        flush(); // a new paper starts: close the previous block
+        tracker.reset();
+      }
       sitting = sittingLine;
       // Drop the label itself (it may share its line with the page's first text).
       if (SITTING_NN_LABEL.test(n)) {

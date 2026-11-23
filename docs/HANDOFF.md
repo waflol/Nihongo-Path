@@ -12,6 +12,7 @@ Trước đây import PDF tạo `exam_import_drafts` nhưng UI không có chỗ 
 - Link "Duyệt bản nháp" ở tracker (✎), trang log, và danh sách "Các lần nhập gần đây" trên `/admin/exams/import`.
 - Một PDF nhiều đề: bản nháp nhóm theo `sitting`, lọc theo đề, nút "Xuất bản N khối đã đủ đáp án" (xuất bản tuần tự, dừng ở lỗi đầu tiên). Chưa có sửa nhãn đề; chưa ghép các câu cùng đề thành bài thi (NP-408/409).
 - **Sửa pipeline theo file thật `40 de thi n2.pdf` (473 trang, 34 đề):** (1) `prose.ts` sắp dòng từ dưới lên → đảo ngược mọi trang → sửa y giảm dần; cap trang 300→600 + log cảnh báo khi cắt (`totalPages`); (2) nhãn đề `N2 - 4 …` dính vào dòng đầu trang nay nhận được và bị cắt khỏi nội dung, ngày `YYYY年M月` chỉ tính trên dòng ≤30 ký tự; (3) trang `N2-x 解答` (hàng số câu trên hàng đáp án, `問題 1 5x1(5d)`) không còn thành khối rác mà parse thành `sheetKeys[sitting]` → điền sẵn đáp án vào bản nháp theo đề + số 問題; (4) `q.no` luôn đánh lại theo vị trí 1..n. Thử cục bộ: 385 khối / 34 đề / 34 bảng đáp án (trước: 500 khối, 15 nhãn lẫn). Còn: một số 問題 chưa nhận dạng (`mondai` null do OCR sai chữ), phần `part` đọc theo header lặp mỗi trang.
+- **Đọc bằng quy tắc (NP-407, theo yêu cầu "mỗi phần là 問題 <số> + yêu cầu"):** `import/mondai-table.ts` = bảng 大問 chính thức N1–N5 lấy từ jlpt.jp/guideline/pdf/n1..n5.pdf (N1 13 phần, N2 14, N3 5+7, N4 5+6, N5 4+6; N3–N5 có 2 tờ, số 問題 đánh lại từ 1 — `PartTracker` nhận ra tờ 2 khi số giảm). `segment.ts` dùng số 問題 để điền dạng khi lời dẫn không phân loại được và để phân biệt 語形成/文脈規定 (cùng lời dẫn); lệch nhau thì ghi `note`. `import/rules.ts` `parseByRules` đọc chính xác các dạng câu (kanji-reading, orthography, word-formation, context, paraphrase, usage, grammar-form, star-order): `N）câu` hoặc `N câu`, phương án `1 a 2 b`/`2.b`, bỏ khung ví dụ & chân trang. Service: quy tắc trước → nếu hợp lệ + khớp số câu trong bảng đáp án thì KHÔNG gọi AI (`parsedBy: "rules"`), không thì AI, AI hỏng thì giữ kết quả quy tắc kèm issues. `prose.ts` nhận trang 2 cột (tìm rãnh giữa, đọc cột trái rồi phải) và dùng bề rộng chữ thật. Thử trên `40 de thi n2`: 468 khối; 155 khối đọc bằng quy tắc khớp bảng đáp án, ~206 khối bài đọc cần AI, ~84 lệch số câu + 22 không đọc được (phần lớn do khối bị cắt ở ngắt trang) → rơi sang AI.
 - File nghe: form ghi chú chỉ thêm sau khi duyệt xong (AudioLibrary vẫn ở cùng trang, chưa khoá cứng).
 - **Chưa verify trình duyệt/DB thật** (chỉ tsc + eslint sạch).
 
@@ -60,9 +61,42 @@ Code + spec + UI đã có; còn verify API/trình duyệt thật.
 | `ui/app/api/feedback/[[...route]]/route.ts` + `ui/app/api/admin/feedback/[[...route]]/route.ts` | **MỚI** — gateway Next → API `/feedback*` (learner) và `/admin/feedback*` (admin) |
 
 **CHƯA LÀM (việc agent kế tiếp, theo thứ tự):**
-1. **Verify thật NP-024 + NP-025** (chạy được trên VPS là đóng): API `/admin/users` đổi role + `/admin/logs` kiểm before/after; API `/feedback` POST + `/admin/feedback` đổi trạng thái → kiểm `history`; trình duyệt `/account` (gửi góp ý), `/admin/feedback` (lọc + lịch sử), `/admin/reports` (báo lỗi thẻ, giờ có history).
-2. **NP-504 (P5-SEC-01 + P5-DOC-01)**: rà least privilege toàn endpoint admin (`grep -L "@Roles"` các controller admin) + ADR entitlement + cập nhật `database.md`. **Làm sau quota** để quét toàn bộ P5.
-3. **Quota engine NP-501/502/503**: theo layout đã duyệt — `feature-config.schema.ts` (featureKey, enabled, limit, period, tz reset) + `quota_reservations`/`usage_records` + `quota.service` (reserve→settle→release, reset theo kỳ/tz) + `EntitlementGuard`/`QuotaGuard` (plan không có quyền→403, hết mức→429/403) + màn admin cấu hình. Q-07/Q-23 chỉ chốt con số (edit trong admin), không chặn kiến trúc. Xem `docs/issues/NP-501.md`, `NP-502.md`, `NP-503.md`.
+1. **Verify thật NP-024 + NP-025 + quota engine** (chạy được trên VPS là đóng): API `/admin/users` đổi role + `/admin/logs` kiểm before/after; API `/feedback` POST + `/admin/feedback` đổi trạng thái → kiểm `history`; trình duyệt `/account` (gửi góp ý), `/admin/feedback` (lọc + lịch sử), `/admin/reports` (báo lỗi thẻ, giờ có history). Quota: `/admin/entitlements` (tạo config `ai-sentence-grade`, FREE=3/THÁNG) → thử chấm câu ở `/learn` cho tới khi 429; đổi gói 1 user FREE→VIP ở bảng Người dùng → chấm lại không còn chặn.
+2. **NP-504 (P5-SEC-01 + P5-DOC-01)**: rà least privilege toàn endpoint admin (`grep -L "@Roles"` các controller admin — giờ đã gồm `admin/entitlements`) + ADR entitlement + cập nhật `database.md` (3 collection: `feature_configs`, `quota_reservations`, `usage_records`). **Làm sau quota** để quét toàn bộ P5.
+3. ✅ **Quota engine NP-501/502/503** — xong (commit 3 bên dưới).
+
+### ✅ Commit 3 — Quota engine (P5-QUOTA-01/03/04/05, P5-ADMIN-04): hạn mức theo gói, cấu hình hoá, audit
+
+527 tests xanh, TSC clean (api + ui). Kiến trúc theo Q-07: mọi con số (limit theo gói, chu kỳ, múi giờ, chính sách vượt) nằm trong data (`feature_configs`), sửa trong admin có hiệu lực ngay, không deploy.
+
+| File | Nội dung |
+|---|---|
+| `src/entitlements/schemas/feature-config.schema.ts` | **MỚI** — `feature_configs`: `featureKey` (unique), `enabled` (kill-switch), `limits[]` (≤3 gói FREE/PRO/VIP, `limit` = số lượt/kỳ, `null` = không giới hạn, không có row = gói đó KHÔNG có quyền), `period` (DAY/MONTH), `tz` (IANA), `overLimit` (BLOCK=429 / ALLOW=ghi nhận để tính phí P9). `limitForPlan` helper |
+| `src/entitlements/schemas/quota-record.schema.ts` | **MỚI** — `quota_reservations` (user, featureKey, period, amount, state RESERVED→SETTLED/RELEASED, reason, index {user,featureKey,period,state}) + `usage_records` (bản ghi cuối theo kỳ, gắn `reservation`) |
+| `src/entitlements/quota.service.ts` | **MỚI** — `checkAccess` (403 gói không có quyền / tính năng tắt), `reserve` (đặt trước slot, create-rồi-tái-kiểm tra; BLOCK vượt mức → xoá slot + 429, ALLOW → ghi `overLimit`), `settle` (idempotent, sinh `usage_record`), `release` (job thất bại/hủy, idempotent), `remaining`, `periodKey` (rìa kỳ theo tz IANA bằng Intl.DateTimeFormat cache; **khác SRS `localDayKey` — có chủ đích, SRS là lịch học, quota là chu kỳ tính phí**) |
+| `src/entitlements/decorators.ts` | **MỚI** — `@RequireEntitlement(key)` (403 trục quyền) + `@Quota(key, amount?)` (trục đo đếm), metadata key export cho guard |
+| `src/entitlements/guards.ts` | **MỚI** — `EntitlementGuard` (quyền gói) + `QuotaGuard` (đặt trước quota, treo `quotaBooking` lên request) + `QuotaInterceptor` (settle khi handler xong, release khi lỗi — **chờ hoàn tất trước khi response trả** để ledger nhất quán đúng §6.2). Operator (ADMIN/SUPER_ADMIN) miễn đo đếm. Không có row config → ungated (feature mới ship trước config) |
+| `src/entitlements/entitlements.service.ts` + `.controller.ts` | **MỚI** — `/entitlements/me/remaining/:key` (learner) + `admin/entitlements`: list/upsert features, set plan user, usage theo kỳ — tất cả `@ContentAdmin()`, mutation có `attachAuditNote` before/after (P5-ADMIN-03). **Route admin nằm dưới `/admin/*` đúng quy ước repo; KHÔNG dùng NestJS `version`** |
+| `src/entitlements/entitlements.module.ts` | **MỚI** — dynamic module, graceful-degrade như mọi module (không `MONGODB_URL` → module rỗng); đăng `APP_GUARD` (Entitlement→Quota, sau RolesGuard theo §4.3) + `APP_INTERCEPTOR` |
+| `src/entitlements/quota.service.spec.ts` + `guards.spec.ts` | **MỚI** — 25 test: lifecycle reserve→settle/release (idempotent), BLOCK vs ALLOW, 0-limit, unlimited, rìa kỳ DAY/MONTH theo tz (giả lập thời gian), 403/429 theo gói, interceptor settle khi OK / release khi lỗi |
+| `src/users/schemas/user.schema.ts` | `User` +`plan` enum (FREE/PRO/VIP, default FREE) — trục quyền học tập tách khỏi `role` (trục quản trị) |
+| `src/users/admin-users.service.ts` | list users trả về `plan` |
+| `src/flashcards/flashcards.controller.ts` | `@Post decks/:id/grade-sentence` +`@Quota("ai-sentence-grade")` (số lượt phân tích câu AI của §6.2) |
+| `src/users/account-deletion.service.ts` | xoá luôn `quota_reservations` + `usage_records` khi xoá tài khoản (Luật BVDLCN 91/2025) |
+| `ui/components/admin/entitlements-console.tsx` + page + gateway | **MỚI** — `/admin/entitlements`: tạo/sửa config theo feature (bật/tắt, 3 ô limit theo gói, chu kỳ, tz, chính sách vượt); nav admin-shell + item "Hạn mức & gói" |
+| `ui/components/admin/users-console.tsx` | + cột "Gói" (select FREE/PRO/VIP → `PATCH /admin/entitlements/users/:id/plan`) |
+| `ui/components/learn/quota-note.tsx` + `compose-drill.tsx` | **MỚI** — dòng "Bạn còn X lượt chấm câu AI trong kỳ này" dưới nút Chấm điểm; 429 → đổi message "đã dùng hết lượt" + refresh con số |
+| `ui/app/api/entitlements/[[...route]]` + `admin/entitlements` gateway | **MỚI** — proxy learner + admin, token exchange server-side như các gateway khác |
+
+**Bẫy quota (đọc trước khi code tiếp):**
+- `QuotaService` inject model `User` (trục plan) — module phải `imports: [buildAuthModule()]`; models quota tự đăng qua `MongooseModule.forFeature`. Không import `buildUsersModule` (chuỗi vòng qua `user.schema` import `feature-config.schema`).
+- Interceptor dùng `mergeMap` (settle) + `catchError`→`from().pipe(switchMap(throwError))` (release-rồi-propagate): `catchError` trả Promise<Observable> sẽ bị phát như **giá trị**, test `firstValueFrom` sẽ resolve thay vì reject.
+- `TooManyRequestsException` **không tồn tại** trong `@nestjs/common@12` → `new HttpException({statusCode, error, message}, HttpStatus.TOO_MANY_REQUESTS)` (đúng pattern `rate-limit.guard.ts`).
+- Spec: mock model phải trả **live reference** (đóng vai document mongoose) vì service mutate `doc.state` rồi `save()`; `.lean()`/`.exec()`/`aggregate(stages)` chain phải bắt chước đúng.
+- Race reserve: create-rồi-tái-sums; 2 caller đồng thời cùng slot có thể cùng qua check một window (VPS single-node, negligible; BLOCK vẫn thu hồi slot thừa). Spec §6.2 yêu cầu test race — hiện chưa (chờ DB thật/multi-process).
+- `user.schema.ts` import `PLANS` từ `entitlements/schemas` — schema-only, không vòng module (mới là import type+value của constant array).
+- Chưa có migration/seed row config nào trên VPS: chưa bật config thì mọi thứ ungated (endpoint trả `gated:false`), nên deploy API trước khi tạo config trong admin là an toàn.
+
 
 ## 4. Lệnh chuẩn
 

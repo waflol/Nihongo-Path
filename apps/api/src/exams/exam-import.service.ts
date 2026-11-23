@@ -35,6 +35,7 @@ import {
 import { contentHashOf, optionCountsOf } from "./mondai.js";
 import { blockMarker, keyMarker, splitCompactKey, type AnswerKeyBlock } from "./import/answer-key.js";
 import { openProsePdf } from "./import/prose.js";
+import { parseByRules } from "./import/rules.js";
 import { segmentBlocks, type Block } from "./import/segment.js";
 import { parseAiJson, structurePrompt, type ParsedBlock, validateParsed } from "./import/structure.js";
 
@@ -313,6 +314,27 @@ export class ExamImportService implements OnApplicationBootstrap {
       return { status: doc.status };
     }
 
+    // 1. Rules first: the sentence-level forms read exactly, with no AI.
+    const expected = optionCountsOf(block.mondai);
+    const byRules = parseByRules(block);
+    let ruleIssues: string[] = [];
+    if (byRules) {
+      ruleIssues = validateParsed(byRules, block.rawText, expected).map((i) => `${i.path}: ${i.message}`);
+      const printed = keyBlock?.questionCount ?? 0;
+      if (printed > 0 && byRules.questions.length !== printed) {
+        ruleIssues.push(`số câu đọc được (${byRules.questions.length}) khác bảng đáp án (${printed})`);
+      }
+      if (ruleIssues.length === 0) {
+        doc.parsed = byRules;
+        doc.parsedBy = "rules";
+        doc.issues = [];
+        doc.status = "needs_review";
+        await doc.save();
+        return { status: doc.status };
+      }
+    }
+
+    // 2. Otherwise the AI structures it (passages, cloze, or a block the rules could not read).
     const prompt = structurePrompt({ instruction: block.instruction, rawText: block.rawText, mondai: block.mondai });
     let parsed: ParsedBlock | null = null;
     try {
@@ -325,15 +347,22 @@ export class ExamImportService implements OnApplicationBootstrap {
       this.logger.warn(`exam-import block ${blockIndex}: AI call failed — kept for review: ${(err as Error).message}`);
     }
 
+    let issues = validateParsed(parsed, block.rawText, expected).map((i) => `${i.path}: ${i.message}`);
+    if (parsed && issues.length === 0) {
+      doc.parsedBy = "ai";
+    } else if (byRules) {
+      // The AI added nothing: show what the rules read, with their own issues, for a human.
+      parsed = byRules;
+      issues = ruleIssues;
+      doc.parsedBy = "rules";
+    }
     // The key and the review screen address questions by POSITION in the block (1..n); a paper
     // that prints running numbers (6..10) must not shift the answers.
     parsed?.questions.forEach((q, i) => {
       q.no = i + 1;
     });
     doc.parsed = parsed ?? undefined;
-    const expected = optionCountsOf(block.mondai);
-    const issues = validateParsed(parsed, block.rawText, expected);
-    doc.issues = issues.map((i) => `${i.path}: ${i.message}`);
+    doc.issues = issues;
     doc.status = issues.length > 0 ? "error" : "needs_review";
     await doc.save();
     return { status: doc.status };

@@ -82,6 +82,10 @@ export class ExamImportDraft {
   @Prop({ type: [Number], default: [] })
   answers: number[];
 
+  /** How `parsed` was produced: `rules` (read exactly from the layout) or `ai`. */
+  @Prop({ type: String, enum: ["rules", "ai"] })
+  parsedBy?: "rules" | "ai";
+
   /** Validation issues (why this block is `error`). */
   @Prop({ type: [String], default: [] })
   issues: string[];
