@@ -102,6 +102,16 @@ function sittingOf(line: string): string | null {
  * question numbers over a row of answers (`問題 1 5x1(5d)` = 5 questions x 1
  * point). Returns the key blocks in printed order; an unreadable row → `null`s.
  */
+const READING_FAMILY = new Set<string>([
+  "text-grammar",
+  "reading-short",
+  "reading-mid",
+  "reading-long",
+  "reading-integrated",
+  "reading-thematic",
+  "info-retrieval",
+]);
+
 export function parseSheetKey(lines: string[]): AnswerKeyBlock[] {
   const out: AnswerKeyBlock[] = [];
   let cur: AnswerKeyBlock | null = null;
@@ -201,7 +211,11 @@ export function segmentBlocks(pages: string[], level?: string): Segmented {
       const byNo = mondaiByNumber(level, tracker.next(no), no);
       // N1/N2 print 語形成 and 文脈規定 with the SAME instruction (`( )に入れるのに最もよいもの`):
       // only the number tells them apart.
-      if (byNo && (!byText || (byNo === "word-formation" && byText === "context"))) {
+      // From 問題 9 (N2) / 7 (N1) on, every passage block opens with a near-identical
+      // 「次の文章を読んで…」: the instruction cannot tell 文章の文法 / 短文 / 中文 / 統合 / 主張 /
+      // 情報検索 apart, but the printed NUMBER can — so the number wins inside that family.
+      const sameFamily = sheetsOf(level) === 1 && !!byText && READING_FAMILY.has(byText) && READING_FAMILY.has(byNo ?? "");
+      if (byNo && (!byText || sameFamily || (byNo === "word-formation" && byText === "context"))) {
         mondai = byNo;
         section = SECTION_OF[byNo];
       } else if (byNo && byText && byNo !== byText) {
