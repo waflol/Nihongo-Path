@@ -175,6 +175,9 @@ export class ExamImportService implements OnApplicationBootstrap {
         numPages = pdf.numPages;
         await this.jobs.updateOne({ _id: id }, { $set: { numPages } }).exec();
         await this.log(id, "info", `Mở PDF: ${numPages} trang — đọc từng trang`);
+        if (pdf.totalPages > numPages) {
+          await this.log(id, "warn", `File có ${pdf.totalPages} trang nhưng chỉ đọc ${numPages} trang đầu — phần còn lại bị bỏ, hãy tách file rồi nhập tiếp`);
+        }
         for (let n = 1; n <= pdf.numPages; n += 1) {
           if (await this.isCancelled(id)) return;
           if (await this.pageExists(id, n)) continue; // already checkpointed
@@ -200,13 +203,16 @@ export class ExamImportService implements OnApplicationBootstrap {
       const pageTexts = new Map(pageRows.map((p) => [p.n, p.text]));
       const pagesArr: string[] = [];
       for (let n = 1; n <= (numPages || pageRows.length || 1); n += 1) pagesArr.push(pageTexts.get(n) ?? "");
-      const { blocks, answerKey } = segmentBlocks(pagesArr, seed?.level);
+      const { blocks, answerKey, sheetKeys } = segmentBlocks(pagesArr, seed?.level);
 
       // 3. Structure each block, write its draft. A block that fails
       //    validation is kept as `error` — it never fails the whole job.
       const keyBlocks = splitCompactKey(answerKey);
       const keyFor = (block: Block): AnswerKeyBlock | null => {
         const token = blockMarker(block.instruction);
+        // A collection PDF carries one answer sheet per paper: match by paper + 問題 number.
+        const sheet = sheetKeys[block.sitting];
+        if (sheet) return sheet.find((k) => keyMarker(k.heading) === token) ?? null;
         const hit = keyBlocks.find((k) => keyMarker(k.heading) === token);
         return hit ?? keyBlocks[0] ?? null;
       };
@@ -214,6 +220,13 @@ export class ExamImportService implements OnApplicationBootstrap {
       let bad = 0;
       await this.jobs.updateOne({ _id: id }, { $set: { blocksFound: blocks.length } }).exec();
       await this.log(id, "info", `Tách được ${blocks.length} khối 問題, ${keyBlocks.length} khối bảng đáp án`);
+      const perSitting = new Map<string, number>();
+      for (const b of blocks) perSitting.set(b.sitting, (perSitting.get(b.sitting) ?? 0) + 1);
+      await this.log(
+        id,
+        perSitting.has("unknown") ? "warn" : "info",
+        `Nhận ${perSitting.size} đề: ${[...perSitting].map(([k, v]) => `${k} (${v} khối)`).join(", ")}; bảng đáp án riêng cho ${Object.keys(sheetKeys).length} đề`,
+      );
       for (const [i, block] of blocks.entries()) {
         if (await this.isCancelled(id)) return;
         if (await this.draftExistsForJobBlock(id, i)) continue; // resume: skip
@@ -312,6 +325,11 @@ export class ExamImportService implements OnApplicationBootstrap {
       this.logger.warn(`exam-import block ${blockIndex}: AI call failed — kept for review: ${(err as Error).message}`);
     }
 
+    // The key and the review screen address questions by POSITION in the block (1..n); a paper
+    // that prints running numbers (6..10) must not shift the answers.
+    parsed?.questions.forEach((q, i) => {
+      q.no = i + 1;
+    });
     doc.parsed = parsed ?? undefined;
     const expected = optionCountsOf(block.mondai);
     const issues = validateParsed(parsed, block.rawText, expected);

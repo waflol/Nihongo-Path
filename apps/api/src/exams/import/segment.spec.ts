@@ -100,3 +100,23 @@ describe("segmentBlocks — combined N3 collection (NN-K label + official date)"
     expect(answerKey).toContain("1③ 2② 3③"); // the 問題Ⅰ inline answers
   });
 });
+
+describe("collection PDF (many papers + per-paper answer sheets)", () => {
+  const paper = (n: number, firstLine: string) =>
+    [`N2 - ${n} ${firstLine}`, `問題${n} ___の言葉の読み方として最もよいものを、1・2・3・4から一つ選びなさい。(${n})`, `1 あ${n} 2 い 3 う 4 え`].join("\n");
+  const sheet = (n: number, ans: string) =>
+    [`日本語の能力試験 N2-${n} 解答`, "問題 1 5x1(5d)", "1 2 3 4 5", ans].join("\n");
+
+  it("reads the paper label glued to the first text line, and drops it from the body", () => {
+    const { blocks } = segmentBlocks([paper(4, "これは前置きです"), paper(5, "別の前置き")], "N2");
+    expect(blocks.map((b) => b.sitting)).toEqual(["N2-4", "N2-5"]);
+    expect(blocks[0].rawText).not.toMatch(/N2\s*-\s*4/);
+  });
+
+  it("keeps answer-sheet pages out of the blocks and parses a key per paper", () => {
+    const { blocks, sheetKeys } = segmentBlocks([paper(1, "前置き"), sheet(1, "2 4 2 3 4"), sheet(2, "1 1 1 1 1")], "N2");
+    expect(blocks).toHaveLength(1);
+    expect(Object.keys(sheetKeys).sort()).toEqual(["N2-1", "N2-2"]);
+    expect(sheetKeys["N2-1"][0]).toMatchObject({ heading: "問題1", questionCount: 5, answers: [2, 4, 2, 3, 4] });
+  });
+});

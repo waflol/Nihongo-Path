@@ -11,6 +11,7 @@ Trước đây import PDF tạo `exam_import_drafts` nhưng UI không có chỗ 
 - `app/api/exam-import/route.ts`: gateway `?drafts=`, `?publish=`, `?discard=`.
 - Link "Duyệt bản nháp" ở tracker (✎), trang log, và danh sách "Các lần nhập gần đây" trên `/admin/exams/import`.
 - Một PDF nhiều đề: bản nháp nhóm theo `sitting`, lọc theo đề, nút "Xuất bản N khối đã đủ đáp án" (xuất bản tuần tự, dừng ở lỗi đầu tiên). Chưa có sửa nhãn đề; chưa ghép các câu cùng đề thành bài thi (NP-408/409).
+- **Sửa pipeline theo file thật `40 de thi n2.pdf` (473 trang, 34 đề):** (1) `prose.ts` sắp dòng từ dưới lên → đảo ngược mọi trang → sửa y giảm dần; cap trang 300→600 + log cảnh báo khi cắt (`totalPages`); (2) nhãn đề `N2 - 4 …` dính vào dòng đầu trang nay nhận được và bị cắt khỏi nội dung, ngày `YYYY年M月` chỉ tính trên dòng ≤30 ký tự; (3) trang `N2-x 解答` (hàng số câu trên hàng đáp án, `問題 1 5x1(5d)`) không còn thành khối rác mà parse thành `sheetKeys[sitting]` → điền sẵn đáp án vào bản nháp theo đề + số 問題; (4) `q.no` luôn đánh lại theo vị trí 1..n. Thử cục bộ: 385 khối / 34 đề / 34 bảng đáp án (trước: 500 khối, 15 nhãn lẫn). Còn: một số 問題 chưa nhận dạng (`mondai` null do OCR sai chữ), phần `part` đọc theo header lặp mỗi trang.
 - File nghe: form ghi chú chỉ thêm sau khi duyệt xong (AudioLibrary vẫn ở cùng trang, chưa khoá cứng).
 - **Chưa verify trình duyệt/DB thật** (chỉ tsc + eslint sạch).
 

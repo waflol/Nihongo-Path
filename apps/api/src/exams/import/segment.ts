@@ -1,4 +1,5 @@
 import { classifyInstruction, type MondaiType, type SectionKey } from "../mondai.js";
+import { type AnswerKeyBlock } from "./answer-key.js";
 import { cleanAnswerLine, cleanLine, isJunkLine, learnNoise } from "./clean.js";
 
 /**
@@ -49,6 +50,8 @@ export interface Segmented {
   blocks: Block[];
   /** The cleaned answer-section text, `""` when the paper has none. */
   answerKey: string;
+  /** Per-paper answer sheets (`N2-1 解答` pages), by sitting label. */
+  sheetKeys: Record<string, AnswerKeyBlock[]>;
 }
 
 // NFKC (cleanLine) turns Ⅰ..Ⅴ into I/II/III/IV/V and ①..⑩ into 1..10, so
@@ -57,7 +60,14 @@ const MONDAI_HEADING = /^問題\s*(?:\d{1,2}|I{1,3}|IV|V)\b/;
 const ANSWER_MARK = /^(?:答案|解答|正答)(?:と説明)?\s*$/;
 const SITTING_YEAR_MONTH = /(?<!\d)(\d{4})年\s*(\d{1,2})月/;
 const SITTING_EXAMID = /^EXAM\s*ID\s*[:：]?\s*(\d+)/i;
-const SITTING_NN_LABEL = /^(?:JLPT\s*)?(N[1-5])\s*[-－]\s*(\d{1,3})$/;
+// The label may be glued to the first line of the page (`N2 - 4 1 ふかふか…`).
+const SITTING_NN_LABEL = /^(?:JLPT\s*)?(N[1-5])\s*[-－]\s*(\d{1,3})(?=\s|$)/;
+/** `N2-1 解答` — the header of a per-paper answer sheet (collection PDFs). */
+const SHEET_HEADER = /(N[1-5])\s*[-－]\s*(\d{1,3})\s*解答/;
+/** `問題 7 12x3(36d)` — a section of a per-paper answer sheet (count x points). */
+const SHEET_HEADING = /^問題\s*(\d{1,2})\s+(\d{1,3})\s*x\s*(\d{1,3})\s*\(\s*\d+\s*d?\s*\)/;
+/** A bare in-paper page number (`N2 5`, `- 2 -`). */
+const PAGE_FOOTER = /^(?:N[1-5]\s+\d{1,3}|-\s*\d{1,3}\s*-)$/;
 const PART_LISTENING = /聴解/;
 const PART_READING = /読解/;
 const PART_VOCAB = /文字・語彙|文字語彙|言語知識|語彙・文法|文法・語彙/;
@@ -76,13 +86,50 @@ function partOf(line: string): SectionKey | null {
 }
 
 function sittingOf(line: string): string | null {
-  const s1 = line.match(SITTING_YEAR_MONTH);
+  // A year-month inside a long passage line is a date in the text, not a paper label.
+  const s1 = line.length <= 30 ? line.match(SITTING_YEAR_MONTH) : null;
   if (s1) return `${s1[1]}-${s1[2].padStart(2, "0")}`;
   const s2 = line.match(SITTING_EXAMID);
   if (s2) return `Migii ${s2[1]}`;
   const s3 = line.match(SITTING_NN_LABEL);
   if (s3) return `${s3[1]}-${s3[2]}`;
   return null;
+}
+
+/**
+ * The answer sheet of one paper in a collection PDF: per 問題, a row of
+ * question numbers over a row of answers (`問題 1 5x1(5d)` = 5 questions x 1
+ * point). Returns the key blocks in printed order; an unreadable row → `null`s.
+ */
+export function parseSheetKey(lines: string[]): AnswerKeyBlock[] {
+  const out: AnswerKeyBlock[] = [];
+  let cur: AnswerKeyBlock | null = null;
+  let nums: number[] | null = null;
+  for (const raw of lines) {
+    const l = cleanLine(raw);
+    const h = l.match(SHEET_HEADING);
+    if (h) {
+      const count = Number(h[2]);
+      const points = Number(h[3]);
+      cur = { heading: `問題${h[1]}`, questionCount: count, pointsPerQuestion: points, totalPoints: count * points, answers: [] };
+      out.push(cur);
+      nums = null;
+      continue;
+    }
+    if (!cur || !/^\d{1,3}(?:\s+\d{1,3})*$/.test(l)) continue;
+    const v = l.split(/\s+/).map(Number);
+    if (!nums) {
+      nums = v;
+    } else {
+      for (let i = 0; i < nums.length; i += 1) cur.answers.push(v.length === nums.length && v[i] >= 1 && v[i] <= 4 ? v[i] : null);
+      nums = null;
+    }
+  }
+  for (const k of out) {
+    while (k.answers.length < k.questionCount) k.answers.push(null);
+    k.answers.length = k.questionCount;
+  }
+  return out;
 }
 
 interface RawLine {
@@ -98,8 +145,31 @@ interface RawLine {
  */
 export function segmentBlocks(pages: string[], level?: string): Segmented {
   const noise = learnNoise(pages);
+
+  // Per-paper answer sheets: a page with `問題 N CxP(Td)` lines is a sheet page;
+  // its paper is named by the `N2-1 解答` header on that page or the last one before it.
+  const sheetLines: Record<string, string[]> = {};
+  const sheetPage = new Set<number>();
+  let sheetSitting = "";
+  pages.forEach((p, i) => {
+    const lines = p.split(/\n/);
+    const isSheet = lines.some((l) => SHEET_HEADING.test(cleanLine(l)));
+    if (!isSheet) return;
+    for (const l of lines) {
+      const hd = cleanLine(l).match(SHEET_HEADER);
+      if (hd) sheetSitting = `${hd[1]}-${Number(hd[2])}`;
+    }
+    sheetPage.add(i + 1);
+    (sheetLines[sheetSitting || "unknown"] ??= []).push(...lines);
+  });
+  const sheetKeys: Record<string, AnswerKeyBlock[]> = {};
+  for (const [name, lines] of Object.entries(sheetLines)) sheetKeys[name] = parseSheetKey(lines);
+
   const rawLines: RawLine[] = [];
-  pages.forEach((p, i) => p.split(/\n/).forEach((raw) => rawLines.push({ raw, page: i + 1 })));
+  pages.forEach((p, i) => {
+    if (sheetPage.has(i + 1)) return;
+    p.split(/\n/).forEach((raw) => rawLines.push({ raw, page: i + 1 }));
+  });
 
   const blocks: Block[] = [];
   const answerLines: string[] = [];
@@ -136,11 +206,19 @@ export function segmentBlocks(pages: string[], level?: string): Segmented {
       if (a && !isJunkLine(a)) answerLines.push(a);
       continue;
     }
-    const n = cleanLine(raw);
-    if (!n || noise.has(n) || isJunkLine(n)) continue;
+    let n = cleanLine(raw);
+    if (!n || noise.has(n) || isJunkLine(n) || PAGE_FOOTER.test(n)) continue;
 
     const sittingLine = sittingOf(n);
-    if (sittingLine) sitting = sittingLine;
+    if (sittingLine) {
+      if (sitting !== sittingLine) flush(); // a new paper starts: close the previous block
+      sitting = sittingLine;
+      // Drop the label itself (it may share its line with the page's first text).
+      if (SITTING_NN_LABEL.test(n)) {
+        n = n.replace(SITTING_NN_LABEL, "").trim();
+        if (!n) continue;
+      }
+    }
     const p = partOf(n);
     if (p) part = p;
 
@@ -167,5 +245,5 @@ export function segmentBlocks(pages: string[], level?: string): Segmented {
     if (current) current.pageTo = page;
   }
   flush();
-  return { blocks, answerKey: answerLines.join("\n") };
+  return { blocks, answerKey: answerLines.join("\n"), sheetKeys };
 }

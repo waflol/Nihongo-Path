@@ -17,11 +17,14 @@ import { UnsupportedFormatError } from "../../import/parsers/types.js";
 /** One prose PDF: the number of pages + how to read each one as text. */
 export interface ProsePdf {
   numPages: number;
+  /** Pages the file really has — larger than `numPages` when the cap cut it. */
+  totalPages: number;
   /** Read page `n` (1-based) as joined text lines. `""` for a blank page. */
   pageText(n: number): Promise<string>;
 }
 
-const MAX_EXAM_PAGES = 300;
+/** Pages read per file. A 40-paper collection runs ~470 pages; text pages are read one at a time (page.cleanup) so RSS stays bounded. */
+const MAX_EXAM_PAGES = 600;
 
 type Pdfjs = typeof import("pdfjs-dist/legacy/build/pdf.mjs");
 
@@ -44,7 +47,8 @@ function linesOf(items: { str: string; x: number; y: number; w: number }[]): str
   if (frags.length === 0) return [];
 
   // Bucket fragments that share a line (within a small y band), top first.
-  const sorted = [...frags].sort((a, b) => a.y - b.y || a.x - b.x);
+  // PDF user space has y growing UPWARD, so "top first" means y DESCENDING.
+  const sorted = [...frags].sort((a, b) => b.y - a.y || a.x - b.x);
   const lines: Frag[][] = [];
   for (const f of sorted) {
     const last = lines[lines.length - 1];
@@ -110,5 +114,5 @@ export async function openProsePdf(
     }
   };
 
-  return { numPages, pageText };
+  return { numPages, totalPages: doc.numPages, pageText };
 }
