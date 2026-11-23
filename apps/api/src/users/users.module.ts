@@ -11,6 +11,7 @@ import { PushSubscription, PushSubscriptionSchema } from "../notifications/schem
 import { UserCardProgress, UserCardProgressSchema } from "../srs/schemas/progress.schema.js";
 import { StudySession, StudySessionSchema } from "../srs/schemas/session.schema.js";
 import { UserFeedback, UserFeedbackSchema } from "../feedback/schemas/user-feedback.schema.js";
+import { QuotaReservation, QuotaReservationSchema, UsageRecord, UsageRecordSchema } from "../entitlements/schemas/quota-record.schema.js";
 import { AccountDeletionService } from "./account-deletion.service.js";
 import { buildAuthModule } from "../auth/auth.module.js";
 import { AdminUsersController } from "./admin-users.controller.js";
@@ -48,6 +49,8 @@ export function buildUsersModule(): DynamicModule {
         { name: PdfJobRecord.name, schema: PdfJobRecordSchema },
         { name: PdfJobPage.name, schema: PdfJobPageSchema },
         { name: UserFeedback.name, schema: UserFeedbackSchema },
+        { name: QuotaReservation.name, schema: QuotaReservationSchema },
+        { name: UsageRecord.name, schema: UsageRecordSchema },
         { name: AuditLog.name, schema: AuditLogSchema },
         { name: RequestLog.name, schema: RequestLogSchema },
       ]),

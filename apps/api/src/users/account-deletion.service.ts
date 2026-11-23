@@ -23,6 +23,10 @@ import { PushSubscription } from "../notifications/schemas/push-subscription.sch
 import { UserCardProgress } from "../srs/schemas/progress.schema.js";
 import { StudySession } from "../srs/schemas/session.schema.js";
 import { UserFeedback } from "../feedback/schemas/user-feedback.schema.js";
+import {
+  QuotaReservation,
+  UsageRecord,
+} from "../entitlements/schemas/quota-record.schema.js";
 import { AuthAccount, AuthAccountDocument } from "./schemas/auth-account.schema.js";
 import { User, UserDocument } from "./schemas/user.schema.js";
 
@@ -41,6 +45,8 @@ export interface AccountDeletionResult {
     feedback: number;
     pushSubscriptions: number;
     importJobs: number;
+    quotaRecords: number;
+    usageRecords: number;
   };
 }
 
@@ -74,6 +80,8 @@ export class AccountDeletionService {
     @InjectModel(AuditLog.name) private readonly audit: Model<AuditLog>,
     @InjectModel(RequestLog.name) private readonly requestLog: Model<RequestLog>,
     @InjectModel(UserFeedback.name) private readonly feedback: Model<UserFeedback>,
+    @InjectModel(QuotaReservation.name) private readonly quotaReservation: Model<QuotaReservation>,
+    @InjectModel(UsageRecord.name) private readonly usageRecord: Model<UsageRecord>,
   ) {}
 
   /** Whether the self-service button / endpoint is allowed for this role. */
@@ -135,6 +143,10 @@ export class AccountDeletionService {
     const reports = (await this.report.deleteMany({ user: uid }).exec()).deletedCount ?? 0;
     const feedback = (await this.feedback.deleteMany({ user: uid }).exec()).deletedCount ?? 0;
     const pushSubscriptions = (await this.push.deleteMany({ user: uid }).exec()).deletedCount ?? 0;
+    // Quota ledger: in-flight reservations + settled usage records of this user
+    // (P5-QUOTA-02). Nothing else references them by user, so both go.
+    const quotaRecords = (await this.quotaReservation.deleteMany({ user: uid }).exec()).deletedCount ?? 0;
+    const usageRecords = (await this.usageRecord.deleteMany({ user: uid }).exec()).deletedCount ?? 0;
 
     // 3. Import jobs (user is stored as a string) + their pages + the file on disk.
     const jobs = await this.jobRecord.find({ user: uidStr }, { _id: 1, filePath: 1 }).exec();
@@ -168,6 +180,8 @@ export class AccountDeletionService {
         feedback,
         pushSubscriptions,
         importJobs: jobs.length,
+        quotaRecords,
+        usageRecords,
       },
     };
   }

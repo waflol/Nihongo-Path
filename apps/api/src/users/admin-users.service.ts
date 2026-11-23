@@ -88,6 +88,7 @@ export class AdminUsersService {
           email: u.email ?? null,
           displayName: u.displayName ?? null,
           role: u.role,
+          plan: u.plan ?? "FREE",
           status: u.status,
           lang: u.lang,
           providers: prov.get(u._id.toString()) ?? [],

@@ -112,9 +112,9 @@ Plan chi tiết: [plans/plan-jlpt-question-bank.md](./plans/plan-jlpt-question-b
 ### P5 — Hạn mức & quản trị
 | Ticket | Cụm task | Chặn bởi |
 |---|---|---|
-| NP-501 | Schema + service quota reserve→settle→release, reset theo kỳ/tz (P5-QUOTA-01…05) | Q-07 (định nghĩa Free/Pro/VIP) ⏸ |
-| NP-502 | `EntitlementGuard`/`QuotaGuard` + chính sách vượt hạn mức (P5-QUOTA-04/06) | Q-23 ⏸ |
-| NP-503 | Màn cấu hình hạn mức theo gói (P5-ADMIN-04) | NP-501 |
+| NP-501 | Schema + service quota reserve→settle→release, reset theo kỳ/tz (P5-QUOTA-01…05) | ✅ |
+| NP-502 | `EntitlementGuard`/`QuotaGuard` + chính sách vượt hạn mức (P5-QUOTA-04/06) | ✅ |
+| NP-503 | Màn cấu hình hạn mức theo gói (P5-ADMIN-04) | NP-501 ✅ |
 | NP-504 | Rà least privilege endpoint admin + ADR entitlement (P5-SEC-01, P5-DOC-01) | NP-024 |
 
 ### P6 — Media & STT

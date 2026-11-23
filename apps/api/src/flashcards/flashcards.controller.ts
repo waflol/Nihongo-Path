@@ -26,6 +26,7 @@ import { CardReportsService } from "./card-reports.service.js";
 import { REPORT_KINDS, REPORT_STATUSES, type ReportKind, type ReportStatus } from "./schemas/card-report.schema.js";
 import { ContentAdmin } from "../auth/decorators/roles.decorator.js";
 import { CurrentUser } from "../auth/decorators/current-user.decorator.js";
+import { Quota } from "../entitlements/decorators.js";
 import type { AuthUser } from "../auth/auth.types.js";
 import { FlashcardsService } from "./flashcards.service.js";
 import { lookalikeMap, lookalikeWords } from "../content/kanji-lookalikes.js";
@@ -385,6 +386,7 @@ export class FlashcardsController {
 
   @Post("decks/:id/grade-sentence")
   @HttpCode(HttpStatus.OK)
+  @Quota("ai-sentence-grade") // P5-QUOTA: metered once a `FeatureConfig` row exists
   @ApiOperation({
     summary: "AI grades a sentence I wrote with a studied word: score, mistakes, corrected sentence, usage examples",
   })

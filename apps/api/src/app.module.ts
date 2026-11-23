@@ -16,6 +16,7 @@ import { buildImportModule } from "./import/import.module.js";
 import { buildExamsModule } from "./exams/exams.module.js";
 import { buildLogsModule } from "./logs/logs.module.js";
 import { buildFeedbackModule } from "./feedback/feedback.module.js";
+import { buildEntitlementsModule } from "./entitlements/entitlements.module.js";
 import { buildSystemModule } from "./system/system.module.js";
 import { buildEvalModule } from "./eval/eval.module.js";
 import { buildNotificationsModule } from "./notifications/notifications.module.js";
@@ -62,6 +63,9 @@ import { buildNotificationsModule } from "./notifications/notifications.module.j
     buildLogsModule(),
     // General learner feedback + admin inbox (P5-FEEDBACK-01/02, NP-025).
     buildFeedbackModule(),
+    // Entitlements + quotas (P5-QUOTA-01/03, P5-ADMIN-04): data-driven feature
+    // limits, reservation ledger, the global opt-in guards + interceptor.
+    buildEntitlementsModule(),
     // Admin server monitor (GET /admin/system/stats).
     buildSystemModule(),
     buildEvalModule(),

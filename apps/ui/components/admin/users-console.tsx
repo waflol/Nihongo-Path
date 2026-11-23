@@ -8,6 +8,7 @@ interface UserRow {
   email: string | null;
   displayName: string | null;
   role: "USER" | "ADMIN" | "SUPER_ADMIN";
+  plan: "FREE" | "PRO" | "VIP";
   status: "ACTIVE" | "SUSPENDED";
   providers: string[];
   createdAt: string;
@@ -253,6 +254,28 @@ export function UsersConsole({ meId, meRole }: { meId: string; meRole: string })
     setBusyId(null);
   }
 
+  async function setPlan(u: UserRow, plan: UserRow["plan"]) {
+    if (plan === u.plan) return;
+    const who = u.email ?? u.displayName ?? u.id;
+    setBusyId(u.id);
+    setError(null);
+    setNotice(null);
+    // Plan changes live on the entitlements admin surface (audit-logged there).
+    const res = await fetch(`/api/admin/entitlements/users/${u.id}/plan`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ plan }),
+    }).catch(() => null);
+    if (res?.ok) {
+      setNotice(`Đã đổi gói ${plan} cho ${who}`);
+      await load();
+    } else {
+      const msg = (await res?.json().catch(() => null)) as { message?: string } | null;
+      setError(typeof msg?.message === "string" ? msg.message : "Không đổi được gói.");
+    }
+    setBusyId(null);
+  }
+
   const total = data?.total ?? 0;
   const pages = Math.max(1, Math.ceil(total / LIMIT));
   const cards = [
@@ -364,6 +387,7 @@ export function UsersConsole({ meId, meRole }: { meId: string; meRole: string })
             <tr>
               <th className="px-4 py-3 font-medium">Người dùng</th>
               <th className="px-4 py-3 font-medium">Vai trò</th>
+              <th className="px-4 py-3 font-medium">Gói</th>
               <th className="px-4 py-3 font-medium">Trạng thái</th>
               <th className="px-4 py-3 font-medium">Hoạt động gần nhất</th>
               <th className="px-4 py-3 font-medium">Tạo lúc</th>
@@ -393,6 +417,21 @@ export function UsersConsole({ meId, meRole }: { meId: string; meRole: string })
                     <span className={"inline-block rounded-full px-2.5 py-0.5 text-[11px] font-semibold " + ROLE_BADGE[u.role]}>
                       {u.role === "SUPER_ADMIN" ? "Super admin" : u.role === "ADMIN" ? "Admin" : "User"}
                     </span>
+                  </td>
+                  <td className="px-4 py-3">
+                    <select
+                      aria-label={`Gói của ${name}`}
+                      value={u.plan}
+                      disabled={busyId === u.id}
+                      onChange={(e) => {
+                        void setPlan(u, e.target.value as UserRow["plan"]);
+                      }}
+                      className="rounded-lg border border-[var(--border)] bg-[var(--background-1)] px-2 py-1 text-xs font-medium text-[var(--foreground)] disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      <option value="FREE">Miễn phí</option>
+                      <option value="PRO">Pro</option>
+                      <option value="VIP">VIP</option>
+                    </select>
                   </td>
                   <td className="px-4 py-3">
                     <span

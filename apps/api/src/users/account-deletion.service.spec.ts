@@ -26,6 +26,8 @@ function setup(user: { role: string; passwordHash?: string | null } | null) {
     empty() as never, // audit
     empty() as never, // requestLog
     gone() as never, // feedback
+    gone() as never, // quotaReservation
+    gone() as never, // usageRecord
   );
   return { svc, userModel, caller: { sub: id.toString(), role: "USER" as const, lang: "vi" } };
 }

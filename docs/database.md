@@ -34,7 +34,8 @@ Hai collection có gạch dưới trong tên thật: `exercise_questions` và `r
 
 ### `users`
 - `email`, `passwordHash` (scrypt, dạng `salt$hash`), `authAccounts[]`.
-- `role`: USER / ADMIN / SUPER_ADMIN. `status`: ACTIVE / SUSPENDED.
+- `role`: USER / ADMIN / SUPER_ADMIN (trục **quản trị**). `status`: ACTIVE / SUSPENDED.
+- `plan`: FREE / PRO / VIP (trục **quyền học tập**, mặc định `FREE`) — tách khỏi `role`; quyết định được dùng tính năng nào + hạn mức. Đổi qua `PATCH /admin/entitlements/users/:id/plan` (admin).
 - `lang`, `timezone` (mặc định `Asia/Ho_Chi_Minh`).
 - `newCardsPerDay` (mặc định 20, khoảng 1–500): số thẻ **mới** tối đa mỗi deck mỗi ngày. Đổi qua `PATCH /srs/settings`.
 - Index: `{email: 1}` sparse (tài khoản chỉ dùng OAuth có thể không có email).
@@ -223,6 +224,28 @@ Các collection ở mục này có `status` (DRAFT / PUBLISHED) và `lang`. Admi
 ### `eval_datasets`, `eval_cases`, `eval_runs`, `eval_calls`, `eval_results` — benchmark AI tiếng Nhật
 - Bộ dữ liệu (1000 case), mỗi lần chạy, từng lần gọi và kết quả chấm; trang `/admin/ai-eval`. Xem [plans/plan-eval-benchmark.md](./plans/plan-eval-benchmark.md).
 
+## 5b. Hạn mức & gói (entitlements)
+
+Ba collection, chỉ hoạt động khi có `MONGODB_URL` (graceful-degrade như mọi module). Sửa `featureconfigs` có hiệu lực **ngay** ở request kế tiếp — không cần deploy.
+
+### `featureconfigs` — cấu hình hạn mức theo tính năng (P5-QUOTA-01)
+- `featureKey` (**unique**, vd `ai-sentence-grade`): tính năng bị đo. **Không có document = tính năng không bị gate** (guard pass-through) — tính năng mới chạy được trước khi có config.
+- `enabled`: kill-switch toàn cục (vd AI provider sập).
+- `limits[]`: tối đa 3 bản ghi `{plan, limit}` theo `users.plan` (FREE / PRO / VIP). `limit` = số lượt trong một kỳ; `null` = không giới hạn; **không có dòng của gói nào = gói đó không có quyền (403)**; `0` = có quyền nhưng chặn ngay lượt đầu (429).
+- `period`: `DAY` | `MONTH` (chu kỳ tính hạn mức). `tz`: zone IANA (mặc định `Asia/Ho_Chi_Minh`) neo rìa kỳ — khác rìa ngày SRS là có chủ đích.
+- `overLimit`: `BLOCK` (vượt mức → 429) | `ALLOW` (cho vượt, đánh dấu `overLimit` trên reservation để ghi nhận / tính phí sau — P9).
+- Xem / sửa: `GET|POST /admin/entitlements/features[/:key]`, UI `/admin/entitlements`.
+
+### `quotareservations` — sổ đặt trước (P5-QUOTA-02)
+- Mỗi lượt chạy tốn tài nguyên: `user`, `featureKey`, `period` (vd `2026-05`), `amount` (mặc định 1), `state` (`RESERVED` → `SETTLED` / `RELEASED`), `reason` (tại sao rời `RESERVED`: `settled` / `job-failed` / `job-cancelled` / `user-deletion` / `admin-reversal`).
+- Chỉ `RESERVED` + `SETTLED` tính vào hạn mức (chưa release). Index: `{user: 1, featureKey: 1, period: 1, state: 1}` (hot path "đã dùng bao nhiêu kỳ này"), `{createdAt: -1}`.
+- Vòng đời: **reserve** (đặt trước trước khi chạy — `QuotaGuard`) → **settle** khi job thành công / **release** khi fail-huỷ (`QuotaInterceptor`), cả hai idempotent. Job crash giữa chừng để lại reservation `RESERVED` — vẫn chiếm quota (an toàn, không ai được dùng thừa); xoá tài khoản thì `user-deletion`.
+
+### `usagerecords` — lượt đã tiêu thụ (báo cáo / tính phí)
+- Bản ghi mirror mỗi reservation `SETTLED`: `user`, `featureKey`, `period`, `amount`, `reservation` (ObjectId trỏ về). Index `{user: 1, featureKey: 1, period: 1}`. Trả lời "tiêu thụ thật của kỳ này" không cần quét lại reservations; nền cho P9-BILL.
+
+Trục `user.plan` vs `role`: `role` (USER/ADMIN/SUPER_ADMIN) là trục **quản trị** (`@Roles`); `plan` (FREE/PRO/VIP) là trục **quyền học tập** (entitlements guards). Hai trục độc lập, không thay thế nhau. Admin / Super admin luôn được miễn đo đếm quota.
+
 ## 6. Nhật ký và chặn IP
 
 Chỉ hoạt động khi có `MONGODB_URL`. Truy vấn qua `GET /admin/logs*` (ADMIN / SUPER_ADMIN), giao diện ở `/admin/logs`.
@@ -281,7 +304,8 @@ Chưa quyết định (thuộc chủ sản phẩm, xem [OPEN_QUESTIONS.md](./OPE
 | Collection | Xử lý |
 |---|---|
 | `flashcarddecks` (personal, `user` = người xoá) | xoá; kèm `flashcards` của deck, `usercardprogresses` + `cardreports` trỏ vào các thẻ đó (kể cả của người khác), `hanvietchecklogs` của deck |
-| `usercardprogresses`, `studysessions`, `cardreports`, `pushsubscriptions` | xoá theo `user` |
+| `usercardprogresses`, `studysessions`, `cardreports`, `pushsubscriptions`, `userfeedbacks` | xoá theo `user` |
+| `quotareservations`, `usagerecords` | xoá theo `user` (sổ quota cá nhân, P5) |
 | `pdfjobs` (`user` là string), `pdfjobpages` | xoá, kèm file gốc trên đĩa (`filePath`) |
 | `authsessions`, `authaccounts`, `users` | xoá (cuối cùng) |
 | `auditlogs.actor`, `requestlogs.user` | **ẩn danh** (`$unset`), không xoá — còn giá trị bảo mật, tự hết hạn theo TTL (365 / 30 ngày) |

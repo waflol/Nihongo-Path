@@ -65,6 +65,17 @@ const NAV: NavItem[] = [
     ),
   },
   {
+    href: "/admin/entitlements",
+    label: "Hạn mức & gói",
+    desc: "Giới hạn tính năng theo gói (MIỄN PHÍ/PRO/VIP), chu kỳ & chính sách vượt",
+    icon: (
+      <svg {...iconProps}>
+        <rect x="3" y="8" width="18" height="12" rx="2" />
+        <path d="M7 8V6a5 5 0 0 1 10 0v2M12 12v3" />
+      </svg>
+    ),
+  },
+  {
     href: "/admin/exams",
     label: "Đề thi",
     desc: "Soạn đề, ngân hàng câu hỏi 問題",

@@ -386,12 +386,12 @@ chặn route, CRUD nội dung. Test case: `T-P2-01` … `T-P2-10`.
 
 | ID | Task | Phụ thuộc | File/module | Hoàn thành khi | Kiểm thử | TT |
 |---|---|---|---|---|---|---|
-| P5-QUOTA-01 | Schema cấu hình tính năng (`featureKey`, bật/tắt, limit, chu kỳ, tz reset) | P4-EXAM-03 | `src/entitlements/schemas/feature-config.schema.ts` | Cấu hình được không cần deploy | xem schema | `[ ]` |
-| P5-QUOTA-02 | Schema `quota_reservations` + `usage_records` | P5-QUOTA-01 | `src/entitlements/schemas/*` | Có index theo `(userId, featureKey, period)` | xem index | `[ ]` |
-| P5-QUOTA-03 | Service reserve → settle → release | P5-QUOTA-02 | `src/entitlements/quota.service.ts` | Reserve trừ hạn mức; settle chốt; release hoàn lại | gọi service | `[ ]` |
-| P5-QUOTA-04 | `EntitlementGuard` + `QuotaGuard` | P5-QUOTA-03, P2-AUTH-06 | `src/entitlements/guards/*` | Plan không có quyền → 403; hết hạn mức → 429/403 theo quy ước | gọi API | `[ ]` |
-| P5-QUOTA-05 | Reset theo chu kỳ + timezone | P5-QUOTA-03 | `quota.service.ts` | Sang kỳ mới hạn mức về mặc định đúng tz | giả lập thời gian | `[ ]` |
-| P5-QUOTA-06 | Chính sách vượt hạn mức (chặn / cho vượt có ghi nhận) | P5-QUOTA-04 | `quota.service.ts` | Hành vi khớp quyết định của Tôi | gọi API vượt | `⏸` |
+| P5-QUOTA-01 | Schema cấu hình tính năng (`featureKey`, bật/tắt, limit, chu kỳ, tz reset) | P4-EXAM-03 | `src/entitlements/schemas/feature-config.schema.ts` | Cấu hình được không cần deploy | xem schema | `[x]` |
+| P5-QUOTA-02 | Schema `quota_reservations` + `usage_records` | P5-QUOTA-01 | `src/entitlements/schemas/*` | Có index theo `(userId, featureKey, period)` | xem index | `[x]` |
+| P5-QUOTA-03 | Service reserve → settle → release | P5-QUOTA-02 | `src/entitlements/quota.service.ts` | Reserve trừ hạn mức; settle chốt; release hoàn lại | gọi service | `[x]` (13 spec; interceptor settle/release chờ hoàn tất trước response) |
+| P5-QUOTA-04 | `EntitlementGuard` + `QuotaGuard` | P5-QUOTA-03, P2-AUTH-06 | `src/entitlements/guards/*` | Plan không có quyền → 403; hết hạn mức → 429/403 theo quy ước | gọi API | `[x]` (11 spec guards; đã áp `@Quota("ai-sentence-grade")` lên `POST decks/:id/grade-sentence`) |
+| P5-QUOTA-05 | Reset theo chu kỳ + timezone | P5-QUOTA-03 | `quota.service.ts` | Sang kỳ mới hạn mức về mặc định đúng tz | giả lập thời gian | `[x]` (periodKey DAY/MONTH theo tz IANA, test bằng instant giả lập) |
+| P5-QUOTA-06 | Chính sách vượt hạn mức (chặn / cho vượt có ghi nhận) | P5-QUOTA-04 | `quota.service.ts` | Hành vi khớp quyết định của Tôi | gọi API vượt | `[x]` (BLOCK=429+thu hồi slot / ALLOW=ghi `overLimit`; con số chốt bởi Q-07 trong admin) |
 | P5-ADMIN-01 | Khung admin + RBAC (`USER`/`ADMIN`/`SUPER_ADMIN`) | P2-UI-04 | `app/admin/layout.tsx`, `src/admin/*` | Vào `/admin` khi không đủ quyền → 403 | **403 có spec `admin-rbac.spec.ts` (RolesGuard: USER→403, ADMIN→SUPER route 403, pass-through); còn verify trình duyệt thật** | `[~]` |
 | P5-ADMIN-02 | Quản lý người dùng (trạng thái tài khoản, đổi role — least privilege) | P5-ADMIN-01 | `app/admin/users/*`, `src/users/*` | Không tự nâng quyền; thao tác có audit | **`setRole` chặn tự đổi role + chỉ SUPER_ADMIN (lớp service, spec 6 test); còn verify trình duyệt thật** | `[~]` |
 | P5-ADMIN-03 | Audit log cho thao tác quản trị (ai, khi nào, giá trị trước/sau) | P5-ADMIN-02 | `src/admin/audit.interceptor.ts`, `audit_logs` | Mọi thao tác ghi trong P5 đều có bản ghi | **`attachAuditNote` ghi `before`/`after`/`summary` vào `audit_logs` (role/status/password/revoke-sessions); interceptor spec 4 test; UI logs tab audit hiện Trước→Sau; còn kiểm DB thật** | `[~]` |
@@ -399,7 +399,7 @@ chặn route, CRUD nội dung. Test case: `T-P2-01` … `T-P2-10`.
 | P5-FEEDBACK-02 | Hộp thư phản hồi cho admin (lọc theo trạng thái, lịch sử xử lý) | P5-FEEDBACK-01, P5-ADMIN-01 | `app/admin/feedback/*` | Đổi trạng thái + ghi lịch sử | **`/admin/feedback` (GET/PATCH) + `/admin/feedback` UI: lọc nguồn/trạng thái, đổi trạng thái có note, xem lịch sử xử lý (ai, từ→đến, khi nào, note); mọi đổi trạng thái ghi `history`; card reports có history; còn verify trình duyệt thật** | `[~]` |
 | P5-ADMIN-04 | Màn hình cấu hình tính năng/hạn mức theo gói | P5-QUOTA-01, P5-ADMIN-01 | `app/admin/entitlements/*` | Sửa limit → có hiệu lực ngay | thao tác rồi gọi API | `[ ]` |
 | P5-SEC-01 | Rà soát least privilege toàn bộ endpoint admin | P5-ADMIN-03 | `src/**/*.controller.ts` | Mọi endpoint admin có `@Roles` | `grep -L "@Roles" src/**/*.controller.ts` | `[ ]` |
-| P5-DOC-01 | Cập nhật `database.md` + ADR entitlement | P5-QUOTA-05 | `docs/database.md`, `docs/adr/ADR-entitlements.md` | ADR `Proposed`/`Accepted` rõ | đối chiếu | `[ ]` |
+| P5-DOC-01 | Cập nhật `database.md` + ADR entitlement | P5-QUOTA-05 | `docs/database.md`, `docs/adr/ADR-entitlements.md` | ADR `Proposed`/`Accepted` rõ | đối chiếu | `[x]` (`database.md` §5b + §9; ADR Accepted — còn phần rà least-privilege thuộc P5-SEC-01/NP-504) |
 
 **Checkpoint P5:** build/lint/typecheck; thử reserve→settle→release bằng tay.
 Test case: `T-P5-01` … `T-P5-12`.

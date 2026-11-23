@@ -1,6 +1,7 @@
 import { Prop, Schema, SchemaFactory } from "@nestjs/mongoose";
 import { HydratedDocument, Types } from "mongoose";
 import type { Role } from "../../common/roles.js";
+import { PLANS, type Plan } from "../../entitlements/schemas/feature-config.schema.js";
 
 export const USER_STATUSES = ["ACTIVE", "SUSPENDED"] as const;
 export type UserStatus = (typeof USER_STATUSES)[number];
@@ -30,6 +31,15 @@ export class User {
   /** UI language tag; Vietnamese by default (spec §2.7), extensible. */
   @Prop({ type: String, default: "vi", lowercase: true })
   lang: string;
+
+  /**
+   * Entitlement axis (spec §6.2): which learning plan this account has
+   * (FREE/PRO/VIP). Kept separate from `role` — role governs
+   * administration, plan governs what the learner may use. Defaults to
+   * FREE; set by the operator (or later the billing webhook, P9).
+   */
+  @Prop({ type: String, default: "FREE", enum: PLANS })
+  plan: Plan;
 
   /**
    * IANA time zone for SRS day boundaries / due dates (P3-SRS-05, spec §4.4

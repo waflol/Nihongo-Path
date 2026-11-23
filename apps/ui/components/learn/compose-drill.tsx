@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { hashSeed, seededShuffle, type ExerciseCard } from "./quiz-utils";
+import { QuotaNote } from "./quota-note";
 
 /**
  * "Đặt câu" drill: the learner writes a sentence with a studied word and the
@@ -49,6 +50,7 @@ export function ComposeDrill({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [scores, setScores] = useState<number[]>([]);
+  const [quotaNonce, setQuotaNonce] = useState(0);
 
   const card = order[step];
 
@@ -63,12 +65,18 @@ export function ComposeDrill({
     }).catch(() => null);
     const data = res && res.ok ? ((await res.json().catch(() => null)) as Grade | null) : null;
     setBusy(false);
+    if (res && res.status === 429) {
+      setQuotaNonce((n) => n + 1);
+      setError("Bạn đã dùng hết lượt chấm câu AI trong kỳ này. Hãy luyện tập tiếp và quay lại sau.");
+      return;
+    }
     if (!data) {
       setError("AI chưa chấm được câu này — thử lại sau.");
       return;
     }
     setGrade(data);
     setScores((s) => [...s, data.score]);
+    setQuotaNonce((n) => n + 1);
   }
 
   function next() {
@@ -155,6 +163,10 @@ export function ComposeDrill({
             {error}
           </p>
         )}
+
+        <div className="mt-2">
+          <QuotaNote featureKey="ai-sentence-grade" nonce={quotaNonce} />
+        </div>
 
         {!grade && (
           <button
