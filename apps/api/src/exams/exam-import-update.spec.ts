@@ -60,3 +60,17 @@ describe("ExamImportService.updateDraft", () => {
     expect(doc.status).toBe("needs_review");
   });
 });
+
+import { fillPrintedNos } from "./exam-import.service.js";
+describe("fillPrintedNos — numbers continue within one paper", () => {
+  it("continues from the previous block when a printed number was not read", () => {
+    const m = fillPrintedNos([
+      { _id: "b", blockIndex: 2, sitting: "N2-1", parsed: { questions: [{}, {}] } },
+      { _id: "a", blockIndex: 1, sitting: "N2-1", parsed: { questions: [{ printedNo: 1 }, { printedNo: 2 }, {}] } },
+      { _id: "c", blockIndex: 1, sitting: "N2-2", parsed: { questions: [{}, {}] } },
+    ]);
+    expect(m.get("a")).toEqual([1, 2, 3]);
+    expect(m.get("b")).toEqual([4, 5]);
+    expect(m.get("c")).toEqual([1, 2]);
+  });
+});

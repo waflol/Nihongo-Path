@@ -418,7 +418,18 @@ export class ExamImportService implements OnApplicationBootstrap {
   async listDrafts(caller: AuthUser, jobId: string, status?: string): Promise<Record<string, unknown>[]> {
     const filter: Record<string, unknown> = { jobId };
     if (status) filter.status = status;
-    return (await this.drafts.find(filter).sort({ createdAt: 1 }).lean().exec()) as unknown as Record<string, unknown>[];
+    const rows = (await this.drafts.find(filter).sort({ createdAt: 1 }).lean().exec()) as unknown as Record<string, unknown>[];
+    // Numbers are continuous within one paper: fill the gaps from the whole job, not just this filter.
+    const all = status
+      ? ((await this.drafts.find({ jobId }).select("blockIndex sitting parsed.questions.printedNo").lean().exec()) as unknown as DraftLike[])
+      : (rows as unknown as DraftLike[]);
+    const filled = fillPrintedNos(all);
+    for (const r of rows) {
+      const qs = (r as unknown as DraftLike).parsed?.questions;
+      const f = filled.get(String((r as { _id: unknown })._id));
+      if (qs && f) qs.forEach((q, i) => (q.printedNo = f[i]));
+    }
+    return rows;
   }
 
   /**
@@ -475,9 +486,12 @@ export class ExamImportService implements OnApplicationBootstrap {
     }
 
     // 2. The questions, idempotent by (prompt + options) content hash.
+    const siblings = (await this.drafts.find({ jobId: doc.jobId, sitting: doc.sitting }).select("blockIndex sitting parsed.questions.printedNo").lean().exec()) as unknown as DraftLike[];
+    const printedFilled = fillPrintedNos(siblings).get(String(doc._id));
     let written = 0;
     for (const q of parsed.questions) {
       const answerNo = answers[q.no - 1];
+      const printedNo = printedFilled?.[q.no - 1] ?? q.printedNo;
       const answerText = q.options[answerNo - 1] ?? "";
       const hash = contentHashOf(q.prompt, q.options);
       const exists = await this.bank.findOne({ contentHash: hash }).select("_id").lean().exec();
@@ -497,7 +511,7 @@ export class ExamImportService implements OnApplicationBootstrap {
           section: (doc.section as "vocab") ?? undefined,
           stimulus: q.stimulusKey ? stimIds.get(q.stimulusKey) ?? null : null,
           groupOrder: q.groupOrder,
-          printedNo: q.printedNo,
+          printedNo,
           points: 1,
           rights,
           sourceRef,
@@ -639,6 +653,38 @@ export class ExamImportService implements OnApplicationBootstrap {
     await doc.save();
     return { discarded: true };
   }
+}
+
+interface DraftLike {
+  _id: unknown;
+  blockIndex: number;
+  sitting: string;
+  parsed?: { questions: { printedNo?: number }[] };
+}
+
+/**
+ * The number each question carries on the paper, continuous within one paper (sitting): a question
+ * whose printed number was not read continues from the one before it, across 問題 blocks.
+ * Returns the numbers per draft id, in question order.
+ */
+export function fillPrintedNos(drafts: DraftLike[]): Map<string, number[]> {
+  const out = new Map<string, number[]>();
+  const bySitting = new Map<string, DraftLike[]>();
+  for (const d of drafts) bySitting.set(d.sitting, [...(bySitting.get(d.sitting) ?? []), d]);
+  for (const list of bySitting.values()) {
+    list.sort((a, b) => a.blockIndex - b.blockIndex);
+    let last = 0;
+    for (const d of list) {
+      out.set(
+        String(d._id),
+        (d.parsed?.questions ?? []).map((q) => {
+          last = q.printedNo != null && q.printedNo > 0 ? q.printedNo : last + 1;
+          return last;
+        }),
+      );
+    }
+  }
+  return out;
 }
 
 /** A question's bank `kind` for the imported forms (NP-406 §5.2). */

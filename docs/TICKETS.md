@@ -110,6 +110,9 @@ Plan chi tiết: [plans/plan-jlpt-question-bank.md](./plans/plan-jlpt-question-b
 > NP-406 (GĐ1) xong 19/11 — xem §2.
 
 ### P5 — Hạn mức & quản trị
+
+> **Cập nhật 23/11/2026:** NP-501/502/503 đã hoàn thành trong commit `fff98f1`; còn verify live trên VPS trước khi đóng ticket GitHub #18.
+
 | Ticket | Cụm task | Chặn bởi |
 |---|---|---|
 | NP-501 | Schema + service quota reserve→settle→release, reset theo kỳ/tz (P5-QUOTA-01…05) | ✅ |

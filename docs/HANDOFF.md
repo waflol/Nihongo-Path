@@ -178,3 +178,5 @@ Giai đoạn **đã xong trước** (đừng làm lại):
 - Ảnh trang: `startJob` lưu PDF vào `EXAM_IMPORT_DIR` (mặc định `apps/api/storage/exam-import/<jobId>.pdf`, gitignored; dọn file >30 ngày khi khởi động). Draft có `pageFrom/pageTo`. `GET /exams/admin/import/:jobId/pages/:n` render PNG bằng `renderPdfPage` (tuần tự, cache `<jobId>-p<n>.png`). Gateway `GET /api/exam-import?page=<jobId>&n=`. UI: `exam-import-page-preview.tsx` — cạnh trình sửa (luôn hiện khi sửa) hoặc nút "🖼 Xem ảnh trang". Job cũ (trước thay đổi này) không có PDF → báo "nhập lại để xem ảnh".
 
 - Xoá lần nhập: POST /exams/admin/import/:jobId/delete (xoá job, trang, mọi bản nháp, PDF + ảnh; câu đã xuất bản giữ nguyên; job đang chạy phải hủy trước). UI: nút "Xoá" ở "Các lần nhập gần đây".
+
+- Số câu liền mạch trong một đề: `fillPrintedNos` điền số còn thiếu từ câu trước (qua các khối cùng sitting) khi liệt kê bản nháp và khi xuất bản.
