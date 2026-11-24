@@ -121,12 +121,32 @@ function RecentImports() {
       .catch(() => undefined);
   }, []);
   const [err, setErr] = useState<string | null>(null);
-  async function remove(j: RecentJob) {
-    if (!window.confirm(`Xoá "${j.fileName}" cùng toàn bộ bản nháp của nó? Câu hỏi đã xuất bản vẫn được giữ.`)) return;
+  const [picked, setPicked] = useState<Set<string> | null>(null); // null = popup closed
+  const [busy, setBusy] = useState(false);
+  const removable = jobs.filter((j) => j.status !== "running");
+  function toggle(id: string) {
+    setPicked((cur) => {
+      const n = new Set(cur);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
+  }
+  async function removeSelected() {
+    if (!picked || picked.size === 0) return;
+    setBusy(true);
     setErr(null);
-    const r = await fetch(`/api/exam-import?remove=${j._id}`, { method: "POST" }).catch(() => null);
-    if (r?.ok) setJobs((cur) => cur.filter((x) => x._id !== j._id));
-    else setErr(((await r?.json().catch(() => null)) as { message?: string } | null)?.message ?? "Không xoá được");
+    const failed: string[] = [];
+    for (const id of picked) {
+      const r = await fetch(`/api/exam-import?remove=${id}`, { method: "POST" }).catch(() => null);
+      if (r?.ok) setJobs((cur) => cur.filter((x) => x._id !== id));
+      else failed.push(id);
+    }
+    setBusy(false);
+    if (failed.length) {
+      setErr(`Không xoá được ${failed.length} lần nhập`);
+      setPicked(new Set(failed));
+    } else setPicked(null);
   }
   if (jobs.length === 0) return null;
   return (
@@ -151,7 +171,7 @@ function RecentImports() {
             <button
               type="button"
               disabled={j.status === "running"}
-              onClick={() => void remove(j)}
+              onClick={() => setPicked(new Set([j._id]))}
               className="text-[var(--destructive,#ef4444)] hover:underline disabled:opacity-40"
             >
               Xoá
@@ -159,6 +179,71 @@ function RecentImports() {
           </li>
         ))}
       </ul>
+      {picked && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+          onClick={() => !busy && setPicked(null)}
+        >
+          <div
+            className="w-full max-w-lg rounded-2xl border border-[var(--border)] bg-[var(--background-1)] p-5 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-base font-semibold text-[var(--foreground)]">Xoá lần nhập</h3>
+            <p className="mt-1 text-xs text-[var(--muted-foreground)]">
+              Xoá cả bản nháp, trang và file PDF của các lần nhập đã chọn. Câu hỏi đã xuất bản vẫn được giữ.
+            </p>
+            <label className="mt-3 flex items-center gap-2 text-sm text-[var(--foreground)]">
+              <input
+                type="checkbox"
+                checked={removable.length > 0 && picked.size === removable.length}
+                onChange={(e) => setPicked(new Set(e.target.checked ? removable.map((j) => j._id) : []))}
+              />
+              Chọn tất cả ({removable.length})
+            </label>
+            <ul className="mt-2 max-h-64 divide-y divide-[var(--border)] overflow-y-auto text-sm">
+              {jobs.map((j) => (
+                <li key={j._id}>
+                  <label className="flex items-center gap-2 py-2">
+                    <input
+                      type="checkbox"
+                      disabled={j.status === "running"}
+                      checked={picked.has(j._id)}
+                      onChange={() => toggle(j._id)}
+                    />
+                    <span className="min-w-0 flex-1 truncate text-[var(--foreground)]">
+                      {j.level} · {j.fileName}
+                    </span>
+                    <span className="text-xs text-[var(--muted-foreground)]">
+                      {j.status} · {j.blocksFound ?? 0} khối
+                    </span>
+                  </label>
+                </li>
+              ))}
+            </ul>
+            {err && <p className="mt-2 text-xs text-[var(--destructive,#ef4444)]">{err}</p>}
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => setPicked(null)}
+                className="rounded-lg border border-[var(--border)] px-3 py-1.5 text-sm text-[var(--foreground)]"
+              >
+                Huỷ
+              </button>
+              <button
+                type="button"
+                disabled={busy || picked.size === 0}
+                onClick={() => void removeSelected()}
+                className="rounded-lg bg-[var(--destructive,#ef4444)] px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+              >
+                {busy ? "Đang xoá…" : `Xoá ${picked.size} lần nhập`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 }
