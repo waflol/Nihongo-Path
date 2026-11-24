@@ -183,11 +183,11 @@ function RecentImports() {
         <div
           role="dialog"
           aria-modal="true"
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-4"
           onClick={() => !busy && setPicked(null)}
         >
           <div
-            className="w-full max-w-lg rounded-2xl border border-[var(--border)] bg-[var(--background-1)] p-5 shadow-xl"
+            className="flex max-h-[85dvh] w-full max-w-lg flex-col rounded-2xl border border-[var(--border)] bg-[var(--background-1)] p-5 shadow-xl"
             onClick={(e) => e.stopPropagation()}
           >
             <h3 className="text-base font-semibold text-[var(--foreground)]">Xoá lần nhập</h3>
@@ -202,7 +202,7 @@ function RecentImports() {
               />
               Chọn tất cả ({removable.length})
             </label>
-            <ul className="mt-2 max-h-64 divide-y divide-[var(--border)] overflow-y-auto text-sm">
+            <ul className="mt-2 min-h-0 flex-1 divide-y divide-[var(--border)] overflow-y-auto text-sm">
               {jobs.map((j) => (
                 <li key={j._id}>
                   <label className="flex items-center gap-2 py-2">
@@ -223,7 +223,7 @@ function RecentImports() {
               ))}
             </ul>
             {err && <p className="mt-2 text-xs text-[var(--destructive,#ef4444)]">{err}</p>}
-            <div className="mt-4 flex justify-end gap-2">
+            <div className="mt-4 flex shrink-0 justify-end gap-2">
               <button
                 type="button"
                 disabled={busy}
