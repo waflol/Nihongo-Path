@@ -166,7 +166,7 @@ Giai đoạn **đã xong trước** (đừng làm lại):
 - N1/N2: dạng 問題 từ nhóm đọc (文章の文法 → 情報検索) lấy theo SỐ 問題 (instruction giống nhau không phân biệt được).
 - Quy tắc mới: `parseCloze` (文章の文法: 1 bài cloze `[50]`…, đáp án `50)1 … 2 … 3 … 4 …`), `parseReading` (bài đọc + `55)câu hỏi` / `1 … 4 …`; số câu liên tục; chú thích cuối → `notes`; 統合理解 vẫn để AI).
 - Dòng yêu cầu bị ngắt được nối lại; 問題1 không in chữ "問題1" → tự mở khối (`UNLABELLED_FIRST`).
-- Còn lỗi: trang 1 mỗi đề, đuôi đáp án 問題1 bị dồn xuống cuối trang (thứ tự chữ) → quy tắc trả null, AI xử lý.
+- Đã sửa: bảng đáp án 問題1 (１ … ２ … ３ | ４ …) bị `findGutter` nhận nhầm là 2 cột → đuôi đáp án dồn xuống cuối. Dấu hiệu nhận bảng: số đáp án bên phải NỐI TIẾP bên trái ở ≥3 hàng (2 cột thật thì mỗi cột bắt đầu lại từ １).
 
 ### NP-407 — sửa tay bản nháp
 - API `POST /exams/admin/import/drafts/:id/update` (`updateDraft`): thay `parsed` bằng bản sửa tay (kiểm hình dạng: kind, đủ 4 phương án, stimulusKey tồn tại, giới hạn kích thước; KHÔNG đối chiếu text gốc), đánh lại `no`/`groupOrder`, `answers` theo vị trí mới, `parsedBy="manual"`, status → needs_review (cả khối `error` điền tay được). Chỉ khối chưa xuất bản/loại.

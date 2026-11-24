@@ -36,14 +36,14 @@ async function loadPdfjs(): Promise<Pdfjs> {
   }
 }
 
-type Frag = { x: number; y: number; w: number; s: string };
+export type Frag = { x: number; y: number; w: number; s: string };
 
 /**
  * The x of the gutter between two text columns, or `null` for a one-column
  * page. A gutter is a ≥10pt strip in the middle third that (almost) no
  * fragment crosses, with real text on both sides.
  */
-function findGutter(frags: Frag[]): number | null {
+export function findGutter(frags: Frag[], optionRule = true): number | null {
   if (frags.length < 12) return null;
   const minX = Math.min(...frags.map((f) => f.x));
   const maxX = Math.max(...frags.map((f) => f.x + f.w));
@@ -68,7 +68,25 @@ function findGutter(frags: Frag[]): number | null {
   const longLines = (side: Frag[]) => side.filter((f) => f.w >= 60).length;
   const left = frags.filter((f) => f.x + f.w / 2 < g);
   const right = frags.filter((f) => f.x + f.w / 2 >= g);
-  return longLines(left) >= 6 && longLines(right) >= 6 ? g : null;
+  if (longLines(left) < 6 || longLines(right) < 6) return null;
+
+  // A row of answer options (`１ めぐまれた ２ かこまれた ３ | つつまれた ４ のまれた`) has wide gaps
+  // that look like a gutter. The tell: the option numbers on the right CONTINUE those on the left
+  // (…３ | ４). Two real columns each restart at １. Several such rows → an options table.
+  const optNo = (f: Frag): number => (/^[1-4]$/.test(f.s.normalize("NFKC").trim()) ? Number(f.s.normalize("NFKC").trim()) : 0);
+  const byRow = new Map<number, Frag[]>();
+  for (const f of frags) {
+    const k = Math.round(f.y / 4);
+    byRow.set(k, [...(byRow.get(k) ?? []), f]);
+  }
+  let continuedRows = 0;
+  for (const row of byRow.values()) {
+    const nums = (side: Frag[]) => side.map(optNo).filter((n) => n > 0);
+    const l = nums(row.filter((f) => f.x + f.w / 2 < g).sort((a, b) => a.x - b.x));
+    const r = nums(row.filter((f) => f.x + f.w / 2 >= g).sort((a, b) => a.x - b.x));
+    if (l.length > 0 && r.length > 0 && r[0] === l[l.length - 1] + 1) continuedRows += 1;
+  }
+  return optionRule && continuedRows >= 3 ? null : g;
 }
 
 /** Group a page's fragments into visual lines, top → bottom; a two-column page reads the left column, then the right. */
