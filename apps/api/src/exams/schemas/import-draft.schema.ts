@@ -61,6 +61,13 @@ export class ExamImportDraft {
   @Prop({ type: String, default: "vocab" })
   section: string;
 
+  /** The PDF pages the block was read from (1-based, inclusive) — shown beside the draft for review. */
+  @Prop({ type: Number })
+  pageFrom?: number;
+
+  @Prop({ type: Number })
+  pageTo?: number;
+
   /** The 問題's instruction line(s), as printed. */
   @Prop({ type: String, default: "" })
   instruction: string;

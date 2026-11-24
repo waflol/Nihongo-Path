@@ -114,6 +114,10 @@ export class ExerciseQuestion {
   @Prop({ type: Number })
   groupOrder?: number;
 
+  /** The question number as PRINTED on the imported paper (e.g. 55); display only. */
+  @Prop({ type: Number })
+  printedNo?: number;
+
   /** The points the question is worth (default 1). */
   @Prop({ type: Number, default: 1 })
   points?: number;

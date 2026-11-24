@@ -7,6 +7,8 @@ import {
   OnApplicationBootstrap,
 } from "@nestjs/common";
 import { InjectModel } from "@nestjs/mongoose";
+import { mkdir, readFile, readdir, stat, unlink, writeFile } from "node:fs/promises";
+import { join, resolve } from "node:path";
 import { Model } from "mongoose";
 import type { AuthUser } from "../auth/auth.types.js";
 import { AiExampleService } from "../ai/ai-example.service.js";
@@ -34,6 +36,7 @@ import {
 } from "./schemas/import-job.schema.js";
 import { contentHashOf, optionCountsOf } from "./mondai.js";
 import { blockMarker, keyMarker, splitCompactKey, type AnswerKeyBlock } from "./import/answer-key.js";
+import { renderPdfPage } from "../import/parsers/pdf.js";
 import { openProsePdf } from "./import/prose.js";
 import { markCloze, parseByRules } from "./import/rules.js";
 import { segmentBlocks, type Block } from "./import/segment.js";
@@ -56,6 +59,10 @@ import { parseAiJson, structurePrompt, type ParsedBlock, validateParsed } from "
 @Injectable()
 export class ExamImportService implements OnApplicationBootstrap {
   private readonly logger = new Logger(ExamImportService.name);
+  /** The uploaded PDFs + the page images rendered from them, kept so the review screen can show the source page. */
+  private readonly dir = resolve(process.env.EXAM_IMPORT_DIR?.trim() || join(process.cwd(), "storage", "exam-import"));
+  /** Page renders run one at a time: a render of a big PDF is the heaviest thing this service does on a 4 GB box. */
+  private renderChain: Promise<unknown> = Promise.resolve();
   /** A job's structuring work is in-flight in this process (not yet persisted). */
   private readonly running = new Set<string>();
 
@@ -118,6 +125,7 @@ export class ExamImportService implements OnApplicationBootstrap {
 
   /** A job left `running` by a crash is resumed on boot (best effort). */
   async onApplicationBootstrap() {
+    void this.pruneFiles().catch(() => undefined);
     const stuck = await this.jobs.find({ status: "running" }).select("_id").lean().exec().catch(() => []);
     for (const j of stuck) {
       void this.runJob(String(j._id)).catch(() => undefined);
@@ -148,6 +156,13 @@ export class ExamImportService implements OnApplicationBootstrap {
         status: "running",
       });
 
+    // Keep the PDF so the review screen can show each block's source page (best effort).
+    try {
+      await mkdir(this.dir, { recursive: true });
+      await writeFile(join(this.dir, `${String(job._id)}.pdf`), buffer);
+    } catch (err) {
+      this.logger.warn(`exam-import: cannot keep the PDF of job ${String(job._id)}: ${(err as Error).message}`);
+    }
     void this.runJob(String(job._id), { buffer, level: opts.level, rights: opts.rights ?? "reference", createdBy: caller.sub });
     return { jobId: String(job._id) };
   }
@@ -285,7 +300,7 @@ export class ExamImportService implements OnApplicationBootstrap {
     level: string,
     rights: QuestionRights,
     blockIndex: number,
-    block: { instruction: string; rawText: string; mondai: string | null; sectionHint: string; sitting: string },
+    block: { instruction: string; rawText: string; mondai: string | null; sectionHint: string; sitting: string; pageFrom?: number; pageTo?: number },
     keyBlock: AnswerKeyBlock | null,
   ): Promise<{ status: string }> {
     const doc: ExamImportDraftDocument = await this.drafts.create({
@@ -297,6 +312,8 @@ export class ExamImportService implements OnApplicationBootstrap {
       section: block.sectionHint,
       instruction: block.instruction,
       rawText: block.rawText,
+      pageFrom: block.pageFrom,
+      pageTo: block.pageTo,
       // The printed key's answers, 0 = still unknown (the AI never fills these).
       answers: keyBlock ? keyBlock.answers.map((a) => a ?? 0) : [],
       issues: [],
@@ -359,6 +376,9 @@ export class ExamImportService implements OnApplicationBootstrap {
     // The key and the review screen address questions by POSITION in the block (1..n); a paper
     // that prints running numbers (6..10) must not shift the answers.
     parsed?.questions.forEach((q, i) => {
+      // Keep the number the paper PRINTS (the AI reports it in `no`) so the reviewer and learners
+      // still see 55, 56… while `no` stays the position the answers are keyed by.
+      if (q.printedNo == null && Number.isInteger(q.no) && q.no > 0) q.printedNo = q.no;
       q.no = i + 1;
     });
     doc.parsed = parsed ?? undefined;
@@ -459,6 +479,7 @@ export class ExamImportService implements OnApplicationBootstrap {
           section: (doc.section as "vocab") ?? undefined,
           stimulus: q.stimulusKey ? stimIds.get(q.stimulusKey) ?? null : null,
           groupOrder: q.groupOrder,
+          printedNo: q.printedNo,
           points: 1,
           rights,
           sourceRef,
@@ -482,6 +503,49 @@ export class ExamImportService implements OnApplicationBootstrap {
    * but the SHAPE is: kinds, 4 options (3/4 for listening), stimulus links, sizes.
    * `answers` (aligned with the NEW question order) replaces the stored picks.
    */
+  /**
+   * The source page (PNG) of an import job, for the side-by-side review. Rendered on demand from
+   * the kept PDF and cached next to it; a job from before the PDF was kept has no image.
+   */
+  async pageImage(jobId: string, page: number): Promise<Buffer> {
+    if (!/^[a-f0-9]{24}$/i.test(jobId) || !Number.isInteger(page) || page < 1 || page > 2000) {
+      throw new BadRequestException("jobId hoặc số trang không hợp lệ");
+    }
+    const cached = join(this.dir, `${jobId}-p${page}.png`);
+    try {
+      return await readFile(cached);
+    } catch {
+      /* not rendered yet */
+    }
+    let pdf: Buffer;
+    try {
+      pdf = await readFile(join(this.dir, `${jobId}.pdf`));
+    } catch {
+      throw new NotFoundException("Không còn file PDF của lần nhập này — nhập lại để xem ảnh trang");
+    }
+    const run = this.renderChain.then(async () => {
+      try {
+        return await readFile(cached); // another request rendered it while we waited
+      } catch {
+        const png = await renderPdfPage(pdf, page);
+        await writeFile(cached, png).catch(() => undefined);
+        return png;
+      }
+    });
+    this.renderChain = run.catch(() => undefined);
+    return run;
+  }
+
+  /** Drop kept PDFs / page images older than 30 days. */
+  private async pruneFiles(): Promise<void> {
+    const cutoff = Date.now() - 30 * 24 * 3600 * 1000;
+    for (const f of await readdir(this.dir).catch(() => [] as string[])) {
+      const p = join(this.dir, f);
+      const st = await stat(p).catch(() => null);
+      if (st && st.mtimeMs < cutoff) await unlink(p).catch(() => undefined);
+    }
+  }
+
   async updateDraft(caller: AuthUser, draftId: string, body: unknown): Promise<Record<string, unknown>> {
     const doc = await this.drafts.findById(draftId).exec();
     if (!doc) throw new NotFoundException("Import draft not found");
@@ -523,6 +587,8 @@ export class ExamImportService implements OnApplicationBootstrap {
         throw new BadRequestException(`${at}: cần đủ ${expected.join("/")} phương án, không để trống`);
       }
       const q: ParsedBlock["questions"][number] = { no: questions.length + 1, prompt, options };
+      const printed = Number(o.printedNo);
+      if (Number.isInteger(printed) && printed >= 1 && printed <= 999) q.printedNo = printed;
       const key = typeof o.stimulusKey === "string" ? o.stimulusKey : "";
       if (key) {
         if (!stimuli.some((s) => s.key === key)) throw new BadRequestException(`${at}: trỏ tới bài đọc không tồn tại`);

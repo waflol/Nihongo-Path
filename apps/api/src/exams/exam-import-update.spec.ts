@@ -27,7 +27,7 @@ describe("ExamImportService.updateDraft", () => {
   const body = {
     stimuli: [{ key: "s1", kind: "passage", body: " 本文です。 ", notes: "(注) x" }],
     questions: [
-      { prompt: "この文章の内容は？", options: ["あ", "い", "う", "え"], stimulusKey: "s1" },
+      { prompt: "この文章の内容は？", options: ["あ", "い", "う", "え"], stimulusKey: "s1", printedNo: 55 },
       { prompt: "二つ目", options: ["a", "b", "c", "d"], stimulusKey: "s1" },
     ],
     answers: [2, 9],
@@ -39,6 +39,7 @@ describe("ExamImportService.updateDraft", () => {
     const parsed = doc.parsed as { stimuli: { body: string }[]; questions: { no: number; groupOrder?: number }[] };
     expect(parsed.stimuli[0].body).toBe("本文です。");
     expect(parsed.questions.map((q) => [q.no, q.groupOrder])).toEqual([[1, 1], [2, 2]]);
+    expect((doc.parsed as { questions: { printedNo?: number }[] }).questions.map((q) => q.printedNo)).toEqual([55, undefined]);
     expect(doc.answers).toEqual([2, 0]); // 9 is not a valid option → unknown
     expect(doc.parsedBy).toBe("manual");
     expect(doc.status).toBe("needs_review");

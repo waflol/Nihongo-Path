@@ -9,6 +9,7 @@ import { getSession } from "@/lib/session";
  *   POST /api/exam-import?cancel=<id> → stop a running job
  *   GET  /api/exam-import?drafts=<jobId>[&status=] → the job's review drafts
  *   POST /api/exam-import?publish=<draftId> {answers} / ?discard=<draftId>
+ *   GET  /api/exam-import?page=<jobId>&n=<page> → the source page as a PNG
  *   POST /api/exam-import?update=<draftId> {stimuli, questions, answers} → hand edits
  * The access token stays server-side (same pattern as /api/import).
  */
@@ -40,6 +41,25 @@ async function forward(path: string, method: "GET" | "POST", json?: string) {
 }
 
 export async function GET(request: Request) {
+  const pageJob = new URL(request.url).searchParams.get("page");
+  if (pageJob) {
+    const n = Number(new URL(request.url).searchParams.get("n"));
+    if (!/^[a-f0-9]{24}$/i.test(pageJob) || !Number.isInteger(n) || n < 1 || n > 2000) {
+      return NextResponse.json({ error: "tham số không hợp lệ" }, { status: 400 });
+    }
+    const session = await getSession();
+    if (!session.authenticated || !session.accessToken) {
+      return NextResponse.json({ error: "Không đăng nhập" }, { status: 401 });
+    }
+    const r = await fetch(`${API_BASE_URL}/exams/admin/import/${pageJob}/pages/${n}`, {
+      headers: { ...(await clientIpHeaders()), Authorization: `Bearer ${session.accessToken}` },
+      cache: "no-store",
+    });
+    if (!r.ok) return NextResponse.json({ error: "Không có ảnh trang" }, { status: r.status });
+    return new Response(await r.arrayBuffer(), {
+      headers: { "Content-Type": "image/png", "Cache-Control": "private, max-age=3600" },
+    });
+  }
   const log = new URL(request.url).searchParams.get("log");
   if (log) {
     if (!ID.test(log)) return NextResponse.json({ error: "id không hợp lệ" }, { status: 400 });

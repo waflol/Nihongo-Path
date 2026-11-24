@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
+import { PagePreview } from "./exam-import-page-preview";
 import { DraftEditor, type EditQuestion, type EditStimulus } from "./exam-import-draft-editor";
 
 interface ParsedStimulus {
@@ -14,6 +15,8 @@ interface ParsedStimulus {
 }
 interface ParsedQuestion {
   no: number;
+  /** The number printed on the paper (55…); `no` is only the position in the block. */
+  printedNo?: number;
   prompt: string;
   options: string[];
   stimulusKey?: string;
@@ -26,6 +29,8 @@ interface Draft {
   section: string;
   instruction: string;
   rawText: string;
+  pageFrom?: number;
+  pageTo?: number;
   parsed?: { stimuli?: ParsedStimulus[]; questions?: ParsedQuestion[] };
   answers: number[];
   issues: string[];
@@ -153,7 +158,7 @@ export function ExamImportDrafts({ jobId }: { jobId: string }) {
   const counts = (drafts ?? []).reduce<Record<string, number>>((m, d) => ({ ...m, [d.status]: (m[d.status] ?? 0) + 1 }), {});
 
   return (
-    <div className="mx-auto w-full max-w-4xl space-y-4 px-4 py-8 sm:px-6">
+    <div className="mx-auto w-full max-w-6xl space-y-4 px-4 py-8 sm:px-6">
       <Link href="/admin/exams/import" className="text-xs font-medium text-[var(--primary)] hover:underline">
         ← Quay lại nhập đề
       </Link>
@@ -235,6 +240,7 @@ export function ExamImportDrafts({ jobId }: { jobId: string }) {
               <DraftCard
                 key={d._id}
                 draft={d}
+                jobId={jobId}
                 answers={answersById[d._id] ?? []}
                 setAnswers={(a) => setAnswersById((m) => ({ ...m, [d._id]: a }))}
                 onChanged={load}
@@ -249,11 +255,13 @@ export function ExamImportDrafts({ jobId }: { jobId: string }) {
 
 function DraftCard({
   draft,
+  jobId,
   answers,
   setAnswers,
   onChanged,
 }: {
   draft: Draft;
+  jobId: string;
   answers: number[];
   setAnswers: (a: number[]) => void;
   onChanged: () => Promise<void>;
@@ -262,6 +270,10 @@ function DraftCard({
   const stimuli = draft.parsed?.stimuli ?? [];
   const [raw, setRaw] = useState(draft.status === "error");
   const [editing, setEditing] = useState(false);
+  const [showPage, setShowPage] = useState(false);
+  const hasPages = draft.pageFrom != null;
+  // Editing always shows the source page beside the editor; otherwise it is a toggle.
+  const pageOpen = hasPages && (editing || showPage);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -278,7 +290,12 @@ function DraftCard({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         stimuli: newStimuli,
-        questions: newQuestions.map((q) => ({ prompt: q.prompt, options: q.options, stimulusKey: q.stimulusKey || undefined })),
+        questions: newQuestions.map((q) => ({
+          printedNo: q.printedNo,
+          prompt: q.prompt,
+          options: q.options,
+          stimulusKey: q.stimulusKey || undefined,
+        })),
         answers: newQuestions.map((q) => q.answer),
       }),
     }).catch(() => null);
@@ -343,10 +360,18 @@ function DraftCard({
         </ul>
       )}
 
+      <div className={pageOpen ? "mt-1 grid gap-4 lg:grid-cols-2 lg:items-start" : ""}>
+      {pageOpen && (
+        <div className="lg:sticky lg:top-4 lg:order-2">
+          <PagePreview jobId={jobId} from={draft.pageFrom!} to={draft.pageTo ?? draft.pageFrom!} />
+        </div>
+      )}
+      <div className="min-w-0 lg:order-1">
       {editing ? (
         <DraftEditor
           initialStimuli={stimuli.map((s) => ({ key: s.key, kind: s.kind, title: s.title, body: s.body, bodyB: s.bodyB, notes: s.notes }))}
           initialQuestions={questions.map((q) => ({
+            printedNo: q.printedNo,
             prompt: q.prompt,
             options: q.options,
             stimulusKey: q.stimulusKey ?? "",
@@ -378,7 +403,7 @@ function DraftCard({
         {questions.map((q) => (
           <li key={q.no} className="rounded-lg border border-[var(--border)] bg-[var(--background)] p-3 text-sm">
             <p className="whitespace-pre-wrap text-[var(--foreground)]">
-              <span className="font-semibold">{q.no}.</span> {q.prompt}
+              <span className="font-semibold">{q.printedNo ?? q.no}.</span> {q.prompt}
               {q.stimulusKey && <span className="ml-2 text-xs text-[var(--muted-foreground)]">({q.stimulusKey})</span>}
             </p>
             <div className="mt-2 flex flex-wrap gap-2">
@@ -407,11 +432,18 @@ function DraftCard({
       </ol>
         </>
       )}
+      </div>
+      </div>
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
         {open && !editing && (
           <button type="button" className={btn} disabled={busy} onClick={() => setEditing(true)}>
             ✎ Chỉnh sửa
+          </button>
+        )}
+        {hasPages && !editing && (
+          <button type="button" className={btn} onClick={() => setShowPage(!showPage)}>
+            {showPage ? "Ẩn ảnh trang" : "🖼 Xem ảnh trang"}
           </button>
         )}
         <button type="button" className={btn} onClick={() => setRaw(!raw)}>

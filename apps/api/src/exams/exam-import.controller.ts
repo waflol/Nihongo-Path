@@ -3,11 +3,13 @@ import {
   Body,
   Controller,
   Get,
+  Header,
   HttpCode,
   HttpStatus,
   Param,
   Post,
   Query,
+  StreamableFile,
   UnprocessableEntityException,
   UploadedFile,
   UseInterceptors,
@@ -96,6 +98,15 @@ export class ExamImportController {
   @HttpCode(HttpStatus.OK)
   discard(@CurrentUser() caller: AuthUser, @Param("id") id: string) {
     return this.imports.discard(caller, id);
+  }
+
+  @Get(":jobId/pages/:n")
+  @ContentAdmin()
+  @Header("Content-Type", "image/png")
+  @Header("Cache-Control", "private, max-age=3600")
+  @ApiOperation({ summary: "The source page (PNG) of an imported PDF, for side-by-side review" })
+  async page(@Param("jobId") jobId: string, @Param("n") n: string): Promise<StreamableFile> {
+    return new StreamableFile(await this.imports.pageImage(jobId, Number(n)));
   }
 
   @Get(":jobId/log")

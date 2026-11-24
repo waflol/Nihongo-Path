@@ -40,8 +40,8 @@ describe("parseByRules", () => {
     const raw = ["28 )地味", "1 あ 2 い 3 う 4 え", "29 )長引く", "1 かか", "2 きき", "3 くく", "4 けけ", "【文字・語彙】", "(配点 1 点)"].join("\n");
     const p = parseByRules({ rawText: raw, mondai: "usage" });
     expect(p?.questions).toEqual([
-      { no: 1, prompt: "地味", options: ["あ", "い", "う", "え"] },
-      { no: 2, prompt: "長引く", options: ["かか", "きき", "くく", "けけ"] },
+      { no: 1, printedNo: 28, prompt: "地味", options: ["あ", "い", "う", "え"] },
+      { no: 2, printedNo: 29, prompt: "長引く", options: ["かか", "きき", "くく", "けけ"] },
     ]);
   });
   it("skips the example box, keeps a multi-line ★ prompt, and a number inside an option", () => {
@@ -116,6 +116,7 @@ describe("parseByRules — 文章の文法 (cloze)", () => {
     expect(parsed.stimuli[0].kind).toBe("cloze");
     expect(parsed.stimuli[0].body).not.toContain("【読解】");
     expect(parsed.questions).toHaveLength(5);
+    expect(parsed.questions.map((q) => [q.no, q.printedNo])).toEqual([[1, 50], [2, 51], [3, 52], [4, 53], [5, 54]]);
     expect(parsed.questions[1].options).toEqual(["心配することはない", "心配ではいられない", "心配でならない", "心配してはならない"]);
     expect(validateParsed(parsed, rawText, [4])).toEqual([]);
   });
@@ -150,6 +151,7 @@ describe("parseByRules — 読解 (passages + 55)… questions)", () => {
     expect(parsed.stimuli[1].notes).toBe("＊注：町は小さい。");
     expect(parsed.questions.map((q) => q.stimulusKey)).toEqual(["s1", "s1", "s2"]);
     expect(parsed.questions[1].options).toHaveLength(4);
+    expect(parsed.questions.map((q) => q.printedNo)).toEqual([55, 56, 57]); // the printed numbers are kept
     expect(parsed.questions[0].prompt).toBe("「その中」は何を指しているか。");
     expect(validateParsed(parsed, rawText, [4])).toEqual([]);
   });

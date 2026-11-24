@@ -23,8 +23,10 @@ export interface ParsedStimulus {
 }
 
 export interface ParsedQuestion {
-  /** The printed question number within the block (1-based). */
+  /** The question's POSITION within the block (1-based) — the key the answers are addressed by. */
   no: number;
+  /** The number PRINTED on the paper (e.g. 55 for the first reading question after the 50–54 cloze). */
+  printedNo?: number;
   prompt: string;
   options: string[];
   /** Which shared passage this question belongs to (the parsed key). */

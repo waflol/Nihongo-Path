@@ -11,6 +11,8 @@ export interface EditStimulus {
   notes?: string;
 }
 export interface EditQuestion {
+  /** The number printed on the paper (55…); empty = unknown. */
+  printedNo?: number;
   prompt: string;
   options: string[];
   stimulusKey: string;
@@ -253,7 +255,19 @@ export function DraftEditor({
           {g.items.map(({ q, i }) => (
             <div key={i} className="rounded-lg border border-[var(--border)] bg-[var(--background)] p-3 text-sm">
               <div className="flex flex-wrap items-center gap-2">
-                <span className="font-semibold">Câu {i + 1}</span>
+                <span className="font-semibold">Câu</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={999}
+                  inputMode="numeric"
+                  aria-label="Số câu in trên đề"
+                  title="Số thứ tự của câu như in trên đề (ví dụ 55)"
+                  value={q.printedNo ?? ""}
+                  placeholder={String(i + 1)}
+                  onChange={(e) => patchQuestion(i, { printedNo: e.target.value === "" ? undefined : Number(e.target.value) })}
+                  className="w-16 rounded-md border border-[var(--border)] bg-transparent px-1.5 py-0.5 text-sm"
+                />
                 <select
                   aria-label="Thuộc bài"
                   value={q.stimulusKey}

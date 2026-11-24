@@ -64,6 +64,8 @@ function splitOptions(text: string): string[] | null {
 }
 
 interface Group {
+  /** The number printed in front of the question (`45 )…`). */
+  printed?: number;
   /** Opened by a printed `N)` marker (so it is certainly a question, not stray text). */
   bracketed?: boolean;
   prompt: string[];
@@ -104,7 +106,7 @@ export function parseByRules(block: { rawText: string; mondai: string | null }):
     const cur = groups[groups.length - 1];
     const br = line.match(Q_BRACKET);
     if (br) {
-      groups.push({ bracketed: true, prompt: br[2] ? [br[2]] : [], options: [], count: 0 });
+      groups.push({ bracketed: true, printed: Number(br[1]), prompt: br[2] ? [br[2]] : [], options: [], count: 0 });
       continue;
     }
     // `1.有好 2.優好` (number + dot, no space) can only be an option line.
@@ -115,7 +117,7 @@ export function parseByRules(block: { rawText: string; mondai: string | null }):
       continue;
     }
     if (nl && !(cur && cur.count > 0 && cur.count < 4)) {
-      groups.push({ prompt: [nl[2]], options: [], count: 0 });
+      groups.push({ printed: Number(nl[1]), prompt: [nl[2]], options: [], count: 0 });
       continue;
     }
     if (!cur) continue; // text before the first question (instruction tail, banners)
@@ -136,7 +138,7 @@ export function parseByRules(block: { rawText: string; mondai: string | null }):
       if (g.bracketed) return null;
       continue;
     }
-    questions.push({ no: questions.length + 1, prompt, options });
+    questions.push({ no: questions.length + 1, ...(g.printed ? { printedNo: g.printed } : {}), prompt, options });
   }
   return questions.length > 0 ? { stimuli: [], questions } : null;
 }
@@ -172,7 +174,7 @@ function parseCloze(rawText: string): ParsedBlock | null {
   for (const a of answers) {
     const options = splitOptions(a.text);
     if (!options) return null; // unreadable → the AI gets the block
-    questions.push({ no: questions.length + 1, prompt: String(a.no), options, stimulusKey: "s1", groupOrder: questions.length + 1 });
+    questions.push({ no: questions.length + 1, printedNo: a.no, prompt: String(a.no), options, stimulusKey: "s1", groupOrder: questions.length + 1 });
   }
   if (questions.length === 0 || passage.length === 0) return null;
   return { stimuli: [{ key: "s1", kind: "cloze", body: passage.join("\n") }], questions };
@@ -226,7 +228,7 @@ function parseReading(rawText: string, kind: "passage" | "notice"): ParsedBlock 
         pending = [];
       }
       if (passages.length === 0) return null;
-      cur = { prompt: br[2] ? [br[2]] : [], options: [], count: 0 };
+      cur = { printed: Number(br[1]), prompt: br[2] ? [br[2]] : [], options: [], count: 0 };
       passages[passages.length - 1].qs.push(cur);
       lastNo = Number(br[1]);
       continue;
@@ -259,7 +261,7 @@ function parseReading(rawText: string, kind: "passage" | "notice"): ParsedBlock 
       const prompt = g.prompt.join("\n").trim();
       if (!options || !prompt) return null; // a question could not be read → the AI gets the block
       order += 1;
-      questions.push({ no: questions.length + 1, prompt, options, stimulusKey: key, groupOrder: order });
+      questions.push({ no: questions.length + 1, ...(g.printed ? { printedNo: g.printed } : {}), prompt, options, stimulusKey: key, groupOrder: order });
     }
     stimuli.push({ key, kind, body: ps.body.join("\n"), ...(ps.notes ? { notes: ps.notes.join("\n") } : {}) });
   }
