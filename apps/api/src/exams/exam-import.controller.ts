@@ -83,6 +83,14 @@ export class ExamImportController {
     return this.imports.publish(caller, id, body);
   }
 
+  @Post("drafts/:id/update")
+  @ContentAdmin()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: "Hand-edit a draft's passages and questions (answers stay aligned by position)" })
+  update(@CurrentUser() caller: AuthUser, @Param("id") id: string, @Body() body: unknown) {
+    return this.imports.updateDraft(caller, id, body);
+  }
+
   @Post("drafts/:id/discard")
   @ContentAdmin()
   @HttpCode(HttpStatus.OK)

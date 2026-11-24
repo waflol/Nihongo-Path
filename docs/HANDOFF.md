@@ -167,3 +167,8 @@ Giai đoạn **đã xong trước** (đừng làm lại):
 - Quy tắc mới: `parseCloze` (文章の文法: 1 bài cloze `[50]`…, đáp án `50)1 … 2 … 3 … 4 …`), `parseReading` (bài đọc + `55)câu hỏi` / `1 … 4 …`; số câu liên tục; chú thích cuối → `notes`; 統合理解 vẫn để AI).
 - Dòng yêu cầu bị ngắt được nối lại; 問題1 không in chữ "問題1" → tự mở khối (`UNLABELLED_FIRST`).
 - Còn lỗi: trang 1 mỗi đề, đuôi đáp án 問題1 bị dồn xuống cuối trang (thứ tự chữ) → quy tắc trả null, AI xử lý.
+
+### NP-407 — sửa tay bản nháp
+- API `POST /exams/admin/import/drafts/:id/update` (`updateDraft`): thay `parsed` bằng bản sửa tay (kiểm hình dạng: kind, đủ 4 phương án, stimulusKey tồn tại, giới hạn kích thước; KHÔNG đối chiếu text gốc), đánh lại `no`/`groupOrder`, `answers` theo vị trí mới, `parsedBy="manual"`, status → needs_review (cả khối `error` điền tay được). Chỉ khối chưa xuất bản/loại.
+- UI: nút "✎ Chỉnh sửa" mỗi khối → `components/admin/exam-import-draft-editor.tsx` (trang bài đọc gõ trực tiếp, hoàn tác/làm lại, chèn `[n]`, sửa đề/đáp án, chọn đáp án đúng, thêm/xoá/đổi chỗ câu và bài). Chỉ lưu văn bản thuần (màn học cũng hiển thị thuần) — chưa có in đậm/gạch chân.
+- Gateway: `POST /api/exam-import?update=<id>`.

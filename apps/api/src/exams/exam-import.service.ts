@@ -475,6 +475,79 @@ export class ExamImportService implements OnApplicationBootstrap {
   }
 
   /** Discard a draft (a block the reviewer decides not to import). */
+  /**
+   * Replace a draft's parsed passages + questions with the reviewer's hand edits
+   * (the Word-like editor of the review screen). Only an open draft can be edited.
+   * Nothing is checked against the raw text any more — a person is the authority —
+   * but the SHAPE is: kinds, 4 options (3/4 for listening), stimulus links, sizes.
+   * `answers` (aligned with the NEW question order) replaces the stored picks.
+   */
+  async updateDraft(caller: AuthUser, draftId: string, body: unknown): Promise<Record<string, unknown>> {
+    const doc = await this.drafts.findById(draftId).exec();
+    if (!doc) throw new NotFoundException("Import draft not found");
+    if (doc.status !== "needs_review" && doc.status !== "error") {
+      throw new BadRequestException("Chỉ sửa được khối chưa xuất bản / chưa loại");
+    }
+    const b = (body ?? {}) as { stimuli?: unknown; questions?: unknown; answers?: unknown };
+    const text = (v: unknown, max: number): string => (typeof v === "string" ? v.replace(/\r\n?/g, "\n").slice(0, max) : "");
+    const kinds = ["passage", "cloze", "notice", "pair"];
+
+    const stimuli: ParsedBlock["stimuli"] = [];
+    for (const raw of Array.isArray(b.stimuli) ? b.stimuli.slice(0, 20) : []) {
+      const o = (raw ?? {}) as Record<string, unknown>;
+      const key = text(o.key, 20).trim();
+      const body = text(o.body, 20000).trim();
+      if (!key || stimuli.some((s) => s.key === key)) throw new BadRequestException("Bài dùng chung thiếu key hoặc trùng key");
+      if (!body) throw new BadRequestException(`Bài ${key} đang trống — xoá bài hoặc nhập nội dung`);
+      const kind = typeof o.kind === "string" && kinds.includes(o.kind) ? o.kind : "passage";
+      const st: ParsedBlock["stimuli"][number] = { key, kind: kind as "passage", body };
+      const title = text(o.title, 200).trim();
+      const bodyB = text(o.bodyB, 20000).trim();
+      const notes = text(o.notes, 4000).trim();
+      if (title) st.title = title;
+      if (bodyB) st.bodyB = bodyB;
+      if (notes) st.notes = notes;
+      stimuli.push(st);
+    }
+
+    const expected = optionCountsOf(doc.mondai);
+    const questions: ParsedBlock["questions"] = [];
+    const order = new Map<string, number>();
+    for (const raw of Array.isArray(b.questions) ? b.questions.slice(0, 80) : []) {
+      const o = (raw ?? {}) as Record<string, unknown>;
+      const prompt = text(o.prompt, 4000).trim();
+      const options = (Array.isArray(o.options) ? o.options : []).map((x) => text(x, 1000).trim());
+      const at = `Câu ${questions.length + 1}`;
+      if (!prompt) throw new BadRequestException(`${at}: thiếu đề`);
+      if (!expected.includes(options.length) || options.some((x) => !x)) {
+        throw new BadRequestException(`${at}: cần đủ ${expected.join("/")} phương án, không để trống`);
+      }
+      const q: ParsedBlock["questions"][number] = { no: questions.length + 1, prompt, options };
+      const key = typeof o.stimulusKey === "string" ? o.stimulusKey : "";
+      if (key) {
+        if (!stimuli.some((s) => s.key === key)) throw new BadRequestException(`${at}: trỏ tới bài đọc không tồn tại`);
+        q.stimulusKey = key;
+        q.groupOrder = (order.get(key) ?? 0) + 1;
+        order.set(key, q.groupOrder);
+      }
+      questions.push(q);
+    }
+    if (questions.length === 0) throw new BadRequestException("Cần ít nhất một câu hỏi");
+
+    const given = Array.isArray(b.answers) ? b.answers : [];
+    doc.answers = questions.map((_, i) => {
+      const a = Number(given[i]);
+      return Number.isInteger(a) && a >= 1 && a <= questions[i].options.length ? a : 0;
+    });
+    doc.parsed = { stimuli, questions };
+    doc.markModified("parsed");
+    doc.parsedBy = "manual";
+    doc.issues = [];
+    doc.status = "needs_review";
+    await doc.save();
+    return doc.toObject() as unknown as Record<string, unknown>;
+  }
+
   async discard(caller: AuthUser, draftId: string): Promise<{ discarded: boolean }> {
     const doc = await this.drafts.findById(draftId).exec();
     if (!doc) throw new NotFoundException("Import draft not found");

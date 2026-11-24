@@ -9,6 +9,7 @@ import { getSession } from "@/lib/session";
  *   POST /api/exam-import?cancel=<id> → stop a running job
  *   GET  /api/exam-import?drafts=<jobId>[&status=] → the job's review drafts
  *   POST /api/exam-import?publish=<draftId> {answers} / ?discard=<draftId>
+ *   POST /api/exam-import?update=<draftId> {stimuli, questions, answers} → hand edits
  * The access token stays server-side (same pattern as /api/import).
  */
 const ID = /^[\w-]{8,40}$/;
@@ -62,11 +63,11 @@ export async function POST(request: Request) {
     return forward(`/${cancel}/cancel`, "POST");
   }
   const sp = new URL(request.url).searchParams;
-  for (const action of ["publish", "discard"] as const) {
+  for (const action of ["publish", "discard", "update"] as const) {
     const id = sp.get(action);
     if (!id) continue;
     if (!ID.test(id)) return NextResponse.json({ error: "id không hợp lệ" }, { status: 400 });
-    return forward(`/drafts/${id}/${action}`, "POST", action === "publish" ? await request.text() : "{}");
+    return forward(`/drafts/${id}/${action}`, "POST", action === "discard" ? "{}" : await request.text());
   }
   // Upload: forward the multipart body as bytes (a stream needs `duplex`).
   const session = await getSession();

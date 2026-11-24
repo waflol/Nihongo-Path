@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
+import { DraftEditor, type EditQuestion, type EditStimulus } from "./exam-import-draft-editor";
 
 interface ParsedStimulus {
   key: string;
@@ -9,6 +10,7 @@ interface ParsedStimulus {
   title?: string;
   body: string;
   bodyB?: string;
+  notes?: string;
 }
 interface ParsedQuestion {
   no: number;
@@ -28,7 +30,7 @@ interface Draft {
   answers: number[];
   issues: string[];
   status: "needs_review" | "error" | "published" | "discarded";
-  parsedBy?: "rules" | "ai";
+  parsedBy?: "rules" | "ai" | "manual";
 }
 interface Job {
   fileName: string;
@@ -259,11 +261,36 @@ function DraftCard({
   const questions = draft.parsed?.questions ?? [];
   const stimuli = draft.parsed?.stimuli ?? [];
   const [raw, setRaw] = useState(draft.status === "error");
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const open = draft.status === "needs_review" || draft.status === "error";
   const missing = questions.filter((q) => !(answers[q.no - 1] > 0)).length;
   const st = STATUS[draft.status];
+
+  async function save(newStimuli: EditStimulus[], newQuestions: EditQuestion[]) {
+    setSaving(true);
+    setSaveError(null);
+    const res = await fetch(`/api/exam-import?update=${draft._id}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        stimuli: newStimuli,
+        questions: newQuestions.map((q) => ({ prompt: q.prompt, options: q.options, stimulusKey: q.stimulusKey || undefined })),
+        answers: newQuestions.map((q) => q.answer),
+      }),
+    }).catch(() => null);
+    setSaving(false);
+    if (!res?.ok) {
+      setSaveError(res ? await errorOf(res) : "Không kết nối được máy chủ");
+      return;
+    }
+    setAnswers(newQuestions.map((q) => q.answer));
+    setEditing(false);
+    await onChanged();
+  }
 
   async function act(kind: "publish" | "discard") {
     if (kind === "discard" && !window.confirm("Loại khối này? Bạn không nhập khối này vào ngân hàng câu hỏi.")) return;
@@ -294,9 +321,15 @@ function DraftCard({
         {draft.parsedBy && (
           <span
             className="text-xs text-[var(--muted-foreground)]"
-            title={draft.parsedBy === "rules" ? "Đọc đúng theo bố cục in, không dùng AI" : "AI tách khối, đã đối chiếu với text gốc"}
+            title={
+              draft.parsedBy === "rules"
+                ? "Đọc đúng theo bố cục in, không dùng AI"
+                : draft.parsedBy === "manual"
+                  ? "Đã được chỉnh sửa tay"
+                  : "AI tách khối, đã đối chiếu với text gốc"
+            }
           >
-            · {draft.parsedBy === "rules" ? "đọc bằng quy tắc" : "AI tách"}
+            · {draft.parsedBy === "rules" ? "đọc bằng quy tắc" : draft.parsedBy === "manual" ? "đã sửa tay" : "AI tách"}
           </span>
         )}
       </div>
@@ -310,6 +343,27 @@ function DraftCard({
         </ul>
       )}
 
+      {editing ? (
+        <DraftEditor
+          initialStimuli={stimuli.map((s) => ({ key: s.key, kind: s.kind, title: s.title, body: s.body, bodyB: s.bodyB, notes: s.notes }))}
+          initialQuestions={questions.map((q) => ({
+            prompt: q.prompt,
+            options: q.options,
+            stimulusKey: q.stimulusKey ?? "",
+            answer: answers[q.no - 1] ?? 0,
+          }))}
+          rawText={draft.rawText}
+          optionCount={questions[0]?.options.length ?? 4}
+          saving={saving}
+          error={saveError}
+          onSave={(st, qs) => void save(st, qs)}
+          onCancel={() => {
+            setEditing(false);
+            setSaveError(null);
+          }}
+        />
+      ) : (
+        <>
       {stimuli.map((s) => (
         <div key={s.key} className="mt-3 rounded-lg border border-[var(--border)] bg-[var(--background)] p-3 text-sm">
           <p className="text-xs font-medium text-[var(--muted-foreground)]">
@@ -351,12 +405,19 @@ function DraftCard({
           </li>
         ))}
       </ol>
+        </>
+      )}
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
+        {open && !editing && (
+          <button type="button" className={btn} disabled={busy} onClick={() => setEditing(true)}>
+            ✎ Chỉnh sửa
+          </button>
+        )}
         <button type="button" className={btn} onClick={() => setRaw(!raw)}>
           {raw ? "Ẩn text gốc" : "Xem text gốc"}
         </button>
-        {open && (
+        {open && !editing && (
           <>
             <button type="button" className={`${btn} ml-auto`} disabled={busy} onClick={() => void act("discard")}>
               Loại
