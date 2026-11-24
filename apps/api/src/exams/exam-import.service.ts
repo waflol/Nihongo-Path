@@ -123,6 +123,24 @@ export class ExamImportService implements OnApplicationBootstrap {
     return { cancelled: true };
   }
 
+  /**
+   * Delete one import: the job, its pages and ALL its drafts, plus the kept PDF and page images.
+   * Questions already published to the bank stay (they are the exam content, not the draft).
+   * A running job must be cancelled first.
+   */
+  async deleteJob(caller: AuthUser, jobId: string): Promise<{ deleted: boolean; drafts: number }> {
+    const job = await this.jobs.findOne({ _id: jobId, user: caller.sub }).select("status").lean().exec();
+    if (!job) throw new NotFoundException("Import job not found");
+    if (job.status === "running") throw new ConflictException("Lần nhập đang chạy — hủy nó trước rồi mới xoá");
+    const d = await this.drafts.deleteMany({ jobId }).exec();
+    await this.pages.deleteMany({ job: jobId }).exec();
+    await this.jobs.deleteOne({ _id: jobId }).exec();
+    for (const f of await readdir(this.dir).catch(() => [] as string[])) {
+      if (f === `${jobId}.pdf` || f.startsWith(`${jobId}-p`)) await unlink(join(this.dir, f)).catch(() => undefined);
+    }
+    return { deleted: true, drafts: d.deletedCount ?? 0 };
+  }
+
   /** A job left `running` by a crash is resumed on boot (best effort). */
   async onApplicationBootstrap() {
     void this.pruneFiles().catch(() => undefined);

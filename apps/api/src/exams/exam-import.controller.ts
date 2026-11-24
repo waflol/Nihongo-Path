@@ -124,6 +124,14 @@ export class ExamImportController {
     return this.imports.cancel(caller, jobId);
   }
 
+  @Post(":jobId/delete")
+  @ContentAdmin()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: "Delete an import job with its drafts, pages and kept PDF (published questions stay)" })
+  remove(@CurrentUser() caller: AuthUser, @Param("jobId") jobId: string) {
+    return this.imports.deleteJob(caller, jobId);
+  }
+
   @Get(":jobId")
   @ContentAdmin()
   @ApiOperation({ summary: "Progress of an import job" })

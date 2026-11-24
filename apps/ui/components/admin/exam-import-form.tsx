@@ -120,10 +120,19 @@ function RecentImports() {
       .then((j) => setJobs(Array.isArray(j) ? (j as RecentJob[]) : []))
       .catch(() => undefined);
   }, []);
+  const [err, setErr] = useState<string | null>(null);
+  async function remove(j: RecentJob) {
+    if (!window.confirm(`Xoá "${j.fileName}" cùng toàn bộ bản nháp của nó? Câu hỏi đã xuất bản vẫn được giữ.`)) return;
+    setErr(null);
+    const r = await fetch(`/api/exam-import?remove=${j._id}`, { method: "POST" }).catch(() => null);
+    if (r?.ok) setJobs((cur) => cur.filter((x) => x._id !== j._id));
+    else setErr(((await r?.json().catch(() => null)) as { message?: string } | null)?.message ?? "Không xoá được");
+  }
   if (jobs.length === 0) return null;
   return (
     <section className="rounded-2xl border border-[var(--border)] bg-[var(--background-1)] p-4 sm:p-5">
       <h2 className="text-base font-semibold text-[var(--foreground)]">Các lần nhập gần đây</h2>
+      {err && <p className="mt-1 text-xs text-[var(--destructive,#ef4444)]">{err}</p>}
       <ul className="mt-2 divide-y divide-[var(--border)] text-sm">
         {jobs.map((j) => (
           <li key={j._id} className="flex flex-wrap items-center gap-2 py-2">
@@ -139,6 +148,14 @@ function RecentImports() {
             <Link href={`/admin/exams/import/${j._id}/log`} className="text-[var(--muted-foreground)] hover:underline">
               Log
             </Link>
+            <button
+              type="button"
+              disabled={j.status === "running"}
+              onClick={() => void remove(j)}
+              className="text-[var(--destructive,#ef4444)] hover:underline disabled:opacity-40"
+            >
+              Xoá
+            </button>
           </li>
         ))}
       </ul>
