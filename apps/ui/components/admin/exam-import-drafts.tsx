@@ -185,9 +185,9 @@ export function ExamImportDrafts({ jobId }: { jobId: string }) {
         : "Không còn khối nào cần duyệt.";
 
   return (
-    <div className="exam-desk fixed inset-x-0 bottom-0 top-16 z-40 flex flex-col text-[var(--sheet-ink)]">
-      <header className="border-b border-[var(--sheet-rule)] bg-[var(--sheet)] px-4 pb-2 pt-2.5">
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+    <div className="exam-desk fixed inset-x-0 bottom-0 top-0 z-[45] flex flex-col text-[var(--sheet-ink)] lg:top-16 lg:z-40">
+      <header className="border-b border-[var(--sheet-rule)] bg-[var(--sheet)] px-3 pb-2 pt-2 sm:px-4 sm:pt-2.5">
+        <div className="flex items-center gap-2 max-sm:overflow-x-auto max-sm:[&>*]:shrink-0 max-sm:[&>*]:whitespace-nowrap max-sm:[&>*]:!px-2.5 sm:flex-wrap sm:gap-x-4">
           <Link
             href="/admin/exams/import"
             onClick={(e) => {
@@ -197,7 +197,7 @@ export function ExamImportDrafts({ jobId }: { jobId: string }) {
           >
             Thoát
           </Link>
-          <div className="order-first min-w-0 basis-full sm:order-none sm:flex-1 sm:basis-48">
+          <div className="hidden min-w-0 sm:block sm:flex-1 sm:basis-48">
             <h1 className="truncate text-lg font-semibold leading-6 tracking-tight">Duyệt bản nháp đề</h1>
             <p className="truncate text-xs text-[var(--muted-foreground)]" title={job?.fileName}>
               {job ? `${job.level}, ${job.fileName}` : "Đối chiếu text gốc, điền đáp án theo bảng 答案 rồi xuất bản"}
@@ -214,7 +214,7 @@ export function ExamImportDrafts({ jobId }: { jobId: string }) {
             </ul>
           )}
           <button type="button" className={`${deskButton} lg:hidden`} aria-expanded={listOpen} onClick={() => setListOpen(!listOpen)}>
-            Danh sách khối
+            Danh sách<span className="max-sm:hidden"> khối</span>
           </button>
           <button
             type="button"
@@ -223,7 +223,8 @@ export function ExamImportDrafts({ jobId }: { jobId: string }) {
             title="Đọc lại file PDF, thêm furigana và gạch chân vào các khối chưa xử lý (khối đã tự định dạng được giữ nguyên)"
             onClick={() => void addMarks()}
           >
-            Bổ sung furigana
+            <span className="max-sm:hidden">Bổ sung furigana</span>
+            <span className="sm:hidden">Furigana</span>
           </button>
           <button type="button" className={deskButton} onClick={() => void load()}>
             Tải lại

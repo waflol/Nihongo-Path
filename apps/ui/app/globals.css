@@ -544,6 +544,12 @@ html:has(.exam-desk) body > footer {
 html:has(.exam-desk) body > .fixed.bottom-4 {
   bottom: 6rem;
 }
+/* A phone comparing with the PDF page needs the height more than the desk's own header. */
+@media (max-width: 639px) {
+  .exam-desk:has([data-page-open]) > header {
+    display: none;
+  }
+}
 .exam-ja {
   font-family: "Hiragino Mincho ProN", "Yu Mincho", YuMincho, "Noto Serif CJK JP", "Noto Serif JP", "MS PMincho", serif;
 }

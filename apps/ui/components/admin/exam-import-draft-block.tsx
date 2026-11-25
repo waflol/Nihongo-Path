@@ -85,6 +85,7 @@ export function DraftBlock({
   const [raw, setRaw] = useState(draft.status === "error");
   const [editing, setEditingState] = useState(false);
   const [showPage, setShowPage] = useState(false);
+  const [wide, setWide] = useState(false);
   const [cursor, setCursor] = useState(() => Math.max(0, questions.findIndex((q) => !(answers[q.no - 1] > 0))));
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -96,6 +97,8 @@ export function DraftBlock({
   const hasPages = draft.pageFrom != null;
   // Editing always shows the source page beside the editor; otherwise it is a toggle.
   const pageOpen = hasPages && (editing || showPage);
+  // Below xl the two stack; "expanded" gives the picture the whole area (the answer strip stays).
+  const pageOnly = pageOpen && wide;
   const open = isOpen(draft);
   const missing = missingCount(draft, answers);
   const state = stateOf(draft, answers);
@@ -210,9 +213,9 @@ export function DraftBlock({
   groups.sort((a, b) => (a.items[0]?.i ?? Infinity) - (b.items[0]?.i ?? Infinity));
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <header className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-[var(--sheet-rule)] bg-[var(--sheet)] px-4 py-2.5">
-        <div className="min-w-0 flex-1 basis-64">
+    <div className="flex min-h-0 flex-1 flex-col" data-page-open={pageOpen || undefined}>
+      <header className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-[var(--sheet-rule)] bg-[var(--sheet)] px-4 py-2.5 max-sm:gap-x-2 max-sm:px-3 max-sm:py-2">
+        <div className={`min-w-0 flex-1 basis-64 ${pageOpen ? "max-sm:hidden" : ""}`}>
           <h2 className="truncate text-base font-semibold text-[var(--sheet-ink)]">
             Khối {draft.blockIndex + 1}: {draft.mondai ? (MONDAI_LABELS[draft.mondai] ?? draft.mondai) : "chưa nhận ra dạng"}
           </h2>
@@ -230,21 +233,45 @@ export function DraftBlock({
         )}
         {hasPages && !editing && (
           <button type="button" className={deskButton} aria-pressed={showPage} onClick={() => setShowPage(!showPage)}>
-            {showPage ? "Ẩn ảnh trang" : "Xem ảnh trang"}
+            {showPage ? (
+              "Ẩn ảnh trang"
+            ) : (
+              <>
+                <span className="sm:hidden">Ảnh trang</span>
+                <span className="max-sm:hidden">Xem ảnh trang</span>
+              </>
+            )}
           </button>
         )}
         <button type="button" className={deskButton} aria-pressed={raw} onClick={() => setRaw(!raw)}>
-          {raw ? "Ẩn text gốc" : "Xem text gốc"}
+          {raw ? (
+              "Ẩn text gốc"
+            ) : (
+              <>
+                <span className="sm:hidden">Text gốc</span>
+                <span className="max-sm:hidden">Xem text gốc</span>
+              </>
+            )}
         </button>
       </header>
 
       <div className={`flex min-h-0 flex-1 ${pageOpen ? "flex-col xl:flex-row" : "flex-col"}`}>
         {pageOpen && (
-          <div className="h-[48%] shrink-0 border-b border-[var(--sheet-rule)] p-3 xl:order-2 xl:h-auto xl:w-[46%] xl:border-b-0 xl:border-l">
-            <PagePreview jobId={jobId} from={draft.pageFrom!} to={draft.pageTo ?? draft.pageFrom!} />
+          <div
+            className={`border-b border-[var(--sheet-rule)] p-1.5 sm:p-3 xl:order-2 xl:h-auto xl:w-[46%] xl:flex-none xl:border-b-0 xl:border-l ${
+              pageOnly ? "min-h-0 flex-1" : "h-1/2 shrink-0"
+            }`}
+          >
+            <PagePreview
+              jobId={jobId}
+              from={draft.pageFrom!}
+              to={draft.pageTo ?? draft.pageFrom!}
+              expanded={wide}
+              onToggleExpand={() => setWide(!wide)}
+            />
           </div>
         )}
-        <div className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain px-3 py-4 sm:px-6 sm:py-6 xl:order-1">
+        <div className={`min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain px-3 py-4 sm:px-6 sm:py-6 xl:order-1 ${pageOnly ? "max-xl:hidden" : ""}`}>
           <div className="mx-auto max-w-3xl space-y-4">
             {draft.issues.length > 0 && (
               <div role="note" className="rounded-lg border border-[var(--bad)]/40 bg-[var(--bad)]/10 px-4 py-3 text-sm text-[var(--bad)]">
@@ -399,13 +426,13 @@ export function DraftBlock({
       </div>
 
       {!editing && (
-        <footer className="border-t border-[var(--sheet-rule)] bg-[var(--sheet)] px-4 py-2.5">
+        <footer className="border-t border-[var(--sheet-rule)] bg-[var(--sheet)] px-4 py-2.5 max-sm:px-3 max-sm:py-2">
           {error && (
             <p role="alert" className="mb-2 text-sm text-[var(--bad)]">
               {error}
             </p>
           )}
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3 max-sm:gap-2">
             {questions.length > 0 && (
               <div className="min-w-0 flex-1 basis-60">
                 <div className="flex gap-1 overflow-x-auto p-0.5" aria-label="Phiếu đáp án">
@@ -455,7 +482,15 @@ export function DraftBlock({
                     Loại
                   </button>
                   <button type="button" className={deskButtonPrimary} disabled={!canPublish} onClick={() => void act("publish")}>
-                    {busy ? "Đang xử lý…" : missing > 0 ? `Còn ${missing} câu chưa có đáp án` : "Xuất bản"}
+                    {busy ? (
+                      "Đang xử lý…"
+                    ) : missing > 0 ? (
+                      <>
+                        Còn {missing} câu<span className="max-sm:hidden"> chưa có đáp án</span>
+                      </>
+                    ) : (
+                      "Xuất bản"
+                    )}
                   </button>
                 </>
               )}
