@@ -4,6 +4,12 @@
 
 ---
 
+## Đồng bộ trạng thái ticket (25/11/2026)
+
+`docs/TICKETS.md`, `docs/issues/README.md` và frontmatter đã khớp nhau: NP-022 `done`; NP-407, NP-501/502/503 `partial` (chờ verify thật). Checklist P5-ADMIN-04 và P4-JLPT-05 còn `[ ]` (chưa tick vì thiếu bằng chứng). Chưa đụng issue GitHub.
+
+---
+
 ## P4 — NP-407: màn duyệt bản nháp đề (mới thêm)
 
 Trước đây import PDF tạo `exam_import_drafts` nhưng UI không có chỗ xem → thêm:

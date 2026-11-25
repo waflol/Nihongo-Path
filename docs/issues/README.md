@@ -14,8 +14,8 @@ Mỗi file là một issue (ID `NP-nnn`); nguồn gốc và tiến độ tổng 
 | [NP-008](./NP-008.md) | done | - | Route guard server (proxy), lưu token an toàn |
 | [NP-020](./NP-020.md) | done | P2 | Bấm thử trình duyệt: trang đăng ký, CRUD nội dung admin, menu tài khoản header (verify 18/11) |
 | [NP-021](./NP-021.md) | partial | - | Xác nhận import PDF trên file thật (bấm Xác nhận) và OCR trên PDF scan thật |
-| [NP-022](./NP-022.md) | partial | - | Verify live API đặt lại tiến độ deck + xuất CSV |
-| [NP-023](./NP-023.md) | partial | - | Bấm thử wizard nhập, màn admin deck chung, thêm/xoá thẻ + đánh giá batch |
+| [NP-022](./NP-022.md) | done | - | Verify live API đặt lại tiến độ deck + xuất CSV |
+| [NP-023](./NP-023.md) | done | - | Bấm thử wizard nhập, màn admin deck chung, thêm/xoá thẻ + đánh giá batch |
 | [NP-024](./NP-024.md) | partial | - | Admin: RBAC kiểm 403, quản lý user không tự nâng quyền, audit có giá trị trước/sau |
 | [NP-025](./NP-025.md) | partial | - | Phản hồi người dùng: mở rộng từ "báo lỗi thẻ" sang phản hồi chung, có trạng thái + lịch sử xử lý |
 | [NP-026](./NP-026.md) | done | - | Kiểm chứng FSRS-4.5: chạy srs.algorithm.spec.ts, so lịch với SM-2 cũ, thử nâng cấp thẻ SM-2 thật |
@@ -33,8 +33,8 @@ Mỗi file là một issue (ID `NP-nnn`); nguồn gốc và tiến độ tổng 
 | [NP-111](./NP-111.md) | off-roadmap | - | Điều khoản & bảo mật, đồng ý khi đăng ký (/terms, /privacy) |
 | [NP-112](./NP-112.md) | off-roadmap | - | Triển khai pm2 + ngrok, mem-guard RAM |
 | [NP-113](./NP-113.md) | off-roadmap | - | Giám sát máy chủ (RAM, ổ đĩa, CPU) cho admin |
-| [NP-114](./NP-114.md) | todo | - | SRS: nhật ký từng lượt ôn, thời điểm thật, chống áp dụng trùng |
-| [NP-115](./NP-115.md) | todo | - | SRS: chuyển sang FSRS-6 (tham số mặc định), một module dùng chung API + UI |
+| [NP-114](./NP-114.md) | done-partial | - | SRS: nhật ký từng lượt ôn, thời điểm thật, chống áp dụng trùng |
+| [NP-115](./NP-115.md) | done-partial | - | SRS: chuyển sang FSRS-6 (tham số mặc định), một module dùng chung API + UI |
 | [NP-116](./NP-116.md) | todo | - | SRS: đánh giá và tối ưu tham số FSRS-6 theo người học |
 | [NP-401](./NP-401.md) | partial | P4 | Schema câu hỏi/đề/attempt, tách đáp án khỏi payload (P4-EXAM-01…03, P4-SEC-01) |
 | [NP-402](./NP-402.md) | partial | P4 | API làm bài: bắt đầu/nộp, hết giờ phía server, xáo trộn, chấm điểm (P4-EXAM-04…06) |
@@ -42,12 +42,12 @@ Mỗi file là một issue (ID `NP-nnn`); nguồn gốc và tiến độ tổng 
 | [NP-404](./NP-404.md) | partial | P4 | Admin soạn đề + màn làm bài có timer/lưu nháp (P4-EXAM-09, P4-UI-01) |
 | [NP-405](./NP-405.md) | done | P4 | Cập nhật database.md nhóm exam (P4-DOC-01) |
 | [NP-406](./NP-406.md) | done | P4 | Ngân hàng JLPT: mã dạng mondai, bài đọc dùng chung, chấm theo phần |
-| [NP-407](./NP-407.md) | todo | P4 | Nhập PDF đề JLPT thành bản nháp có người duyệt |
+| [NP-407](./NP-407.md) | partial | P4 | Nhập PDF đề JLPT thành bản nháp có người duyệt |
 | [NP-408](./NP-408.md) | todo | P4 | Sinh đề JLPT ngẫu nhiên theo khung đề (blueprint) từng level |
-| [NP-409](./NP-409.md) | todo | P4 | UI làm đề JLPT theo phần: bài đọc, câu ★, điểm từng phần |
-| [NP-501](./NP-501.md) | blocked | P5 | Schema + service quota reserve→settle→release, reset theo kỳ/tz (P5-QUOTA-01…05) |
-| [NP-502](./NP-502.md) | blocked | P5 | EntitlementGuard/QuotaGuard + chính sách vượt hạn mức (P5-QUOTA-04/06) |
-| [NP-503](./NP-503.md) | todo | P5 | Màn cấu hình hạn mức theo gói (P5-ADMIN-04) |
+| [NP-409](./NP-409.md) | partial | P4 | UI làm đề JLPT theo phần: bài đọc, câu ★, điểm từng phần |
+| [NP-501](./NP-501.md) | partial | P5 | Schema + service quota reserve→settle→release, reset theo kỳ/tz (P5-QUOTA-01…05) |
+| [NP-502](./NP-502.md) | partial | P5 | EntitlementGuard/QuotaGuard + chính sách vượt hạn mức (P5-QUOTA-04/06) |
+| [NP-503](./NP-503.md) | partial | P5 | Màn cấu hình hạn mức theo gói (P5-ADMIN-04) |
 | [NP-504](./NP-504.md) | todo | P5 | Rà least privilege endpoint admin + ADR entitlement (P5-SEC-01, P5-DOC-01) |
 | [NP-601](./NP-601.md) | blocked | P6 | ADR media + storage + giới hạn (P6-MEDIA-01, 04) |
 | [NP-602](./NP-602.md) | todo | P6 | Upload, state machine, SSRF, retention (P6-MEDIA-02/03/05/06) |
