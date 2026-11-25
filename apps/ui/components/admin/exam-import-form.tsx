@@ -61,7 +61,7 @@ function PdfUpload() {
     <form onSubmit={submit} className="rounded-2xl border border-[var(--border)] bg-[var(--background-1)] p-4 sm:p-5">
       <h2 className="text-base font-semibold text-[var(--foreground)]">Nhập đề từ PDF</h2>
       <p className="mt-1 text-sm text-[var(--muted-foreground)]">
-        Đọc từng trang, tách theo 問題, AI chỉ cấu trúc hoá (không đoán đáp án). Mỗi lần một file; tối đa 30 MB.
+        Đọc từng trang, tách theo 問題, AI chỉ cấu trúc hoá (không đoán đáp án). Mỗi lần một file; tối đa 50 MB.
       </p>
       <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_8rem_10rem]">
         <label className="text-sm">

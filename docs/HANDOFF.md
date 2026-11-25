@@ -6,6 +6,8 @@
 
 ## NP-407: bàn duyệt bản nháp đề (UI mới, 25/11/2026)
 
+Giới hạn PDF nhập đề: 50 MB (trước 30 MB), bằng nhập từ vựng; chưa thử file lớn thật.
+
 `/admin/exams/import/[id]/drafts` thiết kế lại: phủ toàn màn dưới header; danh sách khối bên trái, mỗi lần một khối hiển thị như tờ đề, ảnh trang PDF bên cạnh, phiếu đáp án ở đáy (phím 1–4, ↑↓, J/K, Ctrl+Enter). File: `exam-import-drafts.tsx` (khung + danh sách), `exam-import-draft-block.tsx` (một khối), `exam-import-draft-model.ts` (kiểu + helper); style `.exam-desk` trong `globals.css` (sửa CSS xong phải `pm2 restart ui`). ESLint + tsc UI sạch; chụp Chromium headless với dữ liệu giả (máy chủ không có font Nhật). Chưa thử với dữ liệu/đăng nhập thật: xuất bản, loại, lưu chỉnh sửa.
 
 - Furigana: lưu dạng `<ruby=まね>真似</ruby>` (cạnh `<b><i><u>`); nút "Furigana" trong trình soạn (`editFurigana` ở `rich-input.tsx`); hiển thị qua `FormattedText`; `stripFormat` ở API (`mondai.ts`) và UI bỏ cả cách đọc. `PassageText` căn phải dòng nguồn cuối bài（…『…』…／…による）. Nhập PDF (có lớp text) **tự nhận** furigana (chữ kana cỡ ≤65% nằm trên kanji; được bỏ khỏi text trang) và gạch chân (nét ngang sát dưới dòng, bỏ viền bảng): `import/marks.ts`, đánh dấu lưu ở `exam_import_job_pages.marks`, gắn vào bản nháp sau bước kiểm (`withMarks`). Trang OCR không có. Lần nhập cũ: nút "Bổ sung furigana" ở bàn duyệt (`POST /exams/admin/import/:jobId/marks`, `backfillMarks`) — chỉ khối chưa xử lý, field chưa ai định dạng, đồng thời xoá dòng furigana rác trong text. Đã chạy cho job `6b064c846d629eaaa1a0b505` (258/469 khối; sao lưu trước đó: `apps/api/storage/exam-import/backup-drafts-<job>.ejson`, bị dọn sau 30 ngày). Thử 40 trang đầu `40 de thi n2`: 96 furigana, 118 gạch chân.
