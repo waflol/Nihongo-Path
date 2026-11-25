@@ -8,6 +8,9 @@ const inputClass =
   "w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]";
 const btnPrimary =
   "rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-semibold text-[var(--primary-foreground)] hover:bg-[var(--primary-hover)] disabled:cursor-not-allowed disabled:opacity-60";
+// Native "Choose file" button: styled as a button while empty, hidden once a file is picked.
+const fileButton =
+  "file:mr-3 file:rounded file:border-0 file:bg-[var(--layer)] file:px-3 file:py-0.5 file:text-xs file:font-medium file:text-[var(--foreground)]";
 const LEVELS = ["N5", "N4", "N3", "N2", "N1"];
 
 interface AudioAsset {
@@ -67,7 +70,7 @@ function PdfUpload() {
             accept="application/pdf"
             required
             onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-            className={`mt-1 ${inputClass}`}
+            className={`mt-1 ${inputClass} ${file ? "file:hidden" : fileButton}`}
           />
         </label>
         <label className="text-sm">
@@ -323,7 +326,7 @@ function AudioLibrary() {
             required
             accept="audio/mpeg,audio/mp4,audio/ogg,.mp3,.m4a,.ogg"
             onChange={(e) => setFiles([...(e.target.files ?? [])])}
-            className={`mt-1 ${inputClass}`}
+            className={`mt-1 ${inputClass} ${files.length > 0 ? "file:hidden" : fileButton}`}
           />
         </label>
         <label className="text-sm">

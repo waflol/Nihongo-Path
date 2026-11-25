@@ -180,3 +180,5 @@ Giai đoạn **đã xong trước** (đừng làm lại):
 - Xoá lần nhập: POST /exams/admin/import/:jobId/delete (xoá job, trang, mọi bản nháp, PDF + ảnh; câu đã xuất bản giữ nguyên; job đang chạy phải hủy trước). UI: nút "Xoá" ở "Các lần nhập gần đây".
 
 - Số câu liền mạch trong một đề: `fillPrintedNos` điền số còn thiếu từ câu trước (qua các khối cùng sitting) khi liệt kê bản nháp và khi xuất bản.
+
+- Ô chọn file ở `/admin/exams/import` (PDF + file nghe): nút "Choose File" ẩn sau khi đã chọn (`file:hidden`). ESLint file sạch; chưa xem trình duyệt, chưa chạy tsc.
