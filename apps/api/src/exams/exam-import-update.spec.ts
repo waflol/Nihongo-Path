@@ -91,6 +91,10 @@ describe("ExamImportService.updateDraft — instruction and formatting", () => {
     await expect(serviceWith(fakeDraft()).updateDraft(caller, "d1", { questions: [empty] })).rejects.toThrow(/thiếu đề/);
   });
 
+  it("furigana does not change the dedup hash", () => {
+    expect(contentHashOf("<size=125><u><ruby=ほんぶん>本文</ruby></u></size>はどれ", q.options)).toBe(contentHashOf("本文はどれ", q.options));
+  });
+
   it("formatting does not change the dedup hash", () => {
     expect(contentHashOf(q.prompt, q.options)).toBe(contentHashOf("本文はどれ", ["あ", "い", "う", "え"]));
   });

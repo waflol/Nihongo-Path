@@ -85,6 +85,10 @@ export class ExamImportJobPage {
   @Prop({ type: String, enum: ["text", "ocr"], default: "text" })
   source: string;
 
+  /** Furigana + underlines read off the page, put back on the drafts (`import/marks.ts`). */
+  @Prop({ type: [Object], default: [] })
+  marks: object[];
+
   /** 1-based block numbers that started on this page (for review linking). */
   @Prop({ type: [Number], default: [] })
   blocks: number[];

@@ -1,7 +1,8 @@
 "use client";
 
 import { useMemo, useState, type Dispatch, type SetStateAction } from "react";
-import { FormattedText } from "../rich-text";
+import { FormattedText, PassageText } from "../rich-text";
+import { type StarControls, starParts, StarSentence } from "../star-sentence";
 import { audioSrc, type ExamResult, type ExamSit, type SitQuestion, type Stimulus } from "./exam-types";
 
 /**
@@ -91,8 +92,8 @@ function PassageView({ s }: { s: Stimulus }) {
         // eslint-disable-next-line @next/next/no-img-element
         <img src={s.imageUrl} alt="" className="mx-auto max-h-96 w-auto max-w-full" />
       )}
-      {s.body && <p className="whitespace-pre-wrap"><FormattedText text={s.body} /></p>}
-      {s.bodyB && <p className="whitespace-pre-wrap border-t border-[var(--border)] pt-3"><FormattedText text={s.bodyB} /></p>}
+      {s.body && <PassageText text={s.body} />}
+      {s.bodyB && <PassageText text={s.bodyB} className="border-t border-[var(--border)] pt-3" />}
       {s.notes && <p className="whitespace-pre-wrap text-sm text-[var(--muted-foreground)]"><FormattedText text={s.notes} /></p>}
     </div>
   );
@@ -110,10 +111,48 @@ function QuestionCard({
   no: number;
   picked: number | null | undefined;
   flagged: boolean;
-  onPick: (idx: number) => void;
+  onPick: (idx: number | null) => void;
   onFlag: () => void;
 }) {
-  const star = q.mondai === "star-order";
+  const star = q.mondai === "star-order" ? starParts(q.prompt) : null;
+  const choices = (controls?: StarControls) => (
+    <div role="radiogroup" aria-label={`Câu ${no}`} className="mt-3 grid gap-2">
+      {q.options.map((opt, idx) => {
+        const on = picked === idx;
+        return (
+          <button
+            key={idx}
+            type="button"
+            role="radio"
+            aria-checked={on}
+            onClick={() => (controls ? controls.place(idx) : onPick(idx))}
+            {...controls?.drag(idx)}
+            className={
+              "flex min-h-12 items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition-colors " +
+              (on
+                ? "border-[var(--primary)] bg-[color-mix(in_srgb,var(--primary)_10%,transparent)] ring-1 ring-[var(--primary)]"
+                : "border-[var(--border)] bg-[var(--background)] hover:bg-[var(--layer-hover)]")
+            }
+          >
+            <span
+              className={
+                "inline-flex size-7 shrink-0 items-center justify-center rounded-full border text-xs font-semibold " +
+                (on ? "border-[var(--primary)] bg-[var(--primary)] text-[var(--primary-foreground)]" : "border-[var(--border)] text-[var(--muted-foreground)]")
+              }
+            >
+              {idx + 1}
+            </span>
+            <span
+              className={"min-w-0 flex-1 break-words " + (controls ? "font-medium" : "")}
+              lang="ja"
+            >
+              <FormattedText text={opt} />
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
   return (
     <article
       id={`q-${q.qid}`}
@@ -134,9 +173,11 @@ function QuestionCard({
           !
         </button>
       </div>
-      <p className="mt-3 break-words text-lg leading-snug text-[var(--foreground)]" lang="ja">
-        <FormattedText text={q.prompt} />
-      </p>
+      {!star && (
+        <p className="mt-3 break-words text-lg leading-snug text-[var(--foreground)]" lang="ja">
+          <FormattedText text={q.prompt} />
+        </p>
+      )}
       {q.sub && <p className="mt-1 text-sm text-[var(--muted-foreground)]">{q.sub}</p>}
       {q.audio ? (
         <audio controls preload="none" src={audioSrc(q.audio)} className="mt-3 w-full" />
@@ -145,41 +186,16 @@ function QuestionCard({
           Âm thanh của câu này chưa có.
         </p>
       ) : null}
-      <div role="radiogroup" aria-label={`Câu ${no}`} className="mt-3 grid gap-2">
-        {q.options.map((opt, idx) => {
-          const on = picked === idx;
-          return (
-            <button
-              key={idx}
-              type="button"
-              role="radio"
-              aria-checked={on}
-              onClick={() => onPick(idx)}
-              className={
-                "flex min-h-12 items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition-colors " +
-                (on
-                  ? "border-[var(--primary)] bg-[color-mix(in_srgb,var(--primary)_10%,transparent)] ring-1 ring-[var(--primary)]"
-                  : "border-[var(--border)] bg-[var(--background)] hover:bg-[var(--layer-hover)]")
-              }
-            >
-              <span
-                className={
-                  "inline-flex size-7 shrink-0 items-center justify-center rounded-full border text-xs font-semibold " +
-                  (on ? "border-[var(--primary)] bg-[var(--primary)] text-[var(--primary-foreground)]" : "border-[var(--border)] text-[var(--muted-foreground)]")
-                }
-              >
-                {idx + 1}
-              </span>
-              <span
-                className={"min-w-0 flex-1 break-words " + (star ? "font-medium" : "")}
-                lang="ja"
-              >
-                <FormattedText text={opt} />
-              </span>
-            </button>
-          );
-        })}
-      </div>
+      {star ? (
+        <div className="mt-3 text-lg text-[var(--foreground)]">
+          <StarSentence parts={star} options={q.options} picked={picked ?? null} onPick={onPick}>
+            {(controls) => choices(controls)}
+          </StarSentence>
+          <p className="mt-2 text-sm text-[var(--muted-foreground)]">Bấm hoặc kéo từng cụm vào các ô; cụm nằm ở ô ★ là đáp án của bạn.</p>
+        </div>
+      ) : (
+        choices()
+      )}
     </article>
   );
 }

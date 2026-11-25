@@ -124,6 +124,14 @@ export class ExamImportController {
     return this.imports.cancel(caller, jobId);
   }
 
+  @Post(":jobId/marks")
+  @ContentAdmin()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: "Add furigana + underlines from the kept PDF to this job's open drafts (no AI)" })
+  marks(@CurrentUser() caller: AuthUser, @Param("jobId") jobId: string) {
+    return this.imports.backfillMarks(caller, jobId);
+  }
+
   @Post(":jobId/delete")
   @ContentAdmin()
   @HttpCode(HttpStatus.OK)

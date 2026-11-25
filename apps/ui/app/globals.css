@@ -508,3 +508,50 @@ html, body { overflow-x: clip; }
 
 
 
+
+/* ───────── Exam draft review desk (/admin/exams/import/[id]/drafts, NP-407) ─────────
+   A proofreading desk: the block reads like the printed paper (Mincho on a sheet),
+   answers are filled in like a mark sheet. */
+.exam-desk {
+  --desk: #eceef4;
+  --sheet: #ffffff;
+  --sheet-ink: #171a26;
+  --sheet-rule: #d9dce7;
+  --ok: #157a4e;
+  --warn: #a15c06;
+  --bad: #b4232a;
+  --seal: #c8412c;
+  background: var(--desk);
+}
+:root[data-theme="dark"] .exam-desk {
+  --desk: #090b10;
+  --sheet: #151822;
+  --sheet-ink: #e9ebf3;
+  --sheet-rule: #2a2f40;
+  --ok: #55d39a;
+  --warn: #f0b35a;
+  --bad: #ff8087;
+  --seal: #f0775f;
+}
+/* The desk owns the window below the site header. */
+html:has(.exam-desk) {
+  scrollbar-gutter: auto;
+}
+html:has(.exam-desk) body > footer {
+  display: none;
+}
+/* Background-job cards sit above the answer bar, not on its buttons. */
+html:has(.exam-desk) body > .fixed.bottom-4 {
+  bottom: 6rem;
+}
+.exam-ja {
+  font-family: "Hiragino Mincho ProN", "Yu Mincho", YuMincho, "Noto Serif CJK JP", "Noto Serif JP", "MS PMincho", serif;
+}
+@keyframes seal-press {
+  from { opacity: 0; transform: rotate(-12deg) scale(1.5); }
+  to { opacity: 1; transform: rotate(-12deg) scale(1); }
+}
+.exam-seal { animation: seal-press 260ms cubic-bezier(0.2, 0.9, 0.3, 1) both; }
+@media (prefers-reduced-motion: reduce) {
+  .exam-seal { animation: none; transform: rotate(-12deg); }
+}

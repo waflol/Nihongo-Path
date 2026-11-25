@@ -37,10 +37,40 @@ import {
 import { contentHashOf, optionCountsOf, stripFormat } from "./mondai.js";
 import { blockMarker, keyMarker, splitCompactKey, type AnswerKeyBlock } from "./import/answer-key.js";
 import { renderPdfPage } from "../import/parsers/pdf.js";
+import { applyMarks, enrich, type Junk, type Mark } from "./import/marks.js";
 import { openProsePdf } from "./import/prose.js";
 import { markCloze, parseByRules } from "./import/rules.js";
 import { segmentBlocks, type Block } from "./import/segment.js";
 import { parseAiJson, structurePrompt, type ParsedBlock, validateParsed } from "./import/structure.js";
+
+/** Put the page's furigana + underlines back on the structured block (after validation, which reads plain text). */
+function withMarks(
+  doc: { instruction: string; parsed?: ParsedBlock },
+  marks: Mark[],
+  transform: (fields: string[]) => string[] = (fields) => applyMarks(fields, marks),
+): boolean {
+  if (marks.length === 0) return false;
+  const parsed = doc.parsed;
+  // Every printed string of the block, as value + setter, so a mark is placed once across all of them.
+  const slots: [string, (v: string) => void][] = [[doc.instruction, (v) => (doc.instruction = v)]];
+  for (const st of parsed?.stimuli ?? []) {
+    for (const k of ["title", "body", "bodyB", "notes"] as const) {
+      const v = st[k];
+      if (v) slots.push([v, (x) => (st[k] = x)]);
+    }
+  }
+  for (const q of parsed?.questions ?? []) {
+    slots.push([q.prompt, (v) => (q.prompt = v)]);
+    q.options.forEach((o, i) => slots.push([o, (v) => (q.options[i] = v)]));
+  }
+  let changed = false;
+  transform(slots.map(([v]) => v ?? "")).forEach((v, i) => {
+    if (v === (slots[i][0] ?? "")) return;
+    slots[i][1](v);
+    changed = true;
+  });
+  return changed;
+}
 
 /**
  * JLPT exam-PDF import (NP-407 / plan §6 GĐ2). A PDF is read page by page,
@@ -223,6 +253,7 @@ export class ExamImportService implements OnApplicationBootstrap {
               $set: {
                 text,
                 source: text ? "text" : "ocr",
+                marks: pdf.pageMarks?.(n) ?? [],
               },
             },
             { upsert: true },
@@ -273,6 +304,9 @@ export class ExamImportService implements OnApplicationBootstrap {
           i,
           block,
           keyFor(block),
+          pageRows
+            .filter((p) => p.n >= (block.pageFrom ?? 0) && p.n <= (block.pageTo ?? block.pageFrom ?? 0))
+            .flatMap((p) => (p.marks ?? []) as Mark[]),
         );
         if (draft.status === "error") bad += 1;
         else ok += 1;
@@ -320,6 +354,7 @@ export class ExamImportService implements OnApplicationBootstrap {
     blockIndex: number,
     block: { instruction: string; rawText: string; mondai: string | null; sectionHint: string; sitting: string; pageFrom?: number; pageTo?: number },
     keyBlock: AnswerKeyBlock | null,
+    marks: Mark[] = [],
   ): Promise<{ status: string }> {
     const doc: ExamImportDraftDocument = await this.drafts.create({
       jobId,
@@ -361,6 +396,7 @@ export class ExamImportService implements OnApplicationBootstrap {
       }
       if (ruleIssues.length === 0) {
         doc.parsed = markCloze(byRules);
+        withMarks(doc, marks);
         doc.parsedBy = "rules";
         doc.issues = [];
         doc.status = "needs_review";
@@ -400,10 +436,58 @@ export class ExamImportService implements OnApplicationBootstrap {
       q.no = i + 1;
     });
     doc.parsed = parsed ?? undefined;
+    withMarks(doc, marks);
     doc.issues = issues;
     doc.status = issues.length > 0 ? "error" : "needs_review";
     await doc.save();
     return { status: doc.status };
+  }
+
+  /**
+   * Add furigana + underlines to the drafts of an earlier import, from the kept PDF
+   * (no AI). Only open drafts, and only text nobody has formatted by hand.
+   */
+  async backfillMarks(caller: AuthUser, jobId: string): Promise<{ drafts: number; changed: number; skipped: number }> {
+    const job = await this.jobs.findById(jobId).select("status").lean().exec();
+    if (!job) throw new NotFoundException("Import job not found");
+    if (job.status === "running") throw new ConflictException("Đợi lần nhập này chạy xong đã");
+    const lock = `marks:${jobId}`;
+    if (this.running.has(lock)) throw new ConflictException("Đang bổ sung cho lần nhập này — đợi xong đã");
+    this.running.add(lock);
+    try {
+      const buffer = await readFile(join(this.dir, `${jobId}.pdf`)).catch(() => null);
+      if (!buffer) throw new BadRequestException("File PDF của lần nhập này không còn trên máy chủ — hãy nhập lại PDF");
+      const pdf = await openProsePdf(buffer);
+      const docs = await this.drafts.find({ jobId, status: { $in: ["needs_review", "error"] } }).exec();
+      const read = new Map<number, { marks: Mark[]; junk: Junk[] }>();
+      let changed = 0;
+      let skipped = 0;
+      for (const doc of docs) {
+        if (!doc.pageFrom) {
+          skipped += 1; // imported before drafts recorded their pages
+          continue;
+        }
+        const marks: Mark[] = [];
+        const junk: Junk[] = [];
+        for (let n = doc.pageFrom; n <= Math.min(doc.pageTo ?? doc.pageFrom, pdf.numPages); n += 1) {
+          let page = read.get(n);
+          if (!page) {
+            await pdf.pageText(n);
+            read.set(n, (page = { marks: pdf.pageMarks?.(n) ?? [], junk: pdf.pageJunk?.(n) ?? [] }));
+          }
+          marks.push(...page.marks);
+          junk.push(...page.junk);
+        }
+        if (!withMarks(doc, marks, (fields) => enrich(fields, marks, junk))) continue;
+        doc.markModified("parsed");
+        await doc.save();
+        changed += 1;
+      }
+      await this.log(jobId, "info", `Bổ sung furigana, gạch chân: ${changed}/${docs.length} bản nháp thay đổi`);
+      return { drafts: docs.length, changed, skipped };
+    } finally {
+      this.running.delete(lock);
+    }
   }
 
   /** Poll the job: progress + the drafts it produced. */

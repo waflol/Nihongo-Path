@@ -1,5 +1,6 @@
 import { isGarbageText, pdfjsWasmUrl, renderPdfPage } from "../../import/parsers/pdf.js";
 import { UnsupportedFormatError } from "../../import/parsers/types.js";
+import { extractFurigana, findStarSlots, findUnderlines, type Junk, type Mark, type Rule } from "./marks.js";
 
 /**
  * A prose (exam) PDF page reader for JLPT import (NP-407). Unlike
@@ -21,6 +22,10 @@ export interface ProsePdf {
   totalPages: number;
   /** Read page `n` (1-based) as joined text lines. `""` for a blank page. */
   pageText(n: number): Promise<string>;
+  /** Furigana + underlines of a page already read by `pageText` (text layer only; none for a scan). */
+  pageMarks?(n: number): Mark[];
+  /** The furigana lines removed from that page's text (to clean up an earlier import). */
+  pageJunk?(n: number): Junk[];
 }
 
 /** Pages read per file. A 40-paper collection runs ~470 pages; text pages are read one at a time (page.cleanup) so RSS stays bounded. */
@@ -153,6 +158,66 @@ function lineBuckets(frags: Frag[]): string[] {
   return out;
 }
 
+type Matrix = [number, number, number, number, number, number];
+
+/** Path data is a flat list of `op, …coordinates`: 0 move, 1 line, 2 cubic, 3 quadratic, 4 close. */
+function subPathBoxes(data: ArrayLike<number>, m: Matrix): Rule[] {
+  const boxes: Rule[] = [];
+  let box: Rule | null = null;
+  const add = (x: number, y: number) => {
+    const px = m[0] * x + m[2] * y + m[4];
+    const py = m[1] * x + m[3] * y + m[5];
+    box = box
+      ? { x0: Math.min(box.x0, px), y0: Math.min(box.y0, py), x1: Math.max(box.x1, px), y1: Math.max(box.y1, py) }
+      : { x0: px, y0: py, x1: px, y1: py };
+  };
+  for (let i = 0; i < data.length; ) {
+    const op = data[i++];
+    if (op === 4) continue;
+    if (op === 0 && box) {
+      boxes.push(box);
+      box = null;
+    }
+    const points = op === 2 ? 3 : op === 3 ? 2 : 1;
+    for (let k = 0; k < points; k += 1, i += 2) add(data[i], data[i + 1]);
+  }
+  if (box) boxes.push(box);
+  return boxes;
+}
+
+/**
+ * The painted paths of a page, one box per sub-path, in page space (clipping paths
+ * are not drawn, so skipped). One path often holds several separate lines.
+ */
+async function drawnRules(pdfjs: Pdfjs, page: { getOperatorList(): Promise<{ fnArray: number[]; argsArray: unknown[] }> }): Promise<Rule[]> {
+  const { OPS } = pdfjs;
+  const ops = await page.getOperatorList();
+  const invisible = new Set<number>([OPS.endPath, OPS.clip, OPS.eoClip]);
+  const mul = (m: Matrix, n: number[]): Matrix => [
+    m[0] * n[0] + m[2] * n[1],
+    m[1] * n[0] + m[3] * n[1],
+    m[0] * n[2] + m[2] * n[3],
+    m[1] * n[2] + m[3] * n[3],
+    m[0] * n[4] + m[2] * n[5] + m[4],
+    m[1] * n[4] + m[3] * n[5] + m[5],
+  ];
+  let ctm: Matrix = [1, 0, 0, 1, 0, 0];
+  const saved: Matrix[] = [];
+  const out: Rule[] = [];
+  ops.fnArray.forEach((fn, i) => {
+    const args = ops.argsArray[i] as unknown[];
+    if (fn === OPS.save) saved.push(ctm);
+    else if (fn === OPS.restore) ctm = saved.pop() ?? ctm;
+    else if (fn === OPS.transform) ctm = mul(ctm, args as number[]);
+    else if (fn === OPS.constructPath && !invisible.has(args[0] as number)) {
+      for (const data of (args[1] as (ArrayLike<number> | null)[]) ?? []) {
+        if (data) out.push(...subPathBoxes(data, ctm));
+      }
+    }
+  });
+  return out;
+}
+
 /**
  * Open an exam PDF and read its pages as prose. A page with no text layer is
  * rendered and OCR'd (best effort — `null` becomes an empty page so one bad
@@ -171,16 +236,31 @@ export async function openProsePdf(
   }
   const numPages = Math.min(doc.numPages, MAX_EXAM_PAGES);
 
+  const marks = new Map<number, Mark[]>();
+  const junk = new Map<number, Junk[]>();
   const pageText = async (n: number): Promise<string> => {
     const page = await doc.getPage(n);
     try {
       const content = await page.getTextContent();
-      const lines = linesOf(
-        (content.items as { str?: string; transform: number[] }[])
-          .filter((it) => "str" in it)
-          .map((it) => ({ str: (it as { str?: string }).str ?? "", x: it.transform[4], y: it.transform[5], w: (it as { width?: number }).width ?? 0 })),
-      );
-      if (lines.length > 0 && !isGarbageText(lines.join(" "))) return lines.join("\n");
+      const runs = (content.items as { str?: string; transform: number[]; width?: number }[])
+        .filter((it) => "str" in it)
+        .map((it) => ({
+          s: it.str ?? "",
+          x: it.transform[4],
+          y: it.transform[5],
+          w: it.width ?? 0,
+          h: Math.hypot(it.transform[2], it.transform[3]),
+        }));
+      // Furigana comes out of the body first: left in, it reads as junk lines between the real ones.
+      const ruby = extractFurigana(runs);
+      const lines = linesOf(ruby.body.map((r) => ({ str: r.s, x: r.x, y: r.y, w: r.w })));
+      if (lines.length > 0 && !isGarbageText(lines.join(" "))) {
+        // Underlines are a nicety: a page whose drawing cannot be read still imports.
+        const rules = await drawnRules(pdfjs, page).catch(() => []);
+        marks.set(n, [...ruby.marks, ...findUnderlines(ruby.body, rules), ...findStarSlots(ruby.body, rules)]);
+        junk.set(n, ruby.junk);
+        return lines.join("\n");
+      }
       // No usable text layer → render + OCR (the scan path).
       if (!ocr) return lines.join("\n"); // empty when neither text nor an OCR callback
       const png = await renderPdfPage(buffer, n);
@@ -192,5 +272,5 @@ export async function openProsePdf(
     }
   };
 
-  return { numPages, totalPages: doc.numPages, pageText };
+  return { numPages, totalPages: doc.numPages, pageText, pageMarks: (n) => marks.get(n) ?? [], pageJunk: (n) => junk.get(n) ?? [] };
 }

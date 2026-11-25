@@ -194,8 +194,12 @@ function classifyReading(n: string, level: string | undefined): MondaiType | nul
   return null;
 }
 
-/** Exam text may carry `<b>` `<i>` `<u>` from the draft editor; strip them to compare the words. */
-export const stripFormat = (s: string): string => s.replace(/<\/?[biu]>/g, "");
+/**
+ * Exam text may carry `<b>` `<i>` `<u>`, furigana `<ruby=よみ>base</ruby>` and `<size=125>`
+ * (PDF import / draft editor); strip them to compare the words.
+ */
+export const stripFormat = (s: string): string =>
+  s.replace(/<\/?[biu]>|<ruby=[^<>\n]+>|<\/ruby>|<size=\d+>|<\/size>/g, "");
 
 /**
  * Cross-source duplicate fingerprint (plan §5.2): same prompt + same option set

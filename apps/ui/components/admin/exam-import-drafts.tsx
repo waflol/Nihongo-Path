@@ -1,75 +1,31 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
-import { FormattedText } from "../rich-text";
-import { PagePreview } from "./exam-import-page-preview";
-import { DraftEditor, type EditQuestion, type EditStimulus } from "./exam-import-draft-editor";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { DraftBlock } from "./exam-import-draft-block";
+import {
+  deskButton,
+  errorOf,
+  fillAnswers,
+  isOpen,
+  isReady,
+  missingCount,
+  STATE_LABEL,
+  STATE_TEXT,
+  stateOf,
+  questionsOf,
+  type BlockState,
+  type Draft,
+} from "./exam-import-draft-model";
+import { MONDAI_LABELS } from "@/components/learn/exam-sectioned";
 
-interface ParsedStimulus {
-  key: string;
-  kind: string;
-  title?: string;
-  body: string;
-  bodyB?: string;
-  notes?: string;
-}
-interface ParsedQuestion {
-  no: number;
-  /** The number printed on the paper (55…); `no` is only the position in the block. */
-  printedNo?: number;
-  prompt: string;
-  options: string[];
-  stimulusKey?: string;
-}
-interface Draft {
-  _id: string;
-  blockIndex: number;
-  sitting: string;
-  mondai?: string | null;
-  section: string;
-  instruction: string;
-  rawText: string;
-  pageFrom?: number;
-  pageTo?: number;
-  parsed?: { stimuli?: ParsedStimulus[]; questions?: ParsedQuestion[] };
-  answers: number[];
-  issues: string[];
-  status: "needs_review" | "error" | "published" | "discarded";
-  parsedBy?: "rules" | "ai" | "manual";
-}
 interface Job {
   fileName: string;
   level: string;
   status: string;
 }
 
-const STATUS: Record<Draft["status"], { label: string; cls: string }> = {
-  needs_review: { label: "Cần duyệt", cls: "bg-[#f59e0b]/15 text-[#b45309]" },
-  error: { label: "Lỗi đọc", cls: "bg-[#ef4444]/15 text-[#b91c1c]" },
-  published: { label: "Đã xuất bản", cls: "bg-[#22c55e]/15 text-[#15803d]" },
-  discarded: { label: "Đã loại", cls: "bg-[var(--background-2,transparent)] text-[var(--muted-foreground)]" },
-};
-const btn =
-  "rounded-lg border border-[var(--border)] px-3 py-1.5 text-sm font-medium text-[var(--foreground)] hover:bg-[var(--background-1)] disabled:cursor-not-allowed disabled:opacity-60";
-const btnPrimary =
-  "rounded-lg bg-[var(--primary)] px-3 py-1.5 text-sm font-semibold text-[var(--primary-foreground)] hover:bg-[var(--primary-hover)] disabled:cursor-not-allowed disabled:opacity-60";
-
-async function errorOf(res: Response): Promise<string> {
-  const b = (await res.json().catch(() => null)) as { message?: string | string[]; error?: string } | null;
-  const m = b?.message ?? b?.error;
-  return Array.isArray(m) ? m.join("; ") : (m ?? `Lỗi ${res.status}`);
-}
-
-/** Every question of the block has a picked answer (and there is at least one question). */
-function isReady(d: Draft, answers: number[] | undefined): boolean {
-  const qs = d.parsed?.questions ?? [];
-  return qs.length > 0 && qs.every((q) => (answers?.[q.no - 1] ?? 0) > 0);
-}
-function fillAnswers(d: Draft, answers: number[] | undefined): number[] {
-  const qs = d.parsed?.questions ?? [];
-  return Array.from({ length: Math.max(0, ...qs.map((q) => q.no)) }, (_, i) => answers?.[i] ?? 0);
-}
+const PROGRESS: BlockState[] = ["published", "ready", "missing", "error", "discarded"];
 
 /** Review screen of one exam-PDF import (NP-407): check each 問題 block, type the printed answers, publish or discard. */
 export function ExamImportDrafts({ jobId }: { jobId: string }) {
@@ -81,6 +37,11 @@ export function ExamImportDrafts({ jobId }: { jobId: string }) {
   /** The reviewer's answers per draft, kept here so "publish the whole paper" sees every card's picks. */
   const [answersById, setAnswersById] = useState<Record<string, number[]>>({});
   const [bulk, setBulk] = useState<{ busy: boolean; ok: boolean; text: string } | null>(null);
+  const [selected, setSelected] = useState<{ id: string; index: number }>({ id: "", index: 0 });
+  /** Small screens show the block list as a drawer. */
+  const [listOpen, setListOpen] = useState(false);
+  const editing = useRef(false);
+  const rail = useRef<HTMLElement>(null);
 
   const load = useCallback(async () => {
     const [dr, lr] = await Promise.all([
@@ -114,23 +75,63 @@ export function ExamImportDrafts({ jobId }: { jobId: string }) {
     return () => clearTimeout(t);
   }, [load]);
 
-  const inFilter = (d: Draft) => !sittingFilter || d.sitting === sittingFilter;
-  const shown = (drafts ?? []).filter(
-    (d) => inFilter(d) && (filter === "all" || d.status === "needs_review" || d.status === "error"),
-  );
+  // The desk fills the window below the site header; the page behind it must not scroll.
+  useEffect(() => {
+    const html = document.documentElement;
+    const before = html.style.overflow;
+    html.style.overflow = "hidden";
+    return () => {
+      html.style.overflow = before;
+    };
+  }, []);
+
+  const all = drafts ?? [];
+  const shown = all.filter((d) => (!sittingFilter || d.sitting === sittingFilter) && (filter === "all" || isOpen(d)));
+  // When the selected block leaves the list (published, filtered out), move on to the next one.
+  const current = shown.find((d) => d._id === selected.id) ?? shown.find((d) => d.blockIndex >= selected.index) ?? shown.at(-1);
+  const currentId = current?._id;
+
+  // Pin the block on screen, so typing its last answer or a reload never swaps it out.
+  if (current && current._id !== selected.id) setSelected({ id: current._id, index: current.blockIndex });
+
+  useEffect(() => {
+    rail.current?.querySelector('[aria-current="true"]')?.scrollIntoView({ block: "nearest" });
+  }, [currentId]);
+
   // One group per sitting, in the order the paper presents them.
   const groups = new Map<string, Draft[]>();
   for (const d of shown) groups.set(d.sitting, [...(groups.get(d.sitting) ?? []), d]);
-  const sittings = [...new Set((drafts ?? []).map((d) => d.sitting))];
+  const sittings = [...new Set(all.map((d) => d.sitting))];
   const sittingStats = (name: string) => {
-    const all = (drafts ?? []).filter((d) => d.sitting === name);
-    return { total: all.length, done: all.filter((d) => d.status === "published" || d.status === "discarded").length };
+    const list = all.filter((d) => d.sitting === name);
+    return { total: list.length, done: list.filter((d) => !isOpen(d)).length };
   };
+  const readyOf = (name: string) =>
+    all.filter((d) => d.sitting === name && d.status === "needs_review" && isReady(d, answersById[d._id]));
+  const counts = all.reduce<Partial<Record<BlockState, number>>>((m, d) => {
+    const k = stateOf(d, answersById[d._id]);
+    m[k] = (m[k] ?? 0) + 1;
+    return m;
+  }, {});
+
+  /** Unsaved edits are lost when the block changes, so ask first. */
+  function leaveEditor(): boolean {
+    if (editing.current && !window.confirm("Bỏ phần chỉnh sửa chưa lưu của khối này?")) return false;
+    editing.current = false;
+    return true;
+  }
+  function select(d: Draft) {
+    setListOpen(false);
+    if (d._id === currentId || !leaveEditor()) return;
+    setSelected({ id: d._id, index: d.blockIndex });
+  }
+  function step(dir: -1 | 1) {
+    const next = shown[shown.findIndex((d) => d._id === currentId) + dir];
+    if (next) select(next);
+  }
 
   async function publishSitting(name: string) {
-    const ready = (drafts ?? []).filter(
-      (d) => d.sitting === name && d.status === "needs_review" && isReady(d, answersById[d._id]),
-    );
+    const ready = readyOf(name);
     if (ready.length === 0) return;
     if (!window.confirm(`Xuất bản ${ready.length} khối đã đủ đáp án của đề "${name}"?`)) return;
     setBulk({ busy: true, ok: true, text: `Đang xuất bản 0/${ready.length}…` });
@@ -145,7 +146,7 @@ export function ExamImportDrafts({ jobId }: { jobId: string }) {
         setBulk({
           busy: false,
           ok: false,
-          text: `Dừng ở khối #${d.blockIndex + 1} (đã xuất bản ${n}/${ready.length}): ${res ? await errorOf(res) : "mất kết nối"}`,
+          text: `Dừng ở khối ${d.blockIndex + 1} (đã xuất bản ${n}/${ready.length}): ${res ? await errorOf(res) : "mất kết nối"}`,
         });
         await load();
         return;
@@ -156,339 +157,223 @@ export function ExamImportDrafts({ jobId }: { jobId: string }) {
     setBulk({ busy: false, ok: true, text: `Đã xuất bản ${n} khối của đề "${name}".` });
     await load();
   }
-  const counts = (drafts ?? []).reduce<Record<string, number>>((m, d) => ({ ...m, [d.status]: (m[d.status] ?? 0) + 1 }), {});
+
+  /** Re-read the kept PDF and add furigana / underlines to blocks nobody has formatted yet. */
+  async function addMarks() {
+    if (!leaveEditor()) return;
+    setBulk({ busy: true, ok: true, text: "Đang đọc lại PDF để bổ sung furigana, gạch chân… (có thể mất vài phút)" });
+    const res = await fetch(`/api/exam-import?marks=${jobId}`, { method: "POST" }).catch(() => null);
+    if (!res?.ok) {
+      setBulk({ busy: false, ok: false, text: res ? await errorOf(res) : "Mất kết nối khi đang bổ sung — bấm Tải lại để xem kết quả" });
+      return;
+    }
+    const r = (await res.json()) as { drafts: number; changed: number; skipped: number };
+    await load();
+    setBulk({
+      busy: false,
+      ok: true,
+      text: `Đã bổ sung furigana, gạch chân cho ${r.changed}/${r.drafts} khối chưa xử lý${r.skipped ? `, bỏ qua ${r.skipped} khối không rõ trang` : ""}.`,
+    });
+  }
+
+  const empty = failed
+    ? "Không tải được bản nháp (cần quyền admin nội dung). Đăng nhập lại rồi bấm Tải lại."
+    : drafts === null
+      ? "Đang tải…"
+      : all.length === 0
+        ? "Lần nhập này chưa tạo bản nháp nào. Nếu job còn chạy, đợi xong rồi bấm Tải lại; nếu job đã xong, xem log để biết lý do."
+        : "Không còn khối nào cần duyệt.";
 
   return (
-    <div className="mx-auto w-full max-w-6xl space-y-4 px-4 py-8 sm:px-6">
-      <Link href="/admin/exams/import" className="text-xs font-medium text-[var(--primary)] hover:underline">
-        ← Quay lại nhập đề
-      </Link>
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight text-[var(--foreground)]">Duyệt bản nháp đề</h1>
-        <p className="mt-0.5 text-sm text-[var(--muted-foreground)]">
-          {job ? `${job.level} · ${job.fileName} · ` : ""}
-          Đối chiếu với text gốc, điền đáp án theo bảng 答案 rồi xuất bản. Không có đáp án thì không xuất bản được.
-        </p>
-      </div>
-
-      {drafts && (
-        <div className="flex flex-wrap items-center gap-3 text-sm text-[var(--muted-foreground)]">
-          <span>
-            {drafts.length} khối · cần duyệt {counts.needs_review ?? 0} · lỗi {counts.error ?? 0} · xuất bản {counts.published ?? 0} · loại {counts.discarded ?? 0}
-          </span>
-          <button type="button" className={`${btn} ml-auto`} onClick={() => setFilter(filter === "open" ? "all" : "open")}>
-            {filter === "open" ? "Hiện cả khối đã xử lý" : "Chỉ khối chưa xử lý"}
+    <div className="exam-desk fixed inset-x-0 bottom-0 top-16 z-40 flex flex-col text-[var(--sheet-ink)]">
+      <header className="border-b border-[var(--sheet-rule)] bg-[var(--sheet)] px-4 pb-2 pt-2.5">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          <Link
+            href="/admin/exams/import"
+            onClick={(e) => {
+              if (!leaveEditor()) e.preventDefault();
+            }}
+            className={deskButton}
+          >
+            Thoát
+          </Link>
+          <div className="order-first min-w-0 basis-full sm:order-none sm:flex-1 sm:basis-48">
+            <h1 className="truncate text-lg font-semibold leading-6 tracking-tight">Duyệt bản nháp đề</h1>
+            <p className="truncate text-xs text-[var(--muted-foreground)]" title={job?.fileName}>
+              {job ? `${job.level}, ${job.fileName}` : "Đối chiếu text gốc, điền đáp án theo bảng 答案 rồi xuất bản"}
+            </p>
+          </div>
+          {drafts && (
+            <ul className="hidden flex-wrap gap-x-4 text-xs text-[var(--muted-foreground)] md:flex">
+              {PROGRESS.map((k) => (
+                <li key={k} className="flex items-center gap-1.5">
+                  <span aria-hidden className={`h-2 w-2 rounded-full bg-current ${STATE_TEXT[k]}`} />
+                  {STATE_LABEL[k]} <b className="tabular-nums text-[var(--sheet-ink)]">{counts[k] ?? 0}</b>
+                </li>
+              ))}
+            </ul>
+          )}
+          <button type="button" className={`${deskButton} lg:hidden`} aria-expanded={listOpen} onClick={() => setListOpen(!listOpen)}>
+            Danh sách khối
           </button>
-          <button type="button" className={btn} onClick={() => void load()}>
+          <button
+            type="button"
+            className={deskButton}
+            disabled={bulk?.busy || !all.some(isOpen)}
+            title="Đọc lại file PDF, thêm furigana và gạch chân vào các khối chưa xử lý (khối đã tự định dạng được giữ nguyên)"
+            onClick={() => void addMarks()}
+          >
+            Bổ sung furigana
+          </button>
+          <button type="button" className={deskButton} onClick={() => void load()}>
             Tải lại
           </button>
         </div>
-      )}
-
-      {failed && <p className="text-sm text-[#b91c1c]">Không tải được bản nháp (cần quyền admin nội dung).</p>}
-      {drafts === null && !failed && <p className="text-sm text-[var(--muted-foreground)]">Đang tải…</p>}
-      {drafts && shown.length === 0 && (
-        <p className="rounded-2xl border border-[var(--border)] bg-[var(--background-1)] p-4 text-sm text-[var(--muted-foreground)]">
-          {drafts.length === 0
-            ? "Lần nhập này chưa tạo bản nháp nào. Nếu job còn chạy, đợi xong rồi bấm Tải lại; nếu job đã xong, xem log để biết lý do."
-            : "Không còn khối nào cần duyệt."}
-        </p>
-      )}
-      {sittings.length > 1 && (
-        <label className="flex flex-wrap items-center gap-2 text-sm text-[var(--muted-foreground)]">
-          Lọc theo đề
-          <select
-            value={sittingFilter}
-            onChange={(e) => setSittingFilter(e.target.value)}
-            className="rounded-lg border border-[var(--border)] bg-[var(--background)] px-2 py-1 text-[var(--foreground)]"
-          >
-            <option value="">Tất cả ({sittings.length} đề)</option>
-            {sittings.map((n) => (
-              <option key={n} value={n}>
-                {n} ({sittingStats(n).done}/{sittingStats(n).total} khối xong)
-              </option>
-            ))}
-          </select>
-        </label>
-      )}
-      {bulk && (
-        <p role="status" className={`text-sm ${bulk.ok ? "text-[var(--muted-foreground)]" : "text-[#b91c1c]"}`}>
-          {bulk.text}
-        </p>
-      )}
-      {[...groups.entries()].map(([name, items]) => {
-        const stats = sittingStats(name);
-        const ready = (drafts ?? []).filter(
-          (d) => d.sitting === name && d.status === "needs_review" && isReady(d, answersById[d._id]),
-        ).length;
-        return (
-          <div key={name} className="space-y-3">
-            <div className="flex flex-wrap items-center gap-2 border-b border-[var(--border)] pb-2">
-              <h2 className="text-lg font-semibold text-[var(--foreground)]">Đề {name}</h2>
-              <span className="text-sm text-[var(--muted-foreground)]">
-                {stats.done}/{stats.total} khối đã xử lý
-              </span>
-              <button
-                type="button"
-                className={`${btnPrimary} ml-auto`}
-                disabled={ready === 0 || bulk?.busy}
-                onClick={() => void publishSitting(name)}
-              >
-                {ready === 0 ? "Chưa khối nào đủ đáp án" : `Xuất bản ${ready} khối đã đủ đáp án`}
-              </button>
-            </div>
-            {items.map((d) => (
-              <DraftCard
-                key={d._id}
-                draft={d}
-                jobId={jobId}
-                answers={answersById[d._id] ?? []}
-                setAnswers={(a) => setAnswersById((m) => ({ ...m, [d._id]: a }))}
-                onChanged={load}
-              />
-            ))}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function DraftCard({
-  draft,
-  jobId,
-  answers,
-  setAnswers,
-  onChanged,
-}: {
-  draft: Draft;
-  jobId: string;
-  answers: number[];
-  setAnswers: (a: number[]) => void;
-  onChanged: () => Promise<void>;
-}) {
-  const questions = draft.parsed?.questions ?? [];
-  const stimuli = draft.parsed?.stimuli ?? [];
-  const [raw, setRaw] = useState(draft.status === "error");
-  const [editing, setEditing] = useState(false);
-  const [showPage, setShowPage] = useState(false);
-  const hasPages = draft.pageFrom != null;
-  // Editing always shows the source page beside the editor; otherwise it is a toggle.
-  const pageOpen = hasPages && (editing || showPage);
-  const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
-  const open = draft.status === "needs_review" || draft.status === "error";
-  const missing = questions.filter((q) => !(answers[q.no - 1] > 0)).length;
-  const st = STATUS[draft.status];
-
-  async function save(instruction: string, newStimuli: EditStimulus[], newQuestions: EditQuestion[]) {
-    setSaving(true);
-    setSaveError(null);
-    const res = await fetch(`/api/exam-import?update=${draft._id}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        instruction,
-        stimuli: newStimuli,
-        questions: newQuestions.map((q) => ({
-          printedNo: q.printedNo,
-          prompt: q.prompt,
-          options: q.options,
-          stimulusKey: q.stimulusKey || undefined,
-        })),
-        answers: newQuestions.map((q) => q.answer),
-      }),
-    }).catch(() => null);
-    setSaving(false);
-    if (!res?.ok) {
-      setSaveError(res ? await errorOf(res) : "Không kết nối được máy chủ");
-      return;
-    }
-    setAnswers(newQuestions.map((q) => q.answer));
-    setEditing(false);
-    await onChanged();
-  }
-
-  async function act(kind: "publish" | "discard") {
-    if (kind === "discard" && !window.confirm("Loại khối này? Bạn không nhập khối này vào ngân hàng câu hỏi.")) return;
-    setBusy(true);
-    setMsg(null);
-    const filled = fillAnswers(draft, answers);
-    const res = await fetch(`/api/exam-import?${kind}=${draft._id}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(kind === "publish" ? { answers: filled } : {}),
-    }).catch(() => null);
-    setBusy(false);
-    if (!res?.ok) {
-      setMsg({ ok: false, text: res ? await errorOf(res) : "Không kết nối được máy chủ" });
-      return;
-    }
-    await onChanged();
-  }
-
-  return (
-    <section className="rounded-2xl border border-[var(--border)] bg-[var(--background-1)] p-4 sm:p-5">
-      <div className="flex flex-wrap items-center gap-2">
-        <h2 className="text-base font-semibold text-[var(--foreground)]">
-          #{draft.blockIndex + 1} · {draft.mondai ?? "dạng chưa nhận ra"} · {draft.sitting}
-        </h2>
-        <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${st.cls}`}>{st.label}</span>
-        <span className="text-xs text-[var(--muted-foreground)]">{questions.length} câu</span>
-        {draft.parsedBy && (
-          <span
-            className="text-xs text-[var(--muted-foreground)]"
-            title={
-              draft.parsedBy === "rules"
-                ? "Đọc đúng theo bố cục in, không dùng AI"
-                : draft.parsedBy === "manual"
-                  ? "Đã được chỉnh sửa tay"
-                  : "AI tách khối, đã đối chiếu với text gốc"
-            }
-          >
-            · {draft.parsedBy === "rules" ? "đọc bằng quy tắc" : draft.parsedBy === "manual" ? "đã sửa tay" : "AI tách"}
-          </span>
-        )}
-      </div>
-      {draft.instruction && !editing && (
-        <p className="mt-1 whitespace-pre-wrap text-sm text-[var(--muted-foreground)]">
-          <FormattedText text={draft.instruction} />
-        </p>
-      )}
-
-      {draft.issues.length > 0 && (
-        <ul className="mt-2 list-disc space-y-0.5 pl-5 text-sm text-[#b91c1c]">
-          {draft.issues.map((i, n) => (
-            <li key={n}>{i}</li>
+        <div
+          role="img"
+          aria-label={`${all.filter((d) => !isOpen(d)).length}/${all.length} khối đã xử lý`}
+          className="mt-2 flex h-1.5 overflow-hidden rounded-full bg-[var(--sheet-rule)]"
+        >
+          {PROGRESS.map((k) => (
+            <span key={k} className={`bg-current ${STATE_TEXT[k]}`} style={{ width: `${((counts[k] ?? 0) / Math.max(1, all.length)) * 100}%` }} />
           ))}
-        </ul>
-      )}
-
-      <div className={pageOpen ? "mt-1 grid gap-4 lg:grid-cols-2 lg:items-start" : ""}>
-      {pageOpen && (
-        <div className="lg:sticky lg:top-4 lg:order-2">
-          <PagePreview jobId={jobId} from={draft.pageFrom!} to={draft.pageTo ?? draft.pageFrom!} />
         </div>
-      )}
-      <div className="min-w-0 lg:order-1">
-      {editing ? (
-        <DraftEditor
-          initialInstruction={draft.instruction}
-          initialStimuli={stimuli.map((s) => ({ key: s.key, kind: s.kind, title: s.title, body: s.body, bodyB: s.bodyB, notes: s.notes }))}
-          initialQuestions={questions.map((q) => ({
-            printedNo: q.printedNo,
-            prompt: q.prompt,
-            options: q.options,
-            stimulusKey: q.stimulusKey ?? "",
-            answer: answers[q.no - 1] ?? 0,
-          }))}
-          rawText={draft.rawText}
-          optionCount={questions[0]?.options.length ?? 4}
-          saving={saving}
-          error={saveError}
-          onSave={(ins, st, qs) => void save(ins, st, qs)}
-          onCancel={() => {
-            setEditing(false);
-            setSaveError(null);
-          }}
-        />
-      ) : (
-        <>
-      {stimuli.map((s) => (
-        <div key={s.key} className="mt-3 rounded-lg border border-[var(--border)] bg-[var(--background)] p-3 text-sm">
-          <p className="text-xs font-medium text-[var(--muted-foreground)]">
-            Bài dùng chung {s.key} ({s.kind}){s.title && (
-              <>
-                {" · "}
-                <FormattedText text={s.title} />
-              </>
-            )}
+        {bulk && (
+          <p role="status" className={`mt-1.5 text-sm ${bulk.ok ? "text-[var(--muted-foreground)]" : "text-[var(--bad)]"}`}>
+            {bulk.text}
           </p>
-          <p className="mt-1 whitespace-pre-wrap text-[var(--foreground)]"><FormattedText text={s.body} /></p>
-          {s.bodyB && <p className="mt-2 whitespace-pre-wrap text-[var(--foreground)]"><FormattedText text={s.bodyB} /></p>}
-          {s.notes && <p className="mt-2 whitespace-pre-wrap text-xs text-[var(--muted-foreground)]"><FormattedText text={s.notes} /></p>}
-        </div>
-      ))}
+        )}
+      </header>
 
-      <ol className="mt-3 space-y-3">
-        {questions.map((q) => (
-          <li key={q.no} className="rounded-lg border border-[var(--border)] bg-[var(--background)] p-3 text-sm">
-            <p className="whitespace-pre-wrap text-[var(--foreground)]">
-              <span className="font-semibold">{q.printedNo ?? q.no}.</span> <FormattedText text={q.prompt} />
-              {q.stimulusKey && <span className="ml-2 text-xs text-[var(--muted-foreground)]">({q.stimulusKey})</span>}
-            </p>
-            <div className="mt-2 flex flex-wrap gap-2">
-              {q.options.map((o, i) => {
-                const picked = answers[q.no - 1] === i + 1;
-                return (
-                  <button
-                    key={i}
-                    type="button"
-                    disabled={!open || busy}
-                    aria-pressed={picked}
-                    onClick={() => setAnswers(Object.assign([...answers], { [q.no - 1]: picked ? 0 : i + 1 }))}
-                    className={`rounded-lg border px-2.5 py-1 text-left ${
-                      picked
-                        ? "border-[var(--primary)] bg-[color-mix(in_srgb,var(--primary)_16%,transparent)] font-semibold"
-                        : "border-[var(--border)] hover:bg-[var(--background-1)]"
-                    } disabled:cursor-default`}
-                  >
-                    {i + 1}. <FormattedText text={o} />
-                  </button>
-                );
-              })}
+      <div className="relative flex min-h-0 flex-1">
+        <nav
+          ref={rail}
+          aria-label="Các khối của bản nháp"
+          className={`${listOpen ? "absolute inset-y-0 left-0 z-20 flex shadow-2xl" : "hidden"} w-72 max-w-[85vw] shrink-0 flex-col border-r border-[var(--sheet-rule)] bg-[var(--sheet)] lg:static lg:flex lg:shadow-none`}
+        >
+          <div className="space-y-2 border-b border-[var(--sheet-rule)] p-3">
+            {sittings.length > 1 && (
+              <select
+                aria-label="Lọc theo đề"
+                value={sittingFilter}
+                onChange={(e) => {
+                  if (leaveEditor()) setSittingFilter(e.target.value);
+                }}
+                className="w-full rounded-lg border border-[var(--sheet-rule)] bg-[var(--sheet)] px-2 py-1.5 text-sm"
+              >
+                <option value="">Tất cả ({sittings.length} đề)</option>
+                {sittings.map((n) => (
+                  <option key={n} value={n}>
+                    {n} ({sittingStats(n).done}/{sittingStats(n).total} khối xong)
+                  </option>
+                ))}
+              </select>
+            )}
+            <div role="group" aria-label="Hiển thị" className="grid grid-cols-2 gap-1 rounded-lg bg-[var(--desk)] p-1 text-xs font-medium">
+              {(
+                [
+                  ["open", "Chưa xử lý"],
+                  ["all", "Tất cả"],
+                ] as const
+              ).map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  aria-pressed={filter === value}
+                  onClick={() => {
+                    if (leaveEditor()) setFilter(value);
+                  }}
+                  className={`rounded-md py-1 ${filter === value ? "bg-[var(--sheet)] shadow-sm" : "text-[var(--muted-foreground)]"}`}
+                >
+                  {label}
+                </button>
+              ))}
             </div>
-          </li>
-        ))}
-      </ol>
-        </>
-      )}
-      </div>
-      </div>
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-3">
+            {[...groups.entries()].map(([name, items]) => {
+              const stats = sittingStats(name);
+              const ready = readyOf(name).length;
+              return (
+                <section key={name}>
+                  <div className="sticky top-0 z-10 border-b border-[var(--sheet-rule)] bg-[var(--sheet)] px-3 py-2">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <h2 className="truncate text-sm font-semibold">Đề {name}</h2>
+                      <span className="shrink-0 text-xs tabular-nums text-[var(--muted-foreground)]">
+                        {stats.done}/{stats.total} xong
+                      </span>
+                    </div>
+                    {ready > 0 && (
+                      <button
+                        type="button"
+                        className="mt-1.5 w-full rounded-lg border border-[var(--ok)]/50 bg-[var(--ok)]/10 py-1 text-xs font-semibold text-[var(--ok)] hover:bg-[var(--ok)]/20 disabled:opacity-50"
+                        disabled={bulk?.busy}
+                        onClick={() => void publishSitting(name)}
+                      >
+                        Xuất bản {ready} khối đã đủ đáp án
+                      </button>
+                    )}
+                  </div>
+                  <ul>
+                    {items.map((d) => {
+                      const state = stateOf(d, answersById[d._id]);
+                      const active = d._id === currentId;
+                      const total = questionsOf(d).length;
+                      return (
+                        <li key={d._id}>
+                          <button
+                            type="button"
+                            aria-current={active ? "true" : undefined}
+                            onClick={() => select(d)}
+                            className={`flex w-full scroll-mt-20 items-center gap-2.5 border-l-[3px] py-2 pl-2.5 pr-3 text-left focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--primary)] ${
+                              active ? "border-[var(--primary)] bg-[var(--primary)]/10" : "border-transparent hover:bg-[var(--desk)]"
+                            }`}
+                          >
+                            <span aria-hidden className={`h-2 w-2 shrink-0 rounded-full bg-current ${STATE_TEXT[state]}`} />
+                            <span className="w-7 shrink-0 text-xs tabular-nums text-[var(--muted-foreground)]">{d.blockIndex + 1}</span>
+                            <span className={`min-w-0 flex-1 truncate text-sm ${d.status === "discarded" ? "line-through opacity-60" : ""}`}>
+                              {d.mondai ? (MONDAI_LABELS[d.mondai] ?? d.mondai) : "Chưa nhận ra dạng"}
+                              <span className="sr-only">, {STATE_LABEL[state]}</span>
+                            </span>
+                            <span
+                              className="shrink-0 text-xs tabular-nums text-[var(--muted-foreground)]"
+                              title={isOpen(d) ? "Số câu đã có đáp án / tổng số câu" : "Số câu"}
+                            >
+                              {isOpen(d) ? `${total - missingCount(d, answersById[d._id])}/${total}` : total}
+                            </span>
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </section>
+              );
+            })}
+          </div>
+        </nav>
 
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        {open && !editing && (
-          <button type="button" className={btn} disabled={busy} onClick={() => setEditing(true)}>
-            ✎ Chỉnh sửa
-          </button>
-        )}
-        {hasPages && !editing && (
-          <button type="button" className={btn} onClick={() => setShowPage(!showPage)}>
-            {showPage ? "Ẩn ảnh trang" : "🖼 Xem ảnh trang"}
-          </button>
-        )}
-        <button type="button" className={btn} onClick={() => setRaw(!raw)}>
-          {raw ? "Ẩn text gốc" : "Xem text gốc"}
-        </button>
-        {open && !editing && (
-          <>
-            <button type="button" className={`${btn} ml-auto`} disabled={busy} onClick={() => void act("discard")}>
-              Loại
-            </button>
-            <button
-              type="button"
-              className={btnPrimary}
-              disabled={busy || questions.length === 0 || missing > 0}
-              title={missing > 0 ? `Còn ${missing} câu chưa chọn đáp án` : undefined}
-              onClick={() => void act("publish")}
-            >
-              {busy ? "Đang xử lý…" : missing > 0 ? `Còn ${missing} câu chưa có đáp án` : "Xuất bản"}
-            </button>
-          </>
-        )}
+        <main className="flex min-w-0 flex-1 flex-col">
+          {current ? (
+            <DraftBlock
+              key={current._id}
+              draft={current}
+              jobId={jobId}
+              answers={answersById[current._id] ?? []}
+              setAnswers={(a) => setAnswersById((m) => ({ ...m, [current._id]: a }))}
+              onChanged={load}
+              onDone={(text) => setBulk({ busy: false, ok: true, text })}
+              onEditingChange={(v) => {
+                editing.current = v;
+              }}
+              onStep={step}
+            />
+          ) : (
+            <p role="status" className="m-auto max-w-md px-6 text-center text-sm text-[var(--muted-foreground)]">
+              {empty}
+            </p>
+          )}
+        </main>
       </div>
-      {msg && (
-        <p role="status" className={`mt-2 text-sm ${msg.ok ? "text-[var(--muted-foreground)]" : "text-[#b91c1c]"}`}>
-          {msg.text}
-        </p>
-      )}
-      {raw && (
-        <pre className="mt-3 max-h-80 overflow-auto whitespace-pre-wrap rounded-lg border border-[var(--border)] bg-[var(--background)] p-3 text-xs text-[var(--foreground)]">
-          {draft.rawText}
-        </pre>
-      )}
-    </section>
+    </div>
   );
 }

@@ -4,6 +4,17 @@
 
 ---
 
+## NP-407: bàn duyệt bản nháp đề (UI mới, 25/11/2026)
+
+`/admin/exams/import/[id]/drafts` thiết kế lại: phủ toàn màn dưới header; danh sách khối bên trái, mỗi lần một khối hiển thị như tờ đề, ảnh trang PDF bên cạnh, phiếu đáp án ở đáy (phím 1–4, ↑↓, J/K, Ctrl+Enter). File: `exam-import-drafts.tsx` (khung + danh sách), `exam-import-draft-block.tsx` (một khối), `exam-import-draft-model.ts` (kiểu + helper); style `.exam-desk` trong `globals.css` (sửa CSS xong phải `pm2 restart ui`). ESLint + tsc UI sạch; chụp Chromium headless với dữ liệu giả (máy chủ không có font Nhật). Chưa thử với dữ liệu/đăng nhập thật: xuất bản, loại, lưu chỉnh sửa.
+
+- Furigana: lưu dạng `<ruby=まね>真似</ruby>` (cạnh `<b><i><u>`); nút "Furigana" trong trình soạn (`editFurigana` ở `rich-input.tsx`); hiển thị qua `FormattedText`; `stripFormat` ở API (`mondai.ts`) và UI bỏ cả cách đọc. `PassageText` căn phải dòng nguồn cuối bài（…『…』…／…による）. Nhập PDF (có lớp text) **tự nhận** furigana (chữ kana cỡ ≤65% nằm trên kanji; được bỏ khỏi text trang) và gạch chân (nét ngang sát dưới dòng, bỏ viền bảng): `import/marks.ts`, đánh dấu lưu ở `exam_import_job_pages.marks`, gắn vào bản nháp sau bước kiểm (`withMarks`). Trang OCR không có. Lần nhập cũ: nút "Bổ sung furigana" ở bàn duyệt (`POST /exams/admin/import/:jobId/marks`, `backfillMarks`) — chỉ khối chưa xử lý, field chưa ai định dạng, đồng thời xoá dòng furigana rác trong text. Đã chạy cho job `6b064c846d629eaaa1a0b505` (258/469 khối; sao lưu trước đó: `apps/api/storage/exam-import/backup-drafts-<job>.ejson`, bị dọn sau 30 ngày). Thử 40 trang đầu `40 de thi n2`: 96 furigana, 118 gạch chân.
+
+- Câu sắp xếp ★: đề lưu 4 ô `___ ___ _★_ ___`; `findStarSlots` đọc vị trí ★ từ nét kẻ trong PDF (không đủ đúng 4 ô → giữ nguyên ★ đơn, không đoán). `components/star-sentence.tsx` (bấm/kéo cụm vào ô, cụm ở ô ★ là đáp án) dùng ở bàn duyệt và `exam-sectioned.tsx`; `exam-sitting`/luyện tập chưa dùng. Đã bổ sung job `6b064c84…` (131/139 câu có ô; 8 câu cần sửa tay; sao lưu `backup2-drafts-*.ejson`). 5 câu star đã xuất bản trong ngân hàng không được cập nhật.
+- Cỡ chữ: `<size=80|125|150>` — 4 nút "Cỡ chữ" trong trình soạn (`execCommand fontSize`). Đổi cỡ một phần bên trong đoạn đã đổi cỡ có furigana có thể làm chữ có furigana mất cỡ. Đã thử thêm/sửa/bỏ/undo trên Chromium headless (dữ liệu giả), spec `exam-import-update` 8/8.
+
+---
+
 ## Đồng bộ trạng thái ticket (25/11/2026)
 
 `docs/TICKETS.md`, `docs/issues/README.md` và frontmatter đã khớp nhau: NP-022 `done`; NP-407, NP-501/502/503 `partial` (chờ verify thật). Checklist P5-ADMIN-04 và P4-JLPT-05 còn `[ ]` (chưa tick vì thiếu bằng chứng). Chưa đụng issue GitHub.

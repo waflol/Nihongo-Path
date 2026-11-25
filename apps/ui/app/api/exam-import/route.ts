@@ -8,6 +8,7 @@ import { getSession } from "@/lib/session";
  *   GET  /api/exam-import?log=<id>    → one job's event log
  *   POST /api/exam-import?cancel=<id> → stop a running job
  *   POST /api/exam-import?remove=<id> → delete a job with its drafts
+ *   POST /api/exam-import?marks=<id> → furigana + underlines onto that job's open drafts
  *   GET  /api/exam-import?drafts=<jobId>[&status=] → the job's review drafts
  *   POST /api/exam-import?publish=<draftId> {answers} / ?discard=<draftId>
  *   GET  /api/exam-import?page=<jobId>&n=<page> → the source page as a PNG
@@ -87,6 +88,11 @@ export async function POST(request: Request) {
   if (remove) {
     if (!/^[a-f0-9]{24}$/i.test(remove)) return NextResponse.json({ error: "id không hợp lệ" }, { status: 400 });
     return forward(`/${remove}/delete`, "POST", "{}");
+  }
+  const marks = new URL(request.url).searchParams.get("marks");
+  if (marks) {
+    if (!/^[a-f0-9]{24}$/i.test(marks)) return NextResponse.json({ error: "id không hợp lệ" }, { status: 400 });
+    return forward(`/${marks}/marks`, "POST", "{}");
   }
   const sp = new URL(request.url).searchParams;
   for (const action of ["publish", "discard", "update"] as const) {

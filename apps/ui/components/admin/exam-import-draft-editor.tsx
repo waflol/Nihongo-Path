@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { RichInput } from "./rich-input";
+import { deskButton as btn, deskButtonPrimary as btnPrimary } from "./exam-import-draft-model";
+import { editFurigana, RichInput, TEXT_SIZES } from "./rich-input";
 
 export interface EditStimulus {
   key: string;
@@ -21,10 +22,6 @@ export interface EditQuestion {
   answer: number;
 }
 
-const btn =
-  "rounded-lg border border-[var(--border)] px-2.5 py-1 text-sm font-medium text-[var(--foreground)] hover:bg-[var(--background-1)] disabled:cursor-not-allowed disabled:opacity-60";
-const btnPrimary =
-  "rounded-lg bg-[var(--primary)] px-3 py-1.5 text-sm font-semibold text-[var(--primary-foreground)] hover:bg-[var(--primary-hover)] disabled:cursor-not-allowed disabled:opacity-60";
 const KINDS: { value: string; label: string }[] = [
   { value: "passage", label: "Bài đọc" },
   { value: "cloze", label: "Bài điền chỗ trống" },
@@ -42,7 +39,7 @@ function nextBlank(body: string, fallback: number): number {
  * Word-like editor of one draft block: each passage is a page you type straight
  * into (undo/redo, line breaks, paste all behave as in a word processor), the
  * questions are editable fields with the right answer picked in place.
- * Bold / italic / underline are kept (as tags) and shown to learners.
+ * Bold / italic / underline / furigana are kept (as tags) and shown to learners.
  */
 export function DraftEditor({
   initialInstruction,
@@ -105,7 +102,8 @@ export function DraftEditor({
   // The toolbar keeps focus in the textarea (onMouseDown preventDefault) so the
   // browser's own undo stack and caret are used, exactly like a word processor.
   const keepFocus = (e: React.MouseEvent) => e.preventDefault();
-  const exec = (cmd: "undo" | "redo" | "bold" | "italic" | "underline") => document.execCommand(cmd);
+  const exec = (cmd: "undo" | "redo" | "bold" | "italic" | "underline" | "fontSize", value?: string) =>
+    document.execCommand(cmd, false, value);
   function insertBlank(key: string) {
     const s = stimuli.find((x) => x.key === key);
     if (!s) return;
@@ -125,7 +123,7 @@ export function DraftEditor({
   const canSave = questions.length > 0 && !saving;
 
   return (
-    <div className="mt-3 space-y-4">
+    <div className="space-y-4 text-[var(--sheet-ink)]">
       <div className="flex flex-wrap items-center gap-2">
         <button type="button" className={btn} onClick={() => setShowRaw(!showRaw)}>
           {showRaw ? "Ẩn text gốc" : "Xem text gốc để đối chiếu / sao chép"}
@@ -134,13 +132,13 @@ export function DraftEditor({
           + Thêm bài đọc
         </button>
         <span className="text-xs text-[var(--muted-foreground)]">
-          Gõ trực tiếp vào các ô; bôi đen chữ rồi bấm B / I / U (Ctrl+B / I / U). Ctrl+Z / Ctrl+Y để hoàn tác.
+          Gõ trực tiếp vào các ô; bôi đen chữ rồi bấm B / I / U (Ctrl+B / I / U) hoặc Furigana, Cỡ chữ. Ctrl+Z / Ctrl+Y để hoàn tác.
         </span>
       </div>
       <div
         role="toolbar"
         aria-label="Định dạng chữ"
-        className="sticky top-0 z-10 flex flex-wrap items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--background)] p-2"
+        className="sticky -top-4 z-10 flex flex-wrap items-center gap-2 rounded-lg border border-[var(--sheet-rule)] bg-[var(--sheet)] p-2 shadow-sm sm:-top-6"
       >
         <button type="button" className={`${btn} font-bold`} onMouseDown={keepFocus} onClick={() => exec("bold")} title="In đậm (Ctrl+B)">
           B Đậm
@@ -151,13 +149,26 @@ export function DraftEditor({
         <button type="button" className={`${btn} underline`} onMouseDown={keepFocus} onClick={() => exec("underline")} title="Gạch chân (Ctrl+U)">
           U Gạch chân
         </button>
+        <button type="button" className={btn} onMouseDown={keepFocus} onClick={editFurigana} title="Thêm, sửa hoặc bỏ cách đọc trên chữ đang bôi đen">
+          <ruby>
+            Furigana<rt className="text-[0.6em]">ふりがな</rt>
+          </ruby>
+        </button>
+        <div role="group" aria-label="Cỡ chữ" className="flex flex-wrap items-center gap-1">
+          <span className="ml-1 text-xs text-[var(--muted-foreground)]">Cỡ chữ</span>
+          {TEXT_SIZES.map((s) => (
+            <button key={s.font} type="button" className={btn} onMouseDown={keepFocus} onClick={() => exec("fontSize", s.font)} title={`Đổi cỡ chữ đang bôi đen: ${s.label}`}>
+              {s.label}
+            </button>
+          ))}
+        </div>
       </div>
-      <div className="rounded-lg border border-[var(--border)] bg-[var(--background)] p-3">
+      <div className="rounded-lg border border-[var(--sheet-rule)] bg-[var(--sheet)] p-3">
         <p className="mb-1 text-xs font-semibold text-[var(--muted-foreground)]">Yêu cầu đề bài</p>
-        <RichInput value={instruction} onChange={setInstruction} placeholder="問題… (yêu cầu in trên đề)" className="text-[15px] leading-7" />
+        <RichInput value={instruction} onChange={setInstruction} placeholder="問題… (yêu cầu in trên đề)" className="exam-ja text-[15px] leading-7" />
       </div>
       {showRaw && (
-        <pre className="max-h-72 select-text overflow-auto whitespace-pre-wrap rounded-lg border border-[var(--border)] bg-[var(--background)] p-3 text-xs text-[var(--foreground)]">
+        <pre className="max-h-72 select-text overflow-auto whitespace-pre-wrap rounded-lg border border-[var(--sheet-rule)] bg-[var(--sheet)] p-3 text-xs text-[var(--foreground)]">
           {rawText || "(khối không có text gốc)"}
         </pre>
       )}
@@ -165,14 +176,14 @@ export function DraftEditor({
       {groups.map((g) => (
         <div key={g.stim?.key ?? "none"} className="space-y-3">
           {g.stim && (
-            <div className="rounded-lg border border-[var(--border)] bg-[var(--background)]">
-              <div className="flex flex-wrap items-center gap-2 border-b border-[var(--border)] px-3 py-2">
+            <div className="rounded-lg border border-[var(--sheet-rule)] bg-[var(--sheet)]">
+              <div className="flex flex-wrap items-center gap-2 border-b border-[var(--sheet-rule)] px-3 py-2">
                 <span className="text-xs font-semibold text-[var(--muted-foreground)]">Bài {g.stim.key}</span>
                 <select
                   aria-label="Loại bài"
                   value={g.stim.kind}
                   onChange={(e) => patchStimulus(g.stim!.key, { kind: e.target.value })}
-                  className="rounded-md border border-[var(--border)] bg-[var(--background)] px-1.5 py-0.5 text-xs"
+                  className="rounded-md border border-[var(--sheet-rule)] bg-[var(--sheet)] px-1.5 py-0.5 text-xs"
                 >
                   {KINDS.map((k) => (
                     <option key={k.value} value={k.value}>
@@ -180,7 +191,7 @@ export function DraftEditor({
                     </option>
                   ))}
                 </select>
-                <span className="mx-1 h-4 w-px bg-[var(--border)]" aria-hidden />
+                <span className="mx-1 h-4 w-px bg-[var(--sheet-rule)]" aria-hidden />
                 <button type="button" className={btn} onMouseDown={keepFocus} onClick={() => exec("undo")} title="Hoàn tác (Ctrl+Z)">
                   ↶ Hoàn tác
                 </button>
@@ -201,7 +212,7 @@ export function DraftEditor({
                   Xoá bài
                 </button>
               </div>
-              <div className="bg-white px-6 py-5 text-[var(--foreground)] dark:bg-[var(--background-1)]">
+              <div className="px-6 py-5">
                 <RichInput
                   value={g.stim.title ?? ""}
                   onChange={(v) => patchStimulus(g.stim!.key, { title: v })}
@@ -215,26 +226,26 @@ export function DraftEditor({
                   placeholder="Nội dung bài đọc…"
                   onFocus={() => setFocused(`body:${g.stim!.key}`)}
                   onBlur={() => setFocused(null)}
-                  className="min-h-[8rem] font-serif text-[15px] leading-8"
+                  className="min-h-[8rem] exam-ja text-[15px] leading-8"
                 />
                 {g.stim.kind === "pair" && (
-                  <div className="mt-3 border-t border-dashed border-[var(--border)] pt-3">
+                  <div className="mt-3 border-t border-dashed border-[var(--sheet-rule)] pt-3">
                     <p className="text-xs text-[var(--muted-foreground)]">Bài B</p>
                     <RichInput
                       label="Bài B"
                       value={g.stim.bodyB ?? ""}
                       onChange={(v) => patchStimulus(g.stim!.key, { bodyB: v })}
-                      className="min-h-[4rem] font-serif text-[15px] leading-8"
+                      className="min-h-[4rem] exam-ja text-[15px] leading-8"
                     />
                   </div>
                 )}
-                <div className="mt-3 border-t border-dashed border-[var(--border)] pt-2">
+                <div className="mt-3 border-t border-dashed border-[var(--sheet-rule)] pt-2">
                   <p className="text-xs text-[var(--muted-foreground)]">Chú thích (注)</p>
                   <RichInput
                     label="Chú thích"
                     value={g.stim.notes ?? ""}
                     onChange={(v) => patchStimulus(g.stim!.key, { notes: v })}
-                    className="font-serif text-sm leading-7"
+                    className="exam-ja text-sm leading-7"
                   />
                 </div>
               </div>
@@ -242,7 +253,7 @@ export function DraftEditor({
           )}
 
           {g.items.map(({ q, i }) => (
-            <div key={i} className="rounded-lg border border-[var(--border)] bg-[var(--background)] p-3 text-sm">
+            <div key={i} className="rounded-lg border border-[var(--sheet-rule)] bg-[var(--sheet)] p-3 text-sm">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="font-semibold">Câu</span>
                 <input
@@ -255,13 +266,13 @@ export function DraftEditor({
                   value={q.printedNo ?? ""}
                   placeholder={String(i + 1)}
                   onChange={(e) => patchQuestion(i, { printedNo: e.target.value === "" ? undefined : Number(e.target.value) })}
-                  className="w-16 rounded-md border border-[var(--border)] bg-transparent px-1.5 py-0.5 text-sm"
+                  className="w-16 rounded-md border border-[var(--sheet-rule)] bg-transparent px-1.5 py-0.5 text-sm"
                 />
                 <select
                   aria-label="Thuộc bài"
                   value={q.stimulusKey}
                   onChange={(e) => patchQuestion(i, { stimulusKey: e.target.value })}
-                  className="rounded-md border border-[var(--border)] bg-[var(--background)] px-1.5 py-0.5 text-xs"
+                  className="rounded-md border border-[var(--sheet-rule)] bg-[var(--sheet)] px-1.5 py-0.5 text-xs"
                 >
                   <option value="">Câu độc lập</option>
                   {stimuli.map((s) => (
@@ -280,12 +291,12 @@ export function DraftEditor({
                   Xoá câu
                 </button>
               </div>
-              <div className="mt-2 rounded-md border border-[var(--border)] px-2 py-1.5">
+              <div className="mt-2 rounded-md border border-[var(--sheet-rule)] px-2 py-1.5">
                 <RichInput
                   value={q.prompt}
                   onChange={(v) => patchQuestion(i, { prompt: v })}
                   placeholder="Đề / câu hỏi"
-                  className="min-h-[1.75rem] text-[15px] leading-7"
+                  className="exam-ja min-h-[1.75rem] text-[15px] leading-7"
                 />
               </div>
               <ul className="mt-2 space-y-1.5">
@@ -300,7 +311,7 @@ export function DraftEditor({
                       title="Chọn làm đáp án đúng"
                     />
                     <span className="w-4 text-xs text-[var(--muted-foreground)]">{oi + 1}</span>
-                    <div className="min-w-0 flex-1 rounded-md border border-[var(--border)] px-2 py-1">
+                    <div className="min-w-0 flex-1 rounded-md border border-[var(--sheet-rule)] px-2 py-1">
                       <RichInput
                         value={o}
                         onChange={(v) => patchQuestion(i, { options: q.options.map((x, n) => (n === oi ? v : x)) })}
@@ -330,11 +341,11 @@ export function DraftEditor({
       </button>
 
       {error && (
-        <p role="alert" className="text-sm text-[#b91c1c]">
+        <p role="alert" className="text-sm text-[var(--bad)]">
           {error}
         </p>
       )}
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="sticky -bottom-4 z-10 flex flex-wrap items-center gap-2 rounded-lg border border-[var(--sheet-rule)] bg-[var(--sheet)] p-2 shadow-sm sm:-bottom-6">
         <button type="button" className={btnPrimary} disabled={!canSave} onClick={() => onSave(instruction, stimuli, questions)}>
           {saving ? "Đang lưu…" : "Lưu chỉnh sửa"}
         </button>
