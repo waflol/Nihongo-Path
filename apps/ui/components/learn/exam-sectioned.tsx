@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState, type Dispatch, type SetStateAction } from "react";
+import { FormattedText } from "../rich-text";
 import { audioSrc, type ExamResult, type ExamSit, type SitQuestion, type Stimulus } from "./exam-types";
 
 /**
@@ -78,7 +79,7 @@ function groupQuestions(questions: SitQuestion[], numberOf: Map<string, number>)
 function PassageView({ s }: { s: Stimulus }) {
   return (
     <div className="space-y-3 text-base leading-relaxed text-[var(--foreground)]" lang="ja">
-      {s.title && <p className="font-semibold">{s.title}</p>}
+      {s.title && <p className="font-semibold"><FormattedText text={s.title} /></p>}
       {s.audio || s.audioUrl ? (
         <audio controls preload="none" src={s.audio ? audioSrc(s.audio) : s.audioUrl} className="w-full" />
       ) : s.kind === "listening" ? (
@@ -90,9 +91,9 @@ function PassageView({ s }: { s: Stimulus }) {
         // eslint-disable-next-line @next/next/no-img-element
         <img src={s.imageUrl} alt="" className="mx-auto max-h-96 w-auto max-w-full" />
       )}
-      {s.body && <p className="whitespace-pre-wrap">{s.body}</p>}
-      {s.bodyB && <p className="whitespace-pre-wrap border-t border-[var(--border)] pt-3">{s.bodyB}</p>}
-      {s.notes && <p className="whitespace-pre-wrap text-sm text-[var(--muted-foreground)]">{s.notes}</p>}
+      {s.body && <p className="whitespace-pre-wrap"><FormattedText text={s.body} /></p>}
+      {s.bodyB && <p className="whitespace-pre-wrap border-t border-[var(--border)] pt-3"><FormattedText text={s.bodyB} /></p>}
+      {s.notes && <p className="whitespace-pre-wrap text-sm text-[var(--muted-foreground)]"><FormattedText text={s.notes} /></p>}
     </div>
   );
 }
@@ -134,7 +135,7 @@ function QuestionCard({
         </button>
       </div>
       <p className="mt-3 break-words text-lg leading-snug text-[var(--foreground)]" lang="ja">
-        {q.prompt}
+        <FormattedText text={q.prompt} />
       </p>
       {q.sub && <p className="mt-1 text-sm text-[var(--muted-foreground)]">{q.sub}</p>}
       {q.audio ? (
@@ -173,7 +174,7 @@ function QuestionCard({
                 className={"min-w-0 flex-1 break-words " + (star ? "font-medium" : "")}
                 lang="ja"
               >
-                {opt}
+                <FormattedText text={opt} />
               </span>
             </button>
           );

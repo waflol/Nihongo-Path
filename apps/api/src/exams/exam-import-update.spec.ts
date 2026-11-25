@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ExamImportService } from "./exam-import.service.js";
+import { contentHashOf } from "./mondai.js";
 
 /** A draft document stand-in: `save`/`markModified` are no-ops, fields are plain. */
 function fakeDraft(over: Record<string, unknown> = {}) {
@@ -72,5 +73,25 @@ describe("fillPrintedNos — numbers continue within one paper", () => {
     expect(m.get("a")).toEqual([1, 2, 3]);
     expect(m.get("b")).toEqual([4, 5]);
     expect(m.get("c")).toEqual([1, 2]);
+  });
+});
+
+describe("ExamImportService.updateDraft — instruction and formatting", () => {
+  const q = { prompt: "<u>本文</u>はどれ", options: ["<b>あ</b>", "い", "う", "え"] };
+
+  it("saves the edited instruction and keeps bold / italic / underline", async () => {
+    const doc = fakeDraft({ instruction: "old" });
+    await serviceWith(doc).updateDraft(caller, "d1", { instruction: " 問題9 <b>次の文章</b>を読んで ", questions: [q] });
+    expect(doc.instruction).toBe("問題9 <b>次の文章</b>を読んで");
+    expect((doc.parsed as { questions: { prompt: string }[] }).questions[0].prompt).toBe("<u>本文</u>はどれ");
+  });
+
+  it("treats a field holding only formatting tags as empty", async () => {
+    const empty = { ...q, prompt: "<b> </b>" };
+    await expect(serviceWith(fakeDraft()).updateDraft(caller, "d1", { questions: [empty] })).rejects.toThrow(/thiếu đề/);
+  });
+
+  it("formatting does not change the dedup hash", () => {
+    expect(contentHashOf(q.prompt, q.options)).toBe(contentHashOf("本文はどれ", ["あ", "い", "う", "え"]));
   });
 });

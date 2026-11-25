@@ -8,6 +8,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { FormattedText } from "../rich-text";
 import {
   isExamResult,
   type ExamPayload,
@@ -340,7 +341,7 @@ export function ExamSitting({ attemptId }: { attemptId: string }) {
             Câu hỏi {current + 1} · {q.kind}
           </p>
           <p className="mt-3 break-words text-xl font-semibold leading-snug text-[var(--foreground)] sm:text-2xl" lang="ja">
-            {q.prompt}
+            <FormattedText text={q.prompt} />
           </p>
           {q.sub && <p className="mt-1 text-sm text-[var(--muted-foreground)]">{q.sub}</p>}
 
@@ -368,7 +369,7 @@ export function ExamSitting({ attemptId }: { attemptId: string }) {
                   >
                     {"ABCD"[idx] ?? idx + 1}
                   </span>
-                  <span className="min-w-0 flex-1 break-words text-base" lang="ja">{opt}</span>
+                  <span className="min-w-0 flex-1 break-words text-base" lang="ja"><FormattedText text={opt} /></span>
                 </button>
               );
             })}
@@ -511,7 +512,7 @@ function ResultView({
                   <span className="mr-2 text-xs font-bold text-[var(--muted-foreground)]">
                     Q{result.results.indexOf(r) + 1}
                   </span>
-                  {r.prompt}
+                  <FormattedText text={r.prompt} />
                 </p>
                 <span
                   aria-label={r.correct ? "đúng" : "sai"}
@@ -532,7 +533,7 @@ function ResultView({
                       <span className="w-5 text-center text-xs font-bold text-[var(--muted-foreground)]">
                         {"ABCD"[idx] ?? idx + 1}
                       </span>
-                      <span className="min-w-0 flex-1 break-words text-[var(--foreground)]" lang="ja">{opt}</span>
+                      <span className="min-w-0 flex-1 break-words text-[var(--foreground)]" lang="ja"><FormattedText text={opt} /></span>
                       {isCorrect && <span className="text-xs font-semibold text-[#15803d]">đáp án</span>}
                       {isGiven && !isCorrect && <span className="text-xs font-semibold text-[#b91c1c]">bạn chọn</span>}
                     </div>

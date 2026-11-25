@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
+import { FormattedText } from "../rich-text";
 import { PagePreview } from "./exam-import-page-preview";
 import { DraftEditor, type EditQuestion, type EditStimulus } from "./exam-import-draft-editor";
 
@@ -282,13 +283,14 @@ function DraftCard({
   const missing = questions.filter((q) => !(answers[q.no - 1] > 0)).length;
   const st = STATUS[draft.status];
 
-  async function save(newStimuli: EditStimulus[], newQuestions: EditQuestion[]) {
+  async function save(instruction: string, newStimuli: EditStimulus[], newQuestions: EditQuestion[]) {
     setSaving(true);
     setSaveError(null);
     const res = await fetch(`/api/exam-import?update=${draft._id}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
+        instruction,
         stimuli: newStimuli,
         questions: newQuestions.map((q) => ({
           printedNo: q.printedNo,
@@ -350,7 +352,11 @@ function DraftCard({
           </span>
         )}
       </div>
-      {draft.instruction && <p className="mt-1 text-sm text-[var(--muted-foreground)]">{draft.instruction}</p>}
+      {draft.instruction && !editing && (
+        <p className="mt-1 whitespace-pre-wrap text-sm text-[var(--muted-foreground)]">
+          <FormattedText text={draft.instruction} />
+        </p>
+      )}
 
       {draft.issues.length > 0 && (
         <ul className="mt-2 list-disc space-y-0.5 pl-5 text-sm text-[#b91c1c]">
@@ -369,6 +375,7 @@ function DraftCard({
       <div className="min-w-0 lg:order-1">
       {editing ? (
         <DraftEditor
+          initialInstruction={draft.instruction}
           initialStimuli={stimuli.map((s) => ({ key: s.key, kind: s.kind, title: s.title, body: s.body, bodyB: s.bodyB, notes: s.notes }))}
           initialQuestions={questions.map((q) => ({
             printedNo: q.printedNo,
@@ -381,7 +388,7 @@ function DraftCard({
           optionCount={questions[0]?.options.length ?? 4}
           saving={saving}
           error={saveError}
-          onSave={(st, qs) => void save(st, qs)}
+          onSave={(ins, st, qs) => void save(ins, st, qs)}
           onCancel={() => {
             setEditing(false);
             setSaveError(null);
@@ -392,10 +399,16 @@ function DraftCard({
       {stimuli.map((s) => (
         <div key={s.key} className="mt-3 rounded-lg border border-[var(--border)] bg-[var(--background)] p-3 text-sm">
           <p className="text-xs font-medium text-[var(--muted-foreground)]">
-            Bài dùng chung {s.key} ({s.kind}){s.title ? ` · ${s.title}` : ""}
+            Bài dùng chung {s.key} ({s.kind}){s.title && (
+              <>
+                {" · "}
+                <FormattedText text={s.title} />
+              </>
+            )}
           </p>
-          <p className="mt-1 whitespace-pre-wrap text-[var(--foreground)]">{s.body}</p>
-          {s.bodyB && <p className="mt-2 whitespace-pre-wrap text-[var(--foreground)]">{s.bodyB}</p>}
+          <p className="mt-1 whitespace-pre-wrap text-[var(--foreground)]"><FormattedText text={s.body} /></p>
+          {s.bodyB && <p className="mt-2 whitespace-pre-wrap text-[var(--foreground)]"><FormattedText text={s.bodyB} /></p>}
+          {s.notes && <p className="mt-2 whitespace-pre-wrap text-xs text-[var(--muted-foreground)]"><FormattedText text={s.notes} /></p>}
         </div>
       ))}
 
@@ -403,7 +416,7 @@ function DraftCard({
         {questions.map((q) => (
           <li key={q.no} className="rounded-lg border border-[var(--border)] bg-[var(--background)] p-3 text-sm">
             <p className="whitespace-pre-wrap text-[var(--foreground)]">
-              <span className="font-semibold">{q.printedNo ?? q.no}.</span> {q.prompt}
+              <span className="font-semibold">{q.printedNo ?? q.no}.</span> <FormattedText text={q.prompt} />
               {q.stimulusKey && <span className="ml-2 text-xs text-[var(--muted-foreground)]">({q.stimulusKey})</span>}
             </p>
             <div className="mt-2 flex flex-wrap gap-2">
@@ -422,7 +435,7 @@ function DraftCard({
                         : "border-[var(--border)] hover:bg-[var(--background-1)]"
                     } disabled:cursor-default`}
                   >
-                    {i + 1}. {o}
+                    {i + 1}. <FormattedText text={o} />
                   </button>
                 );
               })}

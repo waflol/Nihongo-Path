@@ -182,3 +182,5 @@ Giai đoạn **đã xong trước** (đừng làm lại):
 - Số câu liền mạch trong một đề: `fillPrintedNos` điền số còn thiếu từ câu trước (qua các khối cùng sitting) khi liệt kê bản nháp và khi xuất bản.
 
 - Ô chọn file ở `/admin/exams/import` (PDF + file nghe): nút "Choose File" ẩn sau khi đã chọn (`file:hidden`). ESLint file sạch; chưa xem trình duyệt, chưa chạy tsc.
+
+- Định dạng chữ: bản nháp lưu `<b>` `<i>` `<u>` trong chuỗi (editor `admin/rich-input.tsx`, hiển thị `components/rich-text.tsx` — không chèn HTML); sửa được cả yêu cầu đề (`instruction`). `contentHashOf` bỏ qua thẻ.

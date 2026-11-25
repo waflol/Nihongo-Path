@@ -194,6 +194,9 @@ function classifyReading(n: string, level: string | undefined): MondaiType | nul
   return null;
 }
 
+/** Exam text may carry `<b>` `<i>` `<u>` from the draft editor; strip them to compare the words. */
+export const stripFormat = (s: string): string => s.replace(/<\/?[biu]>/g, "");
+
 /**
  * Cross-source duplicate fingerprint (plan §5.2): same prompt + same option set
  * → same hash, so a question re-imported from a second source is recognised as
@@ -201,7 +204,9 @@ function classifyReading(n: string, level: string | undefined): MondaiType | nul
  * break dedup.
  */
 export function contentHashOf(prompt: string, options: string[]): string {
-  const p = normalizeInstruction(prompt);
-  const o = [...options].map(normalizeInstruction).sort().join("\u0001");
+  // Bold / underline added by an editor does not make it a different question.
+  const norm = (s: string) => normalizeInstruction(stripFormat(s));
+  const p = norm(prompt);
+  const o = [...options].map(norm).sort().join("\u0001");
   return createHash("sha1").update(`${p}\u0001${o}`).digest("hex");
 }

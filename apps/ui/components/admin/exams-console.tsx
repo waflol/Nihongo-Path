@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useConfirm } from "@/components/learn/use-confirm";
 import { JLPT_LEVELS, LevelBadge } from "@/components/learn/level-select";
+import { FormattedText } from "../rich-text";
 
 /**
  * Admin exam authoring (P4-EXAM-09). Talks to the
@@ -536,7 +537,7 @@ function ExamEditor(props: EditorProps) {
               >
                 <span aria-hidden className="mt-0.5 text-[var(--primary)]">{chosen ? "✓" : "○"}</span>
                 <span className="min-w-0 flex-1">
-                  <span className="font-medium text-[var(--foreground)]" lang="ja">{q.prompt}</span>
+                  <span className="font-medium text-[var(--foreground)]" lang="ja"><FormattedText text={q.prompt} /></span>
                   <span className="ml-2 text-[var(--muted-foreground)]">
                     {KINDS.find((k) => k.value === q.kind)?.label?.replace(/^[^ ]+\s/, "") ?? q.kind}
                     {q.level ? ` · ${q.level}` : ""}
@@ -785,7 +786,7 @@ function QuestionsTab() {
           {shown.slice(0, 100).map((q) => (
             <div key={q._id} className="rounded-xl border border-[var(--border)] bg-[var(--background-1)] p-3 text-sm">
               <div className="flex flex-wrap items-center gap-2">
-                <span className="font-semibold text-[var(--foreground)]" lang="ja">{q.prompt}</span>
+                <span className="font-semibold text-[var(--foreground)]" lang="ja"><FormattedText text={q.prompt} /></span>
                 {q.sub && <span className="text-[var(--muted-foreground)]">{q.sub}</span>}
                 {q.level && <LevelBadge level={q.level} />}
                 <span className="rounded-full bg-[var(--layer)] px-2 py-0.5 text-xs text-[var(--muted-foreground)]">

@@ -34,7 +34,7 @@ import {
   ExamImportJobPage,
   type ExamImportJobPageDocument,
 } from "./schemas/import-job.schema.js";
-import { contentHashOf, optionCountsOf } from "./mondai.js";
+import { contentHashOf, optionCountsOf, stripFormat } from "./mondai.js";
 import { blockMarker, keyMarker, splitCompactKey, type AnswerKeyBlock } from "./import/answer-key.js";
 import { renderPdfPage } from "../import/parsers/pdf.js";
 import { openProsePdf } from "./import/prose.js";
@@ -584,7 +584,7 @@ export class ExamImportService implements OnApplicationBootstrap {
     if (doc.status !== "needs_review" && doc.status !== "error") {
       throw new BadRequestException("Chỉ sửa được khối chưa xuất bản / chưa loại");
     }
-    const b = (body ?? {}) as { stimuli?: unknown; questions?: unknown; answers?: unknown };
+    const b = (body ?? {}) as { instruction?: unknown; stimuli?: unknown; questions?: unknown; answers?: unknown };
     const text = (v: unknown, max: number): string => (typeof v === "string" ? v.replace(/\r\n?/g, "\n").slice(0, max) : "");
     const kinds = ["passage", "cloze", "notice", "pair"];
 
@@ -594,7 +594,7 @@ export class ExamImportService implements OnApplicationBootstrap {
       const key = text(o.key, 20).trim();
       const body = text(o.body, 20000).trim();
       if (!key || stimuli.some((s) => s.key === key)) throw new BadRequestException("Bài dùng chung thiếu key hoặc trùng key");
-      if (!body) throw new BadRequestException(`Bài ${key} đang trống — xoá bài hoặc nhập nội dung`);
+      if (!stripFormat(body).trim()) throw new BadRequestException(`Bài ${key} đang trống — xoá bài hoặc nhập nội dung`);
       const kind = typeof o.kind === "string" && kinds.includes(o.kind) ? o.kind : "passage";
       const st: ParsedBlock["stimuli"][number] = { key, kind: kind as "passage", body };
       const title = text(o.title, 200).trim();
@@ -614,8 +614,8 @@ export class ExamImportService implements OnApplicationBootstrap {
       const prompt = text(o.prompt, 4000).trim();
       const options = (Array.isArray(o.options) ? o.options : []).map((x) => text(x, 1000).trim());
       const at = `Câu ${questions.length + 1}`;
-      if (!prompt) throw new BadRequestException(`${at}: thiếu đề`);
-      if (!expected.includes(options.length) || options.some((x) => !x)) {
+      if (!stripFormat(prompt).trim()) throw new BadRequestException(`${at}: thiếu đề`);
+      if (!expected.includes(options.length) || options.some((x) => !stripFormat(x).trim())) {
         throw new BadRequestException(`${at}: cần đủ ${expected.join("/")} phương án, không để trống`);
       }
       const q: ParsedBlock["questions"][number] = { no: questions.length + 1, prompt, options };
@@ -632,6 +632,7 @@ export class ExamImportService implements OnApplicationBootstrap {
     }
     if (questions.length === 0) throw new BadRequestException("Cần ít nhất một câu hỏi");
 
+    if (typeof b.instruction === "string") doc.instruction = text(b.instruction, 1000).trim();
     const given = Array.isArray(b.answers) ? b.answers : [];
     doc.answers = questions.map((_, i) => {
       const a = Number(given[i]);

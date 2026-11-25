@@ -17,6 +17,7 @@ import {
   isKanjiReadingCard,
   readingMatches,
 } from "./quiz-utils";
+import { FormattedText } from "../rich-text";
 
 /**
  * Exercises (P3-UI-07) — the drill modes that are NOT plain flashcard review.
@@ -99,7 +100,7 @@ const inputClass =
 function Stem({ q }: { q?: ChoiceQuestion }) {
   if (!q) return null;
   const at = q.mark ? q.prompt.indexOf(q.mark) : -1;
-  if (!q.mark || at < 0) return <>{q.prompt}</>;
+  if (!q.mark || at < 0) return <FormattedText text={q.prompt} />;
   return (
     <span className="text-xl font-medium leading-relaxed" lang="ja">
       {q.prompt.slice(0, at)}
@@ -771,7 +772,7 @@ export function ExercisesConsole({ variant = "exercises" }: { variant?: "exercis
                           <span className="inline-flex size-7 shrink-0 items-center justify-center rounded-full border border-[var(--border)] text-xs font-semibold text-[var(--muted-foreground)]">
                             {"ABCD"[idx] ?? idx + 1}
                           </span>
-                          <span className="min-w-0 flex-1 break-words" lang={bigOptions ? "ja" : "vi"}>{opt}</span>
+                          <span className="min-w-0 flex-1 break-words" lang={bigOptions ? "ja" : "vi"}><FormattedText text={opt} /></span>
                           {reveal && isRight && (
                             <span aria-label="đúng" className="inline-flex size-6 shrink-0 items-center justify-center rounded-full bg-[#16a34a] text-sm font-bold text-white">
                               ✓
@@ -799,7 +800,7 @@ export function ExercisesConsole({ variant = "exercises" }: { variant?: "exercis
                       }
                     >
                       {picked === question.answer ? "Chính xác!" : "Chưa đúng."} Đáp án:{" "}
-                      <span className={bigOptions ? "text-xl" : ""}>{question.answer}</span>
+                      <span className={bigOptions ? "text-xl" : ""}><FormattedText text={question.answer} /></span>
                     </p>
                     {answerCard && (
                       <p className="mt-2 text-sm text-[var(--foreground)]">
