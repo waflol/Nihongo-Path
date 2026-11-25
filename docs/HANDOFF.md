@@ -6,7 +6,9 @@
 
 ## NP-407: bàn duyệt bản nháp đề (UI mới, 25/11/2026)
 
-Giới hạn PDF nhập đề: 50 MB (trước 30 MB), bằng nhập từ vựng; chưa thử file lớn thật.
+Giới hạn PDF nhập đề: 50 MB (trước 30 MB), bằng nhập từ vựng.
+
+Sửa rò bộ nhớ khi OCR PDF scan (file 43 MB, 167 trang từng bị earlyoom tắt API ở trang 94): trang được render từ tài liệu đang mở (`renderPage`), canvas thu về 1×1 sau khi xuất PNG, `ProsePdf.close()` / `loadingTask.destroy()`. Đo với OCR giả: 167 trang đỉnh 446 MB RSS. Chưa nhập lại file thật với AI. `parsePdf` (nhập từ vựng) vẫn chưa destroy tài liệu sau khi đọc.
 
 `/admin/exams/import/[id]/drafts` thiết kế lại: phủ toàn màn dưới header; danh sách khối bên trái, mỗi lần một khối hiển thị như tờ đề, ảnh trang PDF bên cạnh, phiếu đáp án ở đáy (phím 1–4, ↑↓, J/K, Ctrl+Enter). File: `exam-import-drafts.tsx` (khung + danh sách), `exam-import-draft-block.tsx` (một khối), `exam-import-draft-model.ts` (kiểu + helper); style `.exam-desk` trong `globals.css` (sửa CSS xong phải `pm2 restart ui`). ESLint + tsc UI sạch; chụp Chromium headless với dữ liệu giả (máy chủ không có font Nhật). Chưa thử với dữ liệu/đăng nhập thật: xuất bản, loại, lưu chỉnh sửa.
 

@@ -236,29 +236,33 @@ export class ExamImportService implements OnApplicationBootstrap {
       }
       if (seed) {
         const pdf = await openProsePdf(seed.buffer, (png, n) => this.ai.ocrExamPageText(png, n));
-        numPages = pdf.numPages;
-        await this.jobs.updateOne({ _id: id }, { $set: { numPages } }).exec();
-        await this.log(id, "info", `Mở PDF: ${numPages} trang — đọc từng trang`);
-        if (pdf.totalPages > numPages) {
-          await this.log(id, "warn", `File có ${pdf.totalPages} trang nhưng chỉ đọc ${numPages} trang đầu — phần còn lại bị bỏ, hãy tách file rồi nhập tiếp`);
-        }
-        for (let n = 1; n <= pdf.numPages; n += 1) {
-          if (await this.isCancelled(id)) return;
-          if (await this.pageExists(id, n)) continue; // already checkpointed
-          const text = await pdf.pageText(n);
-          await this.log(id, text ? "info" : "warn", text ? `Trang ${n}/${numPages}: ${text.length} ký tự` : `Trang ${n}/${numPages}: trống`);
-          await this.pages.updateOne(
-            { job: id, n },
-            {
-              $set: {
-                text,
-                source: text ? "text" : "ocr",
-                marks: pdf.pageMarks?.(n) ?? [],
+        try {
+          numPages = pdf.numPages;
+          await this.jobs.updateOne({ _id: id }, { $set: { numPages } }).exec();
+          await this.log(id, "info", `Mở PDF: ${numPages} trang — đọc từng trang`);
+          if (pdf.totalPages > numPages) {
+            await this.log(id, "warn", `File có ${pdf.totalPages} trang nhưng chỉ đọc ${numPages} trang đầu — phần còn lại bị bỏ, hãy tách file rồi nhập tiếp`);
+          }
+          for (let n = 1; n <= pdf.numPages; n += 1) {
+            if (await this.isCancelled(id)) return;
+            if (await this.pageExists(id, n)) continue; // already checkpointed
+            const text = await pdf.pageText(n);
+            await this.log(id, text ? "info" : "warn", text ? `Trang ${n}/${numPages}: ${text.length} ký tự` : `Trang ${n}/${numPages}: trống`);
+            await this.pages.updateOne(
+              { job: id, n },
+              {
+                $set: {
+                  text,
+                  source: text ? "text" : "ocr",
+                  marks: pdf.pageMarks?.(n) ?? [],
+                },
               },
-            },
-            { upsert: true },
-          ).exec();
-          await this.jobs.updateOne({ _id: id }, { $set: { pagesDone: n } }).exec().catch(() => undefined);
+              { upsert: true },
+            ).exec();
+            await this.jobs.updateOne({ _id: id }, { $set: { pagesDone: n } }).exec().catch(() => undefined);
+          }
+        } finally {
+          await pdf.close();
         }
       }
 
@@ -462,26 +466,30 @@ export class ExamImportService implements OnApplicationBootstrap {
       const read = new Map<number, { marks: Mark[]; junk: Junk[] }>();
       let changed = 0;
       let skipped = 0;
-      for (const doc of docs) {
-        if (!doc.pageFrom) {
-          skipped += 1; // imported before drafts recorded their pages
-          continue;
-        }
-        const marks: Mark[] = [];
-        const junk: Junk[] = [];
-        for (let n = doc.pageFrom; n <= Math.min(doc.pageTo ?? doc.pageFrom, pdf.numPages); n += 1) {
-          let page = read.get(n);
-          if (!page) {
-            await pdf.pageText(n);
-            read.set(n, (page = { marks: pdf.pageMarks?.(n) ?? [], junk: pdf.pageJunk?.(n) ?? [] }));
+      try {
+        for (const doc of docs) {
+          if (!doc.pageFrom) {
+            skipped += 1; // imported before drafts recorded their pages
+            continue;
           }
-          marks.push(...page.marks);
-          junk.push(...page.junk);
+          const marks: Mark[] = [];
+          const junk: Junk[] = [];
+          for (let n = doc.pageFrom; n <= Math.min(doc.pageTo ?? doc.pageFrom, pdf.numPages); n += 1) {
+            let page = read.get(n);
+            if (!page) {
+              await pdf.pageText(n);
+              read.set(n, (page = { marks: pdf.pageMarks?.(n) ?? [], junk: pdf.pageJunk?.(n) ?? [] }));
+            }
+            marks.push(...page.marks);
+            junk.push(...page.junk);
+          }
+          if (!withMarks(doc, marks, (fields) => enrich(fields, marks, junk))) continue;
+          doc.markModified("parsed");
+          await doc.save();
+          changed += 1;
         }
-        if (!withMarks(doc, marks, (fields) => enrich(fields, marks, junk))) continue;
-        doc.markModified("parsed");
-        await doc.save();
-        changed += 1;
+      } finally {
+        await pdf.close();
       }
       await this.log(jobId, "info", `Bổ sung furigana, gạch chân: ${changed}/${docs.length} bản nháp thay đổi`);
       return { drafts: docs.length, changed, skipped };

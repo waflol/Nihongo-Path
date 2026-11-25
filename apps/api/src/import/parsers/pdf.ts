@@ -159,19 +159,25 @@ function columnOf(f: Frag, cols: Column[]): number {
 }
 
 /** Render one page to a PNG (scale 2 ≈ 150 dpi: sharp enough for kanji). */
-async function renderPage(page: import("pdfjs-dist/legacy/build/pdf.mjs").PDFPageProxy): Promise<Buffer> {
+export async function renderPage(page: import("pdfjs-dist/legacy/build/pdf.mjs").PDFPageProxy): Promise<Buffer> {
   const { createCanvas } = await import("@napi-rs/canvas");
   const viewport = page.getViewport({ scale: 2 });
   const canvas = createCanvas(Math.ceil(viewport.width), Math.ceil(viewport.height));
   const ctx = canvas.getContext("2d");
   ctx.fillStyle = "#fff";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
-  await page.render({
-    canvasContext: ctx as unknown as CanvasRenderingContext2D,
-    canvas: canvas as unknown as HTMLCanvasElement,
-    viewport,
-  }).promise;
-  return canvas.toBuffer("image/png");
+  try {
+    await page.render({
+      canvasContext: ctx as unknown as CanvasRenderingContext2D,
+      canvas: canvas as unknown as HTMLCanvasElement,
+      viewport,
+    }).promise;
+    return canvas.toBuffer("image/png");
+  } finally {
+    // The pixels live outside the JS heap, so GC rarely sees the pressure: free them now.
+    canvas.width = 1;
+    canvas.height = 1;
+  }
 }
 
 const OCR_ATTEMPTS = 4;
@@ -287,11 +293,12 @@ export function rowNumberIssues(pages: (OcrRow[] | null)[]): (("nonum" | "dupno"
 export async function renderPdfPage(buffer: Buffer, n: number): Promise<Buffer> {
   const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
   const doc = await pdfjs.getDocument({ data: new Uint8Array(buffer), useSystemFonts: false, verbosity: 0, wasmUrl: pdfjsWasmUrl() }).promise;
-  if (n < 1 || n > doc.numPages) throw new UnsupportedFormatError(`Page ${n} does not exist`);
   try {
+    if (n < 1 || n > doc.numPages) throw new UnsupportedFormatError(`Page ${n} does not exist`);
     return await renderPage(await doc.getPage(n));
   } finally {
-    void doc.cleanup();
+    // `cleanup()` alone keeps this call's whole copy of the file alive: destroy it.
+    await doc.loadingTask.destroy();
   }
 }
 

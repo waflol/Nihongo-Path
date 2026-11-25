@@ -1,4 +1,4 @@
-import { isGarbageText, pdfjsWasmUrl, renderPdfPage } from "../../import/parsers/pdf.js";
+import { isGarbageText, pdfjsWasmUrl, renderPage } from "../../import/parsers/pdf.js";
 import { UnsupportedFormatError } from "../../import/parsers/types.js";
 import { extractFurigana, findStarSlots, findUnderlines, type Junk, type Mark, type Rule } from "./marks.js";
 
@@ -26,6 +26,8 @@ export interface ProsePdf {
   pageMarks?(n: number): Mark[];
   /** The furigana lines removed from that page's text (to clean up an earlier import). */
   pageJunk?(n: number): Junk[];
+  /** Release the parsed file; call once all reading is done. */
+  close(): Promise<void>;
 }
 
 /** Pages read per file. A 40-paper collection runs ~470 pages; text pages are read one at a time (page.cleanup) so RSS stays bounded. */
@@ -263,7 +265,8 @@ export async function openProsePdf(
       }
       // No usable text layer → render + OCR (the scan path).
       if (!ocr) return lines.join("\n"); // empty when neither text nor an OCR callback
-      const png = await renderPdfPage(buffer, n);
+      // Render from the open document: re-opening the file per page costs its whole size each time.
+      const png = await renderPage(page);
       const text = (await ocr(png, n)) ?? "";
       return text;
     } finally {
@@ -272,5 +275,12 @@ export async function openProsePdf(
     }
   };
 
-  return { numPages, totalPages: doc.numPages, pageText, pageMarks: (n) => marks.get(n) ?? [], pageJunk: (n) => junk.get(n) ?? [] };
+  return {
+    numPages,
+    totalPages: doc.numPages,
+    pageText,
+    pageMarks: (n) => marks.get(n) ?? [],
+    pageJunk: (n) => junk.get(n) ?? [],
+    close: () => doc.loadingTask.destroy(),
+  };
 }
