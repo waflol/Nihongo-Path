@@ -115,7 +115,7 @@ Plan chi tiết: [plans/plan-jlpt-question-bank.md](./plans/plan-jlpt-question-b
 
 ### P5 — Hạn mức & quản trị
 
-> **Cập nhật 25/11/2026:** NP-501/502/503 đã code xong trong commit `fff98f1`, trạng thái 🟡 (§3): còn verify live trên VPS trước khi đóng ticket GitHub #18.
+> **Cập nhật 25/11/2026:** NP-501/502/503 đã code xong trong commit `fff98f1`; NP-504 đã rà soát quyền endpoint admin, không phát hiện endpoint admin thiếu authorization check. Trạng thái 🟡 (§3): còn verify live trên VPS trước khi đóng ticket GitHub #18.
 
 | Ticket | Cụm task | Chặn bởi |
 |---|---|---|

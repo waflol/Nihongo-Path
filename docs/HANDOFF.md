@@ -80,7 +80,7 @@ Code + spec + UI đã có; còn verify API/trình duyệt thật.
 
 **CHƯA LÀM (việc agent kế tiếp, theo thứ tự):**
 1. **Verify thật NP-024 + NP-025 + quota engine** (chạy được trên VPS là đóng): API `/admin/users` đổi role + `/admin/logs` kiểm before/after; API `/feedback` POST + `/admin/feedback` đổi trạng thái → kiểm `history`; trình duyệt `/account` (gửi góp ý), `/admin/feedback` (lọc + lịch sử), `/admin/reports` (báo lỗi thẻ, giờ có history). Quota: `/admin/entitlements` (tạo config `ai-sentence-grade`, FREE=3/THÁNG) → thử chấm câu ở `/learn` cho tới khi 429; đổi gói 1 user FREE→VIP ở bảng Người dùng → chấm lại không còn chặn.
-2. **NP-504 (P5-SEC-01)**: rà least privilege toàn endpoint admin (`grep -L "@Roles"` các controller admin — giờ đã gồm `admin/entitlements`). **Gốc P5-DOC-01 đã xong cùng commit quota** (ADR-entitlements.md + `database.md` §5b/§9); sau rà sweep xong NP-504.
+2. ✅ **NP-504 (P5-SEC-01)**: đã rà least privilege toàn endpoint admin, gồm `admin/entitlements`; tất cả controller admin đều có `@ContentAdmin()`/`@Roles`, không phát hiện endpoint thiếu authorization check. Security review focused không có finding confidence ≥8/10. **Gốc P5-DOC-01 đã xong cùng commit quota** (ADR-entitlements.md + `database.md` §5b/§9).
 3. ✅ **Quota engine NP-501/502/503** — xong (commit 3 bên dưới).
 
 ### ✅ Commit 3 — Quota engine (P5-QUOTA-01/03/04/05, P5-ADMIN-04): hạn mức theo gói, cấu hình hoá, audit
