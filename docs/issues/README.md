@@ -17,7 +17,7 @@ Mỗi file là một issue (ID `NP-nnn`); nguồn gốc và tiến độ tổng 
 | [NP-022](./NP-022.md) | done | - | Verify live API đặt lại tiến độ deck + xuất CSV |
 | [NP-023](./NP-023.md) | done | - | Bấm thử wizard nhập, màn admin deck chung, thêm/xoá thẻ + đánh giá batch |
 | [NP-024](./NP-024.md) | partial | - | Admin: RBAC kiểm 403, quản lý user không tự nâng quyền, audit có giá trị trước/sau |
-| [NP-025](./NP-025.md) | partial | - | Phản hồi người dùng: mở rộng từ "báo lỗi thẻ" sang phản hồi chung, có trạng thái + lịch sử xử lý |
+| [NP-025](./NP-025.md) | done | - | Phản hồi người dùng: mở rộng từ "báo lỗi thẻ" sang phản hồi chung, có trạng thái + lịch sử xử lý |
 | [NP-026](./NP-026.md) | done | - | Kiểm chứng FSRS-4.5: chạy srs.algorithm.spec.ts, so lịch với SM-2 cũ, thử nâng cấp thẻ SM-2 thật |
 | [NP-027](./NP-027.md) | partial | - | Thử Antigravity CLI với tài khoản Google thật |
 | [NP-101](./NP-101.md) | off-roadmap | - | FSRS-4.5 thay SM-2 (API + bản sao client), nâng cấp lười thẻ cũ |
@@ -47,7 +47,7 @@ Mỗi file là một issue (ID `NP-nnn`); nguồn gốc và tiến độ tổng 
 | [NP-409](./NP-409.md) | partial | P4 | UI làm đề JLPT theo phần: bài đọc, câu ★, điểm từng phần |
 | [NP-501](./NP-501.md) | partial | P5 | Schema + service quota reserve→settle→release, reset theo kỳ/tz (P5-QUOTA-01…05) |
 | [NP-502](./NP-502.md) | partial | P5 | EntitlementGuard/QuotaGuard + chính sách vượt hạn mức (P5-QUOTA-04/06) |
-| [NP-503](./NP-503.md) | partial | P5 | Màn cấu hình hạn mức theo gói (P5-ADMIN-04) |
+| [NP-503](./NP-503.md) | done | P5 | Màn cấu hình hạn mức theo gói (P5-ADMIN-04) |
 | [NP-504](./NP-504.md) | done | P5 | Rà least privilege endpoint admin + ADR entitlement (P5-SEC-01, P5-DOC-01) |
 | [NP-601](./NP-601.md) | blocked | P6 | ADR media + storage + giới hạn (P6-MEDIA-01, 04) |
 | [NP-602](./NP-602.md) | todo | P6 | Upload, state machine, SSRF, retention (P6-MEDIA-02/03/05/06) |
