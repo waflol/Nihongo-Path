@@ -1,4 +1,5 @@
 import { cookies } from "next/headers";
+import { connection } from "next/server";
 import { apiFetch, ApiError } from "./api";
 import { SESSION_COOKIE } from "./constants";
 
@@ -43,6 +44,10 @@ export async function getSession(): Promise<SessionState> {
   if (!refreshToken) {
     return { authenticated: false, user: null, accessToken: null };
   }
+  // Keep the API round-trip out of every prerender pass (Next 16
+  // cacheComponents): otherwise a failing fetch (API down / restarting) trips
+  // "unstable value Date.now() while prerendering" via undici's timers.
+  await connection();
 
   try {
     const res = await apiFetch<{
