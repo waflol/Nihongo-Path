@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   HttpStatus,
@@ -19,6 +20,7 @@ import {
   IsOptional,
   IsString,
   Min,
+  ValidateIf,
   ValidateNested,
 } from "class-validator";
 import { Type } from "class-transformer";
@@ -33,12 +35,14 @@ import { OVER_LIMIT_POLICIES, PLANS, QUOTA_PERIODS } from "./schemas/feature-con
 class LimitDto {
   @IsIn(PLANS as unknown as string[]) plan: string;
 
+  /** `null` = unlimited. A missing value is still rejected. */
+  @ValidateIf((_, value) => value !== null)
   @IsInt()
   @Min(0)
   limit: number | null;
 }
 
-class FeatureConfigDto {
+export class FeatureConfigDto {
   @IsOptional()
   @IsBoolean()
   enabled?: boolean;
@@ -127,6 +131,16 @@ export class AdminEntitlementsController {
       summary: `entitlement: ${featureKey}`,
     });
     return after;
+  }
+
+  @Delete("features/:featureKey")
+  @ContentAdmin()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: "Delete a feature config (the feature becomes unlimited; usage history stays)" })
+  async deleteFeature(@Param("featureKey") featureKey: string, @Req() req: AuditRequest) {
+    const before = await this.service.deleteFeature(featureKey);
+    attachAuditNote(req, { before, summary: `entitlement deleted: ${featureKey}` });
+    return { featureKey, deleted: true };
   }
 
   @Patch("users/:id/plan")

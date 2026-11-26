@@ -13,6 +13,14 @@ import { FEEDBACK_SOURCES, FEEDBACK_STATUSES, UserFeedback } from "./schemas/use
 /** Max open general feedbacks one user may file per day (anti-spam, like card reports). */
 const DAILY_LIMIT = 30;
 
+/** Populated `history.by` → display name / email; a dangling ref → its id. */
+function adminName(by: unknown): string | null {
+  if (!by) return null;
+  const u = by as { email?: string; displayName?: string; _id?: unknown };
+  if (u.displayName || u.email) return (u.displayName || u.email) as string;
+  return String(u._id ?? by);
+}
+
 @Injectable()
 export class FeedbackService {
   constructor(@InjectModel(UserFeedback.name) private readonly feedbacks: Model<UserFeedbackDocument>) {}
@@ -57,18 +65,26 @@ export class FeedbackService {
     return docs.map((d) => this.shape(d));
   }
 
-  /** Admin inbox: filter by status / source, newest first. */
+  /**
+   * Admin inbox: filter by status / source, newest first. `counts` is the
+   * per-status total under the same source filter, so every status tab can
+   * show its number, not only the one being viewed.
+   */
   async adminList(opts: { status?: string; source?: string; page?: number; limit?: number }) {
     const page = Math.max(1, opts.page ?? 1);
     const limit = Math.min(100, Math.max(1, opts.limit ?? 50));
-    const filter: FilterQuery<UserFeedback> = {};
+    const bySource: FilterQuery<UserFeedback> = {};
+    if (opts.source && (FEEDBACK_SOURCES as readonly string[]).includes(opts.source)) bySource.source = opts.source;
+    const filter: FilterQuery<UserFeedback> = { ...bySource };
     if (opts.status && (FEEDBACK_STATUSES as readonly string[]).includes(opts.status)) filter.status = opts.status;
-    if (opts.source && (FEEDBACK_SOURCES as readonly string[]).includes(opts.source)) filter.source = opts.source;
-    const [docs, total] = await Promise.all([
+    const [docs, total, grouped] = await Promise.all([
       this.feedbacks.find(filter).sort({ createdAt: -1 }).skip((page - 1) * limit).limit(limit).populate("user", "email displayName").lean(),
       this.feedbacks.countDocuments(filter),
+      this.feedbacks.aggregate<{ _id: string; n: number }>([{ $match: bySource }, { $group: { _id: "$status", n: { $sum: 1 } } }]),
     ]);
-    return { page, limit, total, items: docs.map((d) => this.shape(d)) };
+    const counts = Object.fromEntries(FEEDBACK_STATUSES.map((st) => [st, 0])) as Record<string, number>;
+    for (const g of grouped) counts[g._id] = g.n;
+    return { page, limit, total, counts, items: docs.map((d) => this.shape(d)) };
   }
 
   /**
@@ -100,7 +116,12 @@ export class FeedbackService {
   /** One feedback with its reporter + full history (admin detail view). */
   async adminDetail(id: string) {
     if (!Types.ObjectId.isValid(id)) throw new NotFoundException("Góp ý không tồn tại");
-    const doc = await this.feedbacks.findById(id).populate("user", "email displayName").lean().exec();
+    const doc = await this.feedbacks
+      .findById(id)
+      .populate("user", "email displayName")
+      .populate("history.by", "email displayName")
+      .lean()
+      .exec();
     if (!doc) throw new NotFoundException("Góp ý không tồn tại");
     const u = (doc.user as unknown as { email?: string; displayName?: string } | null) ?? null;
     return {
@@ -109,7 +130,7 @@ export class FeedbackService {
       history: (doc.history ?? []).map((h) => ({
         from: h.from ?? null,
         to: h.to,
-        by: h.by ? String(h.by) : null,
+        by: adminName(h.by),
         note: h.note ?? null,
         at: h.at,
       })),

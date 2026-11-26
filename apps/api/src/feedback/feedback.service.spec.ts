@@ -91,3 +91,18 @@ describe("FeedbackService (P5-FEEDBACK-01/02)", () => {
     );
   });
 });
+
+describe("FeedbackService.adminList counts", () => {
+  it("returns a per-status count under the source filter, zero-filled", async () => {
+    const chain = { sort: () => chain, skip: () => chain, limit: () => chain, populate: () => chain, lean: async () => [] };
+    const aggregate = vi.fn(async () => [
+      { _id: "OPEN", n: 3 },
+      { _id: "RESOLVED", n: 1 },
+    ]);
+    const svc = new FeedbackService({ find: () => chain, countDocuments: async () => 3, aggregate } as never);
+    const res = await svc.adminList({ status: "OPEN", source: "exam" });
+    expect(res.counts).toEqual({ OPEN: 3, IN_PROGRESS: 0, RESOLVED: 1, REJECTED: 0 });
+    // Counts ignore the status filter (all tabs), keep the source filter.
+    expect(aggregate).toHaveBeenCalledWith([{ $match: { source: "exam" } }, { $group: { _id: "$status", n: { $sum: 1 } } }]);
+  });
+});

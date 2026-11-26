@@ -96,6 +96,18 @@ export class EntitlementsService {
     return this.flatten(doc);
   }
 
+  /**
+   * Remove a feature row. With no row the feature is ungated (unlimited, as
+   * before it was configured). Reservations and usage records are kept so the
+   * history survives a delete-then-recreate. Returns the deleted snapshot.
+   */
+  async deleteFeature(featureKey: string): Promise<Record<string, unknown>> {
+    const before = await this.readFeature(featureKey);
+    if (!before) throw new NotFoundException("Feature config not found");
+    await this.configs.deleteOne({ featureKey }).exec();
+    return before;
+  }
+
   private flatten(doc: unknown): Record<string, unknown> {
     const d = doc as unknown as Record<string, unknown>;
     return {

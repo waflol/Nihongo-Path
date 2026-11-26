@@ -12,6 +12,15 @@ Kéo thả đổi thứ tự: `components/admin/use-drag-reorder.ts` (pointer ev
 
 ---
 
+## Admin: Hạn mức & gói + Hộp thư phản hồi làm lại UI (26/11/2026)
+
+- **Hạn mức & gói** (`/admin/entitlements`): `entitlements-console.tsx` (khung: thống kê, thêm tính năng + gợi ý, tìm, toast) + `entitlement-card.tsx` (một tính năng). Mỗi gói một ô: **Số lượt / Vô hạn / Không cấp** — đúng ngữ nghĩa API: không có dòng gói = 403, `null` = vô hạn, số (kể cả 0) = giới hạn. UI cũ hiện "—" cho gói không có dòng và lưu khi rời ô (select hay hụt); giờ là bản nháp + nút Lưu/Huỷ, công tắc bật/tắt lưu ngay.
+- **Xoá cấu hình**: `DELETE /admin/entitlements/features/:featureKey` (`@ContentAdmin`, audit `before`), `EntitlementsService.deleteFeature` (404 nếu không có); proxy UI thêm `DELETE`. Xoá xong tính năng **không còn bị giới hạn**; reservation/usage giữ nguyên.
+- **Hộp thư phản hồi** (`/admin/feedback`): `feedback-console.tsx` (2 cột: danh sách + chi tiết; điện thoại mở chi tiết thay danh sách) + `feedback-detail.tsx` (đề xuất, lịch sử dạng timeline, ghi chú + đổi trạng thái). API: `adminList` trả thêm `counts` theo trạng thái (cùng bộ lọc nguồn — trước đây tab khác luôn 0); `adminDetail` populate `history.by` → tên/email admin thay vì id. Có "Tải thêm" (page), tìm trong trang đã tải.
+- Đã chạy: tsc API + UI, eslint 4 file UI, vitest `src/entitlements` (26) + `src/feedback` (7, thêm 1 spec counts). Chụp Chromium headless 1280/390 với dữ liệu giả (trang preview tạm đã xoá). Đã `pm2 restart api` (route DELETE trả 401 khi chưa đăng nhập). Chưa thử với đăng nhập admin thật.
+
+---
+
 ## Thứ tự model đọc PDF (26/11/2026)
 
 `/admin/ai`: thêm 2 tab thứ tự `ocr-exam` (chép trang đề scan + tách khối) và `ocr-vocab` (PDF từ vựng scan), lưu ở `taskPriority`, chỉnh tay (benchmark không đụng); chưa chỉnh thì theo `priority`. Kiểu `OrderTask` (`ai-benchmark.ts`, UI `lib/ai-benchmark-score.ts`). Lịch sử gọi AI có mục đích `exam-import` ("Đọc đề thi từ file PDF"), lời gọi tách khối ghi `Tách khối n`. Model chỉ nhận chữ không còn bị khoá khi từ chối ảnh (cả đề lẫn từ vựng). Vitest `src/ai src/exams src/import`, typecheck API + UI đạt; ESLint `ai-services-console.tsx` còn 4 lỗi `set-state-in-effect` có từ trước. Chưa thử trên trình duyệt.
@@ -27,6 +36,16 @@ File `Drill_&_Drill_N2-Moji_Goi.pdf` (167 trang scan) nhập ra 27 khối, 18 l�
 - OCR đề: Gemini trả text thường (trước bị ép JSON), prompt giữ `【n】`/`正解`/`第N回`; model chỉ nhận text (400 `content must be a string`) không còn bị khoá 1 giờ.
 - Đã chạy: vitest `src/exams` + 3 spec AI (212 đạt, 1 skip), typecheck. `ai-antigravity-cli.spec` từng timeout 5 s một lần khi chạy cả `src/ai`, chạy lại đạt.
 - **Chưa nhập lại file thật**: test dùng text tự viết theo bố cục sách; chưa biết OCR thật đọc banner/ngoặc/đáp án ra sao. Gạch chân từ được hỏi (漢字読み, 表記) không có ở bản OCR — người duyệt phải thêm.
+
+---
+
+## P5: kiểm chứng trên máy chủ (26/11/2026)
+
+- Đạt: 148/151 route admin trả 403/401; khoá tài khoản; audit trước/sau (trạng thái, gói, hạn mức); phản hồi và lịch sử; quota 429, 403, đổi gói, sửa limit có hiệu lực ngay. Chi tiết trong `issues/NP-024, 025, 501…503`.
+- Đã sửa: để trống limit (không giới hạn) bị 400 — `entitlements.controller.ts` + `entitlements.controller.spec.ts` (chưa commit lúc ghi mục này). 26 spec, typecheck, oxlint `src/entitlements/` đạt.
+- Checklist: P5-FEEDBACK-01/02, P5-ADMIN-04 → `[x]`; NP-025, NP-503 `done`. Tổng 103/193. Mục này thay số liệu P5 ở phần đồng bộ 25/11.
+- Còn: audit phản hồi thiếu trước/sau; 5 request song song ở lượt cuối đều 429; chưa thử đổi role `SUPER_ADMIN`, USER mở `/admin`, `/account`, lịch sử báo lỗi thẻ, reset kỳ, `ALLOW`. Chưa đụng issue GitHub.
+- Bẫy: `pm2 restart api` / watch rebuild có thể để lại `node dist/main` mồ côi giữ :3000 (tiến trình mới thoát code 1) → kill rồi restart. Sửa code API sẽ giết job nhập PDF đang chạy.
 
 ---
 
