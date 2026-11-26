@@ -4,6 +4,12 @@
 
 ---
 
+## Bỏ "Góp ý & báo lỗi" (báo lỗi thẻ) — dùng Hộp thư phản hồi (26/11/2026)
+
+User yêu cầu bỏ vì đã có Hộp thư phản hồi. Đã xoá: trang `/admin/reports` + `card-reports-console.tsx` + mục menu trong `admin-shell.tsx`; nút cờ "Báo lỗi thẻ" + `card-report-dialog.tsx` trong phiên ôn (`study-session.tsx`). Banner `?card=` ở `deck-cards-manager.tsx` đổi chữ trung tính. **Giữ nguyên**: API card-report backend + dữ liệu cũ (không còn UI gọi, có thể dọn sau); câu chữ "báo lỗi thẻ" trong `/privacy`, `/terms`, `legal-contact.tsx` chưa sửa. `.next/types/validator.ts` cũ còn trỏ `/admin/reports` → tsc báo lỗi đến khi build/dev lại.
+
+---
+
 ## `/admin/ai` thiết kế lại (26/11/2026)
 
 Một cột: đầu trang gọn + nút "Thêm dịch vụ" mở form (tự mở khi chưa có dịch vụ); tab tác vụ chia 2 nhóm, tự xuống dòng (trước bị cắt); danh sách là chuỗi ưu tiên đánh số nối bằng đường dọc. Tải lỗi (vd. API đang restart → 500 `ECONNREFUSED`) hiện thông báo + "Thử lại", không còn báo "0 dịch vụ". Đã chụp Chromium headless dữ liệu giả (850, 1100, 360 px; sáng/tối; lỗi, rỗng) qua trang tạm đã xoá; chưa thử đăng nhập thật. tsc đạt; ESLint còn 4 lỗi `set-state-in-effect` cũ.

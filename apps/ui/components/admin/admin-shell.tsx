@@ -45,16 +45,6 @@ const NAV: NavItem[] = [
     ),
   },
   {
-    href: "/admin/reports",
-    label: "Góp ý & báo lỗi",
-    desc: "Báo lỗi thẻ, ngữ pháp, giải thích",
-    icon: (
-      <svg {...iconProps}>
-        <path d="M4 22V4M4 4h13l-2 4 2 4H4" />
-      </svg>
-    ),
-  },
-  {
     href: "/admin/feedback",
     label: "Hộp thư phản hồi",
     desc: "Góp ý chung: từ vựng, transcript, bản dịch + lịch sử xử lý",

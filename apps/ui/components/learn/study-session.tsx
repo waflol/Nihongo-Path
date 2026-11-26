@@ -6,7 +6,6 @@ import { useSearchParams } from "next/navigation";
 import { seededShuffle } from "./quiz-utils";
 import { PosChips, displayFront } from "@/components/learn/reading-fields";
 import { ConfirmDialog } from "@/components/learn/confirm-dialog";
-import { CardReportDialog } from "@/components/learn/card-report-dialog";
 import { SentenceFurigana } from "@/components/learn/furigana";
 import { StudyComplete } from "@/components/learn/study-complete";
 import { hanViet } from "@/lib/han-viet";
@@ -154,7 +153,6 @@ function StudySessionInner({ mode }: { mode: "learn" | "review" }) {
   const [queue, setQueue] = useState<Queue | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [reportOpen, setReportOpen] = useState(false);
 
   // Session state: index over the merged queue, flipped, done count.
   const [index, setIndex] = useState(0);
@@ -512,7 +510,7 @@ function StudySessionInner({ mode }: { mode: "learn" | "review" }) {
   // Keyboard shortcuts: Space/Enter flip · 0–3 grade · ←/→ prev/next.
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
-      if (!current || reportOpen) return;
+      if (!current) return;
       const target = event.target as HTMLElement | null;
       if (target && /INPUT|TEXTAREA|SELECT/.test(target.tagName)) return;
       if (target?.closest("[data-speak]")) return; // speaker buttons keep their own Space/Enter
@@ -539,7 +537,7 @@ function StudySessionInner({ mode }: { mode: "learn" | "review" }) {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [current, grade, go, reportOpen]);
+  }, [current, grade, go]);
 
   async function switchDeck(next: DeckRef) {
     await flush(); // don't leave reviews behind on the old deck
@@ -948,16 +946,7 @@ function StudySessionInner({ mode }: { mode: "learn" | "review" }) {
               startSide={startSide}
               flipped={flipped}
               onFlip={() => setFlipped((f) => !f)}
-              onReport={deck?.shared ? () => setReportOpen(true) : undefined}
             />
-            {deck?.shared && (
-              <CardReportDialog
-                open={reportOpen}
-                cardId={current.id}
-                term={current.front}
-                onClose={() => setReportOpen(false)}
-              />
-            )}
           </div>
 
           {/* ── Grading (always available — even before flipping) ────── */}
@@ -1153,7 +1142,6 @@ function LearnCard({
   startSide,
   flipped,
   onFlip,
-  onReport,
 }: {
   front: string;
   back: string;
@@ -1173,8 +1161,6 @@ function LearnCard({
   startSide: "front" | "back";
   flipped: boolean;
   onFlip: () => void;
-  /** Present only on shared-deck cards: opens the error-report dialog. */
-  onReport?: () => void;
 }) {
   const { supported, speak, speakingId } = useJapaneseSpeech();
   const face =
@@ -1339,24 +1325,6 @@ function LearnCard({
           {plates[1].content}
         </div>
       </div>
-
-      {onReport && (
-        <button
-          type="button"
-          data-speak
-          onClick={(e) => {
-            e.stopPropagation();
-            onReport();
-          }}
-          aria-label="Báo lỗi thẻ"
-          title="Báo lỗi / góp ý sửa thẻ này"
-          className="absolute left-3 top-3 z-10 inline-flex h-7 w-7 items-center justify-center rounded-full border border-white/40 bg-white/80 text-[var(--muted-foreground)] shadow-sm transition hover:bg-white hover:text-[var(--foreground)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--primary-focus)]"
-        >
-          <svg viewBox="0 0 24 24" className="size-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <path d="M4 22V4M4 4h13l-2 4 2 4H4" />
-          </svg>
-        </button>
-      )}
 
       {/* Term audio: always on top, doesn't rotate with the card. */}
       {supported && (

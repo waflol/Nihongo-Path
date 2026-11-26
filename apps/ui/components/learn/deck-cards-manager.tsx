@@ -1112,7 +1112,7 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
       {/* Cards */}
       {focusCard && (
         <div className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[var(--primary)] bg-[color-mix(in_srgb,var(--primary)_10%,transparent)] px-4 py-2.5 text-sm text-[var(--foreground)]">
-          <span>Đang xem thẻ được báo lỗi — sửa rồi lưu, sau đó đánh dấu “Đã sửa” ở trang báo lỗi.</span>
+          <span>Đang xem một thẻ cụ thể.</span>
           <button type="button" onClick={clearFocus} className="font-semibold text-[var(--primary)] hover:underline">
             Xem cả bộ thẻ
           </button>
