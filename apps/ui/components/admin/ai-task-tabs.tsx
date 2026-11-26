@@ -1,41 +1,55 @@
 "use client";
 
-import { TASK_LABELS, type BenchTask } from "@/lib/ai-benchmark-score";
+import { TASK_LABELS, type OrderTask } from "@/lib/ai-benchmark-score";
 
-const TASKS = ["translate", "write", "grammar", "verify"] as const satisfies readonly BenchTask[];
+/** Two families of work; inside "Đọc PDF" the tab only needs to name the kind of file. */
+const GROUPS: { name: string; tasks: { id: OrderTask; short?: string }[] }[] = [
+  { name: "Học tập", tasks: [{ id: "translate" }, { id: "write" }, { id: "grammar", short: "Ngữ pháp" }, { id: "verify" }] },
+  { name: "Đọc file PDF", tasks: [{ id: "ocr-exam", short: "Đề thi" }, { id: "ocr-vocab", short: "Từ vựng" }] },
+];
 
-/** Segmented tab strip shared by the priority list and the benchmark panel. */
+/** Picks which job's priority order is shown. Wraps instead of scrolling, so no tab is ever cut off. */
 export function AiTaskTabs({
   value,
   onChange,
   label,
   className = "",
 }: {
-  value: BenchTask;
-  onChange: (t: BenchTask) => void;
+  value: OrderTask;
+  onChange: (t: OrderTask) => void;
   label: string;
   className?: string;
 }) {
   return (
-    <div role="tablist" aria-label={label} className={`flex max-w-full overflow-x-auto rounded-full border border-[var(--border)] p-0.5 [scrollbar-width:none] sm:inline-flex [&::-webkit-scrollbar]:hidden ${className}`}>
-      {TASKS.map((k) => {
-        const active = value === k;
-        return (
-          <button
-            key={k}
-            type="button"
-            role="tab"
-            aria-selected={active}
-            onClick={() => onChange(k)}
-            className={
-              "shrink-0 whitespace-nowrap rounded-full px-3.5 py-2 text-sm font-medium sm:px-4 sm:py-1.5 " +
-              (active ? "bg-[var(--primary)] text-[var(--primary-foreground,#fff)]" : "text-[var(--muted-foreground)] hover:text-[var(--foreground)]")
-            }
-          >
-            {TASK_LABELS[k]}
-          </button>
-        );
-      })}
+    <div role="tablist" aria-label={label} className={`flex flex-wrap items-end gap-x-6 gap-y-3 ${className}`}>
+      {GROUPS.map((g) => (
+        <div key={g.name} role="presentation" className="w-full min-w-0 sm:w-auto">
+          <p aria-hidden="true" className="mb-1.5 px-1 text-xs text-[var(--muted-foreground)]">{g.name}</p>
+          <div role="presentation" className="grid grid-cols-2 gap-1 rounded-xl border border-[var(--border)] bg-[var(--layer)] p-1 sm:flex sm:flex-wrap">
+            {g.tasks.map(({ id, short }) => {
+              const active = value === id;
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  role="tab"
+                  aria-selected={active}
+                  aria-label={TASK_LABELS[id]}
+                  onClick={() => onChange(id)}
+                  className={
+                    "min-h-10 whitespace-nowrap rounded-lg px-3.5 text-sm font-medium transition-colors sm:min-h-9 " +
+                    (active
+                      ? "bg-[var(--primary)] text-[var(--primary-foreground,#fff)] shadow-sm"
+                      : "text-[var(--muted-foreground)] hover:bg-[var(--layer-hover)] hover:text-[var(--foreground)]")
+                  }
+                >
+                  {short ?? TASK_LABELS[id]}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

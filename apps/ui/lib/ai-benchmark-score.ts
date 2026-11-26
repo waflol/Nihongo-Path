@@ -9,4 +9,6 @@ export const MIN_ACCURACY = 75;
 
 /** The jobs scored separately; each has its own priority order. */
 export type BenchTask = "translate" | "write" | "grammar" | "pronounce" | "verify";
-export const TASK_LABELS: Record<BenchTask, string> = { translate: "Dịch", write: "Đặt câu", grammar: "Phân tích ngữ pháp", pronounce: "Kiểm tra từ vựng", verify: "Kiểm tra từ vựng" };
+/** Every job with its own priority order: the scored ones plus PDF reading (set by hand only). */
+export type OrderTask = BenchTask | "ocr-exam" | "ocr-vocab";
+export const TASK_LABELS: Record<OrderTask, string> = { "ocr-exam": "Đọc PDF đề thi", "ocr-vocab": "Đọc PDF từ vựng", translate: "Dịch", write: "Đặt câu", grammar: "Phân tích ngữ pháp", pronounce: "Kiểm tra từ vựng", verify: "Kiểm tra từ vựng" };

@@ -30,6 +30,13 @@ export interface ProsePdf {
   close(): Promise<void>;
 }
 
+/** No service could read this page image: it is NOT a blank page and must be read again. */
+export class OcrFailedError extends Error {
+  constructor(readonly page: number) {
+    super(`OCR failed on page ${page}`);
+  }
+}
+
 /** Pages read per file. A 40-paper collection runs ~470 pages; text pages are read one at a time (page.cleanup) so RSS stays bounded. */
 const MAX_EXAM_PAGES = 600;
 
@@ -222,8 +229,8 @@ async function drawnRules(pdfjs: Pdfjs, page: { getOperatorList(): Promise<{ fnA
 
 /**
  * Open an exam PDF and read its pages as prose. A page with no text layer is
- * rendered and OCR'd (best effort — `null` becomes an empty page so one bad
- * page never blocks the import).
+ * rendered and OCR'd; a `null` from the reader throws {@link OcrFailedError} so
+ * the caller never mistakes an unread page for a blank one.
  */
 export async function openProsePdf(
   buffer: Buffer,
@@ -267,7 +274,8 @@ export async function openProsePdf(
       if (!ocr) return lines.join("\n"); // empty when neither text nor an OCR callback
       // Render from the open document: re-opening the file per page costs its whole size each time.
       const png = await renderPage(page);
-      const text = (await ocr(png, n)) ?? "";
+      const text = await ocr(png, n);
+      if (text === null) throw new OcrFailedError(n);
       return text;
     } finally {
       page.cleanup();

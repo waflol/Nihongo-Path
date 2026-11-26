@@ -19,7 +19,7 @@ export const RULE_TYPES: ReadonlySet<MondaiType> = new Set<MondaiType>([
 ]);
 
 /** `45 ）prompt` / `3)prompt` — NFKC leaves a space before the bracket in some PDFs. */
-const Q_BRACKET = /^(\d{1,2})\s*[)）]\s*(.*)$/;
+const Q_BRACKET = /^(\d{1,3})\s*[)）]\s*(.*)$/;
 /** `12 prompt` — papers that print the number without a bracket. */
 const NUM_LINE = /^(\d{1,2})(?:\s+|(?=[「『（(]))(\S.*)$/;
 /** Page furniture that lands inside a block: part banners, scoring notes, page footers. */

@@ -15,7 +15,7 @@ import {
 } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { ContentAdmin } from "../auth/decorators/roles.decorator.js";
-import type { BenchTask } from "./ai-benchmark.js";
+import { ORDER_TASKS, type BenchTask, type OrderTask } from "./ai-benchmark.js";
 import { AiCallLogService } from "./ai-call-log.service.js";
 import { AI_LOG_PURPOSES, type AiLogPurpose } from "./ai-call-log.schema.js";
 import { AiExampleService, type AiTask } from "./ai-example.service.js";
@@ -25,6 +25,13 @@ import { AiServicesService } from "./ai-services.service.js";
 function parseTask(v: unknown): BenchTask {
   if (v === "translate" || v === "write" || v === "grammar" || v === "pronounce" || v === "verify") return v;
   throw new BadRequestException("task must be translate, write, grammar, pronounce or verify");
+}
+
+/** A task that has its own order: the scored ones plus PDF reading. */
+function parseOrderTask(v: unknown): OrderTask {
+  const task = ORDER_TASKS.find((t) => t === v);
+  if (task) return task;
+  throw new BadRequestException(`task must be one of ${ORDER_TASKS.join(", ")}`);
 }
 
 /**
@@ -104,9 +111,9 @@ export class AiServicesController {
   @Post("services/reorder")
   @HttpCode(HttpStatus.OK)
   @ContentAdmin()
-  @ApiOperation({ summary: "Set the priority order of ONE task — translate, write or grammar (first id is tried first)" })
+  @ApiOperation({ summary: "Set the priority order of ONE task, including ocr-exam / ocr-vocab for PDF reading (first id is tried first)" })
   reorder(@Body() body: { ids?: string[]; task?: string }) {
-    return this.services.reorder(body?.ids ?? [], parseTask(body?.task));
+    return this.services.reorder(body?.ids ?? [], parseOrderTask(body?.task));
   }
 
   @Patch("services/:id")

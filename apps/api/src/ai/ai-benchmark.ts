@@ -10,6 +10,13 @@
 export type BenchTask = "translate" | "write" | "grammar" | "pronounce" | "verify";
 export const BENCH_TASKS: readonly BenchTask[] = ["translate", "write", "grammar", "pronounce", "verify"];
 
+/**
+ * Jobs with a priority order the admin sets by hand: every scored task, plus
+ * reading a PDF (exam import, vocabulary import) which no benchmark measures.
+ */
+export const ORDER_TASKS = [...BENCH_TASKS, "ocr-exam", "ocr-vocab"] as const;
+export type OrderTask = BenchTask | "ocr-exam" | "ocr-vocab";
+
 /** One pronunciation answer, as parsed from the model. */
 export interface PronounceAnswer {
   reading: string;

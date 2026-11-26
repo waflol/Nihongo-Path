@@ -5,7 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 
 interface LogRow {
   _id: string;
-  purpose: "example" | "test" | "vocab" | "ocr" | "translate" | "grammar" | "pronounce" | "verify" | "eval" | "judge";
+  purpose: "example" | "test" | "vocab" | "ocr" | "translate" | "grammar" | "pronounce" | "verify" | "eval" | "judge" | "exam-import";
   serviceId: string;
   serviceLabel: string;
   provider: string;
@@ -181,6 +181,7 @@ export function AiCallLogPanel() {
           <option value="eval">Đánh giá (trả lời)</option>
           <option value="judge">Đánh giá (AI chấm)</option>
           <option value="ocr">Đọc từ vựng từ file PDF</option>
+          <option value="exam-import">Đọc đề thi từ file PDF</option>
           <option value="translate">Dịch</option>
           <option value="grammar">Phân tích ngữ pháp</option>
         </select>
@@ -275,6 +276,7 @@ function RowGroup({
           <div className="text-xs text-[var(--muted-foreground)]">
             {r.purpose === "vocab" ? "" : r.modelName}
             {r.purpose === "ocr" ? " · đọc từ vựng từ PDF" : ""}
+            {r.purpose === "exam-import" ? " · đọc đề thi từ PDF" : ""}
             {r.purpose === "translate" ? " · dịch" : ""}
             {r.purpose === "grammar" ? " · phân tích ngữ pháp" : ""}
             {r.purpose === "verify" || r.purpose === "pronounce" ? " · kiểm tra từ vựng" : ""}
@@ -313,7 +315,7 @@ function RowGroup({
             ) : (
               <div className="space-y-3">
                 <p className="break-all text-xs text-[var(--muted-foreground)]">
-                  {detail.purpose === "vocab" ? "Hoạt động tạo ví dụ" : detail.purpose === "ocr" ? `Đọc từ vựng từ trang PDF · ${detail.modelName}` : `POST ${detail.endpoint || "—"} · ${detail.provider}`}
+                  {detail.purpose === "vocab" ? "Hoạt động tạo ví dụ" : detail.purpose === "ocr" ? `Đọc từ vựng từ trang PDF · ${detail.modelName}` : detail.purpose === "exam-import" ? `Đọc đề thi từ file PDF · ${detail.modelName}` : `POST ${detail.endpoint || "—"} · ${detail.provider}`}
                 </p>
                 <div>
                   <h3 className="text-xs font-semibold text-[var(--foreground)]">Yêu cầu gửi đi</h3>

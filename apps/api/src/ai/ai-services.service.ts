@@ -22,6 +22,7 @@ import {
   type BenchHistory,
   type BenchResult,
   type BenchTask,
+  type OrderTask,
   type RankOptions,
   type Ranked,
 } from "./ai-benchmark.js";
@@ -40,7 +41,7 @@ export interface RuntimeAiService {
   key: string;
   rpm: number;
   /** Priority: the general one and, where the admin sorted by task, that task's own. */
-  order?: { default: number } & Partial<Record<BenchTask, number>>;
+  order?: { default: number } & Partial<Record<OrderTask, number>>;
 }
 
 /** What the admin page sees — never the key. */
@@ -63,7 +64,7 @@ export interface AiServiceView {
   enabled: boolean;
   priority: number;
   /** Own order per task, where the admin sorted by that task. */
-  taskPriority: Partial<Record<BenchTask, number>>;
+  taskPriority: Partial<Record<OrderTask, number>>;
   status: string;
   lastError: string;
   lastOkAt: string | null;
@@ -191,7 +192,7 @@ export class AiServicesService implements OnModuleInit, OnModuleDestroy {
    * by that task's own priority (services the admin never sorted for it keep
    * their general priority); the read-only .env service always stays last.
    */
-  async available(task?: BenchTask): Promise<RuntimeAiService[]> {
+  async available(task?: OrderTask): Promise<RuntimeAiService[]> {
     const now = Date.now();
     const list = (await this.active()).filter((s) => (this.cooldown.get(s.id) ?? 0) <= now);
     if (!task) return list;
@@ -618,7 +619,7 @@ export class AiServicesService implements OnModuleInit, OnModuleDestroy {
   }
 
   /** Set the priority order of ONE task: `ids[0]` is tried first for that task. */
-  async reorder(ids: string[], task: BenchTask): Promise<AiServiceView[]> {
+  async reorder(ids: string[], task: OrderTask): Promise<AiServiceView[]> {
     const model = this.requireModel();
     if (!Array.isArray(ids) || ids.some((i) => !Types.ObjectId.isValid(i))) {
       throw new UnprocessableEntityException("ids must be service ids");

@@ -37,8 +37,9 @@ import {
 import { contentHashOf, optionCountsOf, stripFormat } from "./mondai.js";
 import { blockMarker, keyMarker, splitCompactKey, type AnswerKeyBlock } from "./import/answer-key.js";
 import { renderPdfPage } from "../import/parsers/pdf.js";
+import { AI_RETRY_DELAYS_MS, retryRounds } from "./import/retry.js";
 import { applyMarks, enrich, type Junk, type Mark } from "./import/marks.js";
-import { openProsePdf } from "./import/prose.js";
+import { OcrFailedError, openProsePdf, type ProsePdf } from "./import/prose.js";
 import { markCloze, parseByRules } from "./import/rules.js";
 import { segmentBlocks, type Block } from "./import/segment.js";
 import { parseAiJson, structurePrompt, type ParsedBlock, validateParsed } from "./import/structure.js";
@@ -72,6 +73,9 @@ function withMarks(
   return changed;
 }
 
+/** Unread pages in a row that mean the AI is down, not that one page is hard. */
+const MAX_UNREAD_IN_A_ROW = 5;
+
 /**
  * JLPT exam-PDF import (NP-407 / plan §6 GĐ2). A PDF is read page by page,
  * segmented into 問題 blocks, and each block is structured by an AI model —
@@ -93,6 +97,10 @@ export class ExamImportService implements OnApplicationBootstrap {
   private readonly dir = resolve(process.env.EXAM_IMPORT_DIR?.trim() || join(process.cwd(), "storage", "exam-import"));
   /** Page renders run one at a time: a render of a big PDF is the heaviest thing this service does on a 4 GB box. */
   private renderChain: Promise<unknown> = Promise.resolve();
+  /** Waits between rounds when no AI service answers. */
+  private retryDelaysMs = AI_RETRY_DELAYS_MS;
+  /** Jobs whose last block got no answer after every wait: the next blocks try once, without waiting again. */
+  private readonly aiDown = new Set<string>();
   /** A job's structuring work is in-flight in this process (not yet persisted). */
   private readonly running = new Set<string>();
 
@@ -215,6 +223,59 @@ export class ExamImportService implements OnApplicationBootstrap {
     return { jobId: String(job._id) };
   }
 
+  /**
+   * Checkpoint every page of the PDF. A page nobody could read is NOT saved: it
+   * is tried again after the others, and several in a row stop the job (the AI is
+   * down — importing the rest would only produce an exam full of holes).
+   * `false` = the admin cancelled.
+   */
+  private async readPages(id: string, pdf: ProsePdf): Promise<boolean> {
+    const total = pdf.numPages;
+    const read = async (n: number): Promise<boolean> => {
+      let text: string;
+      try {
+        text = await pdf.pageText(n);
+      } catch (err) {
+        if (err instanceof OcrFailedError) return false;
+        throw err;
+      }
+      await this.log(id, text ? "info" : "warn", text ? `Trang ${n}/${total}: ${text.length} ký tự` : `Trang ${n}/${total}: trống`);
+      await this.pages
+        .updateOne({ job: id, n }, { $set: { text, source: text ? "text" : "ocr", marks: pdf.pageMarks?.(n) ?? [] } }, { upsert: true })
+        .exec();
+      return true;
+    };
+
+    const failed: number[] = [];
+    let inARow = 0;
+    for (let n = 1; n <= total; n += 1) {
+      if (await this.isCancelled(id)) return false;
+      if (await this.pageExists(id, n)) continue; // already checkpointed
+      if (await read(n)) inARow = 0;
+      else {
+        if (await this.isCancelled(id)) return false;
+        failed.push(n);
+        inARow += 1;
+        await this.log(id, "warn", `Trang ${n}/${total}: AI chưa đọc được — sẽ thử lại sau`);
+        if (inARow >= MAX_UNREAD_IN_A_ROW) {
+          throw new Error(`AI đọc ảnh không phản hồi ở ${inARow} trang liên tiếp (đến trang ${n}) — kiểm tra dịch vụ AI rồi nhập lại`);
+        }
+      }
+      await this.jobs.updateOne({ _id: id }, { $set: { pagesDone: n } }).exec().catch(() => undefined);
+    }
+
+    const lost: number[] = [];
+    for (const n of failed) {
+      if (await this.isCancelled(id)) return false;
+      if (!(await read(n))) lost.push(n);
+    }
+    if (await this.isCancelled(id)) return false;
+    if (lost.length > 0) {
+      await this.log(id, "error", `${lost.length} trang AI không đọc được, thiếu trong bản nháp: ${lost.join(", ")}`);
+    }
+    return true;
+  }
+
   /** Read the remaining pages + segment + structure into drafts (idempotent). */
   private async runJob(id: string, seed?: { buffer: Buffer; level: string; rights: QuestionRights; createdBy: string }) {
     if (this.running.has(id)) return;
@@ -235,7 +296,9 @@ export class ExamImportService implements OnApplicationBootstrap {
         return;
       }
       if (seed) {
-        const pdf = await openProsePdf(seed.buffer, (png, n) => this.ai.ocrExamPageText(png, n));
+        const pdf = await openProsePdf(seed.buffer, (png, n) =>
+          retryRounds(() => this.ai.ocrExamPageText(png, n), this.retryDelaysMs, () => this.isCancelled(id)),
+        );
         try {
           numPages = pdf.numPages;
           await this.jobs.updateOne({ _id: id }, { $set: { numPages } }).exec();
@@ -243,24 +306,7 @@ export class ExamImportService implements OnApplicationBootstrap {
           if (pdf.totalPages > numPages) {
             await this.log(id, "warn", `File có ${pdf.totalPages} trang nhưng chỉ đọc ${numPages} trang đầu — phần còn lại bị bỏ, hãy tách file rồi nhập tiếp`);
           }
-          for (let n = 1; n <= pdf.numPages; n += 1) {
-            if (await this.isCancelled(id)) return;
-            if (await this.pageExists(id, n)) continue; // already checkpointed
-            const text = await pdf.pageText(n);
-            await this.log(id, text ? "info" : "warn", text ? `Trang ${n}/${numPages}: ${text.length} ký tự` : `Trang ${n}/${numPages}: trống`);
-            await this.pages.updateOne(
-              { job: id, n },
-              {
-                $set: {
-                  text,
-                  source: text ? "text" : "ocr",
-                  marks: pdf.pageMarks?.(n) ?? [],
-                },
-              },
-              { upsert: true },
-            ).exec();
-            await this.jobs.updateOne({ _id: id }, { $set: { pagesDone: n } }).exec().catch(() => undefined);
-          }
+          if (!(await this.readPages(id, pdf))) return;
         } finally {
           await pdf.close();
         }
@@ -278,6 +324,7 @@ export class ExamImportService implements OnApplicationBootstrap {
       //    validation is kept as `error` — it never fails the whole job.
       const keyBlocks = splitCompactKey(answerKey);
       const keyFor = (block: Block): AnswerKeyBlock | null => {
+        if (block.key) return block.key;
         const token = blockMarker(block.instruction);
         // A collection PDF carries one answer sheet per paper: match by paper + 問題 number.
         const sheet = sheetKeys[block.sitting];
@@ -335,6 +382,7 @@ export class ExamImportService implements OnApplicationBootstrap {
       await this.log(id, "error", String((err as Error).message));
     } finally {
       this.running.delete(id);
+      this.aiDown.delete(id);
     }
   }
 
@@ -412,14 +460,25 @@ export class ExamImportService implements OnApplicationBootstrap {
     // 2. Otherwise the AI structures it (passages, cloze, or a block the rules could not read).
     const prompt = structurePrompt({ instruction: block.instruction, rawText: block.rawText, mondai: block.mondai });
     let parsed: ParsedBlock | null = null;
-    try {
-      const svc = (await this.services.available())[0];
-      if (svc) {
-        const res = await this.ai.complete(svc, prompt, { temperature: 0, purpose: "exam-import" });
-        parsed = parseAiJson(res.text);
-      }
-    } catch (err) {
-      this.logger.warn(`exam-import block ${blockIndex}: AI call failed — kept for review: ${(err as Error).message}`);
+    let aiError = "";
+    const reply = await retryRounds(
+      async () => {
+        const r = await this.ai.completeAny(prompt, { temperature: 0, purpose: "exam-import", task: "ocr-exam", words: [`Tách khối ${blockIndex + 1}`] }, (text) => {
+          const value = parseAiJson(text);
+          return { value, ok: validateParsed(value, block.rawText, expected).length === 0 };
+        });
+        aiError = r.error ?? aiError;
+        return r.answered ? r : null;
+      },
+      this.aiDown.has(jobId) ? [] : this.retryDelaysMs,
+      () => this.isCancelled(jobId),
+    );
+    if (reply) {
+      this.aiDown.delete(jobId);
+      parsed = reply.value ?? null;
+    } else {
+      this.aiDown.add(jobId);
+      this.logger.warn(`exam-import block ${blockIndex}: AI call failed — kept for review: ${aiError || "no service ready"}`);
     }
 
     let issues = validateParsed(parsed, block.rawText, expected).map((i) => `${i.path}: ${i.message}`);

@@ -4,6 +4,32 @@
 
 ---
 
+## `/admin/ai` thiết kế lại (26/11/2026)
+
+Một cột: đầu trang gọn + nút "Thêm dịch vụ" mở form (tự mở khi chưa có dịch vụ); tab tác vụ chia 2 nhóm, tự xuống dòng (trước bị cắt); danh sách là chuỗi ưu tiên đánh số nối bằng đường dọc. Tải lỗi (vd. API đang restart → 500 `ECONNREFUSED`) hiện thông báo + "Thử lại", không còn báo "0 dịch vụ". Đã chụp Chromium headless dữ liệu giả (850, 1100, 360 px; sáng/tối; lỗi, rỗng) qua trang tạm đã xoá; chưa thử đăng nhập thật. tsc đạt; ESLint còn 4 lỗi `set-state-in-effect` cũ.
+
+Kéo thả đổi thứ tự: `components/admin/use-drag-reorder.ts` (pointer events, không thêm thư viện), tay nắm trên mỗi dịch vụ; thả là lưu qua `services/reorder`, Esc huỷ, ▲▼ và phím mũi tên vẫn dùng được. Đã thử chuột + cảm ứng giả lập (CDP) trên Chromium headless, API giả; chưa thử máy thật.
+
+---
+
+## Thứ tự model đọc PDF (26/11/2026)
+
+`/admin/ai`: thêm 2 tab thứ tự `ocr-exam` (chép trang đề scan + tách khối) và `ocr-vocab` (PDF từ vựng scan), lưu ở `taskPriority`, chỉnh tay (benchmark không đụng); chưa chỉnh thì theo `priority`. Kiểu `OrderTask` (`ai-benchmark.ts`, UI `lib/ai-benchmark-score.ts`). Lịch sử gọi AI có mục đích `exam-import` ("Đọc đề thi từ file PDF"), lời gọi tách khối ghi `Tách khối n`. Model chỉ nhận chữ không còn bị khoá khi từ chối ảnh (cả đề lẫn từ vựng). Vitest `src/ai src/exams src/import`, typecheck API + UI đạt; ESLint `ai-services-console.tsx` còn 4 lỗi `set-state-in-effect` có từ trước. Chưa thử trên trình duyệt.
+
+---
+
+## NP-407: nhập sách drill và chịu lỗi AI (26/11/2026)
+
+File `Drill_&_Drill_N2-Moji_Goi.pdf` (167 trang scan) nhập ra 27 khối, 18 lỗi: sách không có tiêu đề `問題`, và AI trả HTTP 503.
+
+- `import/drill.ts`: `segmentBlocks` nhận sách drill (câu `【n】`, gần như không có `問題`): mỗi đợt `第N回`/câu dẫn một khối, dạng theo banner, đáp án `【n】正解x` ghép theo dạng + số câu (không chắc thì để trống). `rules.ts` nhận số câu 3 chữ số.
+- `import/retry.ts`: không dịch vụ nào trả lời thì chờ 15/30/60/120/180 s rồi thử lại. Trang OCR hỏng không được lưu, đọc lại cuối lượt; 5 trang liên tiếp hỏng → job `error`. `completeAny` thử lần lượt các dịch vụ khi tách khối.
+- OCR đề: Gemini trả text thường (trước bị ép JSON), prompt giữ `【n】`/`正解`/`第N回`; model chỉ nhận text (400 `content must be a string`) không còn bị khoá 1 giờ.
+- Đã chạy: vitest `src/exams` + 3 spec AI (212 đạt, 1 skip), typecheck. `ai-antigravity-cli.spec` từng timeout 5 s một lần khi chạy cả `src/ai`, chạy lại đạt.
+- **Chưa nhập lại file thật**: test dùng text tự viết theo bố cục sách; chưa biết OCR thật đọc banner/ngoặc/đáp án ra sao. Gạch chân từ được hỏi (漢字読み, 表記) không có ở bản OCR — người duyệt phải thêm.
+
+---
+
 ## NP-407: bàn duyệt bản nháp đề (UI mới, 25/11/2026)
 
 Giới hạn PDF nhập đề: 50 MB (trước 30 MB), bằng nhập từ vựng.

@@ -1,5 +1,5 @@
 import { Injectable, Logger, Optional } from "@nestjs/common";
-import { parseGrammar, parsePronounce, parseVerify } from "./ai-benchmark.js";
+import { parseGrammar, parsePronounce, parseVerify, type OrderTask } from "./ai-benchmark.js";
 import { RedisService } from "../redis/redis.service.js";
 import { randomUUID } from "node:crypto";
 import { AiResultCacheService, taskKey, taskTerm } from "./ai-result-cache.service.js";
@@ -458,11 +458,12 @@ export class AiExampleService {
     purpose: AiLogPurpose = "example",
     words: string[] = [],
     image?: Buffer,
+    plain?: boolean,
   ): Promise<string> {
     const t0 = Date.now();
     const url = this.endpointOf(svc);
     try {
-      const text = await this.callRaw(svc, prompt, image);
+      const text = await this.callRaw(svc, prompt, image, plain);
       this.logCall(svc, purpose, url, words, prompt, t0, { ok: true, response: text });
       return text;
     } catch (err) {
@@ -491,8 +492,8 @@ export class AiExampleService {
     }
   }
 
-  private async callRaw(svc: RuntimeAiService, prompt: string, image?: Buffer): Promise<string> {
-    return (await this.callRawFull(svc, prompt, image)).text;
+  private async callRaw(svc: RuntimeAiService, prompt: string, image?: Buffer, plain?: boolean): Promise<string> {
+    return (await this.callRawFull(svc, prompt, image, undefined, plain)).text;
   }
 
   /**
@@ -520,11 +521,44 @@ export class AiExampleService {
     }
   }
 
+  /**
+   * One pass over the ready services for a text task: the first answer `read`
+   * accepts wins. `answered: false` = no service replied at all (none ready, or
+   * every call failed), so the caller may wait and try again. An unusable answer
+   * moves on to one more service at most, then is returned as it is.
+   */
+  async completeAny<T>(
+    prompt: string,
+    opts: { temperature: number; purpose: AiLogPurpose; task?: OrderTask; words?: string[] },
+    read: (text: string) => { value: T; ok: boolean },
+  ): Promise<{ answered: boolean; value?: T; error?: string }> {
+    let unusable: { value: T } | undefined;
+    let tries = 0;
+    let error: string | undefined;
+    for (const svc of await this.services.available(opts.task)) {
+      if (this.isTranslator(svc)) continue;
+      try {
+        const res = await this.complete(svc, prompt, opts);
+        await this.services.reportOk(svc.id);
+        const out = read(res.text);
+        if (out.ok) return { answered: true, value: out.value };
+        unusable ??= out;
+        if (++tries >= 2) break;
+      } catch (err) {
+        error = (err as Error).message;
+        if (err instanceof AiFailure) await this.services.reportFailure(svc.id, err.kind, err.message, err.retryAfterMs);
+      }
+    }
+    return unusable ? { answered: true, value: unusable.value } : { answered: false, error };
+  }
+
   private async callRawFull(
     svc: RuntimeAiService,
     prompt: string,
     image?: Buffer,
     temperature?: number,
+    /** The answer is free text: do not ask Gemini for JSON. */
+    plain?: boolean,
   ): Promise<{ text: string; usage: AiUsage | null; modelVersion: string | null }> {
     const p = svc.provider;
     if (p.kind === "antigravity-cli") return { text: await this.callCli(svc, prompt, image), usage: null, modelVersion: null };
@@ -553,7 +587,7 @@ export class AiExampleService {
                 : [{ text: prompt }],
             },
           ],
-          generationConfig: { responseMimeType: "application/json", temperature: temp },
+          generationConfig: { ...(plain ? {} : { responseMimeType: "application/json" }), temperature: temp },
         }
       : isAnthropic
         ? {
@@ -674,7 +708,7 @@ export class AiExampleService {
     // The best answer so far: the one with the fewest entries whose kanji were lost.
     let best: { rows: VocabOcrRow[]; lost: VocabOcrRow[] } | null = null;
     let warning = "";
-    for (const svc of await this.services.available()) {
+    for (const svc of await this.services.available("ocr-vocab")) {
       if (this.isTranslator(svc)) continue;
       try {
         await this.pace(svc);
@@ -702,11 +736,17 @@ export class AiExampleService {
           "WARNING: a previous attempt copied the reading into \"word\" for these entries, which have Hán Việt and therefore kanji — read the kanji from the image this time: " +
           lost.slice(0, 40).map((r) => `${r.no || "?"}:${r.word}(${r.hanViet})`).join(", ");
       } catch (err) {
-        if (err instanceof AiFailure) await this.services.reportFailure(svc.id, err.kind, err.message, err.retryAfterMs);
+        await this.reportImageFailure(svc.id, err);
         // else: unparsable answer — try the next service
       }
     }
     return best?.rows ?? null;
+  }
+
+  /** A text-only model refuses an image: its key is fine, so it must not be rested for text work. */
+  private async reportImageFailure(id: string, err: unknown): Promise<void> {
+    if (!(err instanceof AiFailure) || /content must be a string/i.test(err.message)) return;
+    await this.services.reportFailure(id, err.kind, err.message, err.retryAfterMs);
   }
 
   /**
@@ -725,24 +765,30 @@ export class AiExampleService {
       "- the 問題 headings (問題Ⅰ, 問題①, 問題 1: …),",
       "- circled option marks ①②③④ and their option text, on one line each where printed that way,",
       "- cloze blank markers [1] [2] … and the ★ mark,",
-      "- the 答案/解答 lines (number + circled mark, e.g. `1① 2④`).",
+      "- the 答案/解答 lines (number + circled mark, e.g. `1① 2④`),",
+      "- bracketed question numbers (【31】) and answer entries (【31】正解2), exactly as printed,",
+      "- round headers (第7回) and section titles (漢字読み, 表記, 用法 …), each on its own line.",
+      "On a two-column page, transcribe the whole left column before the right one.",
       "Rules: do NOT translate, do NOT fix typos, do NOT renumber anything. Keep Japanese/Japanese text as printed (kanji stay kanji).",
       "Output plain text only, one line per printed line, no JSON, no commentary.",
     ];
-    for (const svc of await this.services.available()) {
+    let blank = false;
+    for (const svc of await this.services.available("ocr-exam")) {
       if (this.isTranslator(svc)) continue;
       try {
         await this.pace(svc);
-        const text = await this.call(svc, base.join("\n"), "exam-import", page ? [`Trang ${page}`] : [], png);
+        const text = await this.call(svc, base.join("\n"), "exam-import", page ? [`Trang ${page}`] : [], png, true);
         await this.services.reportOk(svc.id);
         const t = (text ?? "").trim();
         if (t) return t;
+        blank = true;
       } catch (err) {
-        if (err instanceof AiFailure) await this.services.reportFailure(svc.id, err.kind, err.message, err.retryAfterMs);
-        // else: unparsable answer — try the next service
+        await this.reportImageFailure(svc.id, err);
+        // try the next service
       }
     }
-    return null;
+    // "" = a service looked and saw nothing; null = nobody could read the page.
+    return blank ? "" : null;
   }
   async synonymQuiz(
     items: { term: string; reading: string; meaning: string }[],

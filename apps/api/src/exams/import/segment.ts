@@ -2,6 +2,7 @@ import { classifyInstruction, SECTION_OF, type MondaiType, type SectionKey } fro
 import { mondaiByNumber, mondaiNumberOf, PartTracker, sheetsOf } from "./mondai-table.js";
 import { type AnswerKeyBlock } from "./answer-key.js";
 import { cleanAnswerLine, cleanLine, isJunkLine, learnNoise } from "./clean.js";
+import { isDrillBook, segmentDrillBook } from "./drill.js";
 
 /**
  * Block segmentation for JLPT exam import (NP-407 / plan §6 GĐ2).
@@ -45,6 +46,8 @@ export interface Block {
   mondai: MondaiType | null;
   /** A short reason when the block is kept with warnings. */
   note?: string;
+  /** The block's own answers, when the segmenter matched them itself (drill books). */
+  key?: AnswerKeyBlock;
 }
 
 export interface Segmented {
@@ -157,6 +160,7 @@ interface RawLine {
  * region keeps its circled marks.
  */
 export function segmentBlocks(pages: string[], level?: string): Segmented {
+  if (isDrillBook(pages)) return segmentDrillBook(pages, level);
   const noise = learnNoise(pages);
 
   // Per-paper answer sheets: a page with `問題 N CxP(Td)` lines is a sheet page;

@@ -1,10 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { TASK_LABELS, type BenchTask } from "@/lib/ai-benchmark-score";
+import { TASK_LABELS, type BenchTask, type OrderTask } from "@/lib/ai-benchmark-score";
 import { ConfirmDialog } from "@/components/learn/confirm-dialog";
 import { AiTaskTabs } from "@/components/admin/ai-task-tabs";
 import Link from "next/link";
+import { useDragReorder } from "@/components/admin/use-drag-reorder";
 
 interface Provider {
   id: string;
@@ -39,7 +40,7 @@ interface Service {
   enabled: boolean;
   priority: number;
   /** Own order per task (lower = tried first); falls back to `priority`. */
-  taskPriority?: Partial<Record<BenchTask, number>>;
+  taskPriority?: Partial<Record<OrderTask, number>>;
   status: string;
   lastError: string;
   lastOkAt: string | null;
@@ -74,8 +75,11 @@ const inputClass =
 const btnBase =
   "inline-flex h-8 items-center justify-center whitespace-nowrap rounded-lg border border-[var(--border)] px-3 text-xs font-medium text-[var(--foreground)] hover:bg-[var(--layer-hover)] disabled:opacity-50";
 const btn = `${btnBase} min-w-[5.5rem]`;
-/** Square-ish icon button (▲ ▼). */
-const btnIcon = `${btnBase} w-9 px-0`;
+const btnPrimary =
+  "inline-flex h-10 items-center justify-center rounded-lg bg-[var(--primary)] px-4 text-sm font-semibold text-[var(--primary-foreground)] hover:bg-[var(--primary-hover)] disabled:cursor-not-allowed disabled:opacity-60";
+/** One half of the ▲▼ pair under a priority number. */
+const btnMove =
+  "grid h-8 w-9 place-items-center text-[0.65rem] text-[var(--muted-foreground)] hover:bg-[var(--layer-hover)] hover:text-[var(--foreground)] disabled:opacity-30";
 
 interface ModelInfo {
   id: string;
@@ -510,11 +514,14 @@ export function AiServicesConsole() {
   const [services, setServices] = useState<Service[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** The list itself could not be read: show that, never "0 services". */
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [adding, setAdding] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [testMsg, setTestMsg] = useState<Record<string, { ok: boolean; text: string }>>({});
   const [deleting, setDeleting] = useState<Service | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
-  const [task, setTask] = useState<BenchTask>("translate");
+  const [task, setTask] = useState<OrderTask>("translate");
   const [authOpen, setAuthOpen] = useState<string | null>(null);
   const [edit, setEdit] = useState({ label: "", model: "", rpm: "", apiKey: "", baseUrl: "" });
 
@@ -534,19 +541,19 @@ export function AiServicesConsole() {
       fetch(`${API}/providers`, { cache: "no-store" }).catch(() => null),
       fetch(`${API}/services`, { cache: "no-store" }).catch(() => null),
     ]);
-    if (!p || !s) {
-      setError("Không kết nối được API");
-    } else if (p.status === 403 || s.status === 403) {
-      setError("Tài khoản hiện tại không có quyền quản trị");
-    } else if (p.ok && s.ok) {
+    let failure: string | null = null;
+    if (p?.status === 403 || s?.status === 403) {
+      failure = "Tài khoản hiện tại không có quyền quản trị.";
+    } else if (p?.ok && s?.ok) {
       const plist = (await p.json()) as Provider[];
       setProviders(plist);
       setServices((await s.json()) as Service[]);
       setPid((cur) => cur || plist[0]?.id || "");
-      setError(null);
     } else {
-      setError("Không tải được danh sách dịch vụ AI");
+      failure = "Máy chủ chưa phản hồi nên chưa đọc được danh sách dịch vụ. Nếu máy chủ đang khởi động lại, đợi vài giây rồi thử lại.";
     }
+    setError(failure);
+    setLoadFailed(failure !== null);
     setLoaded(true);
   }, []);
 
@@ -612,23 +619,10 @@ export function AiServicesConsole() {
     const created = (await res.json()) as Service;
     setApiKey("");
     setLabel("");
+    setAdding(false);
     await load();
     if (provider?.cli) setAuthOpen(created.id); // a CLI service must be authorised before it can be tried
     else void test(created.id); // check the new key straight away
-  }
-
-  async function move(index: number, dir: -1 | 1) {
-    const own = shown.filter((s) => !s.readOnly);
-    const j = index + dir;
-    if (j < 0 || j >= own.length) return;
-    const next = [...own];
-    [next[index], next[j]] = [next[j], next[index]];
-    // Optimistic: give the moved services the new positions of THIS task only.
-    const pos = new Map(next.map((s, k) => [s.id, k]));
-    setServices((all) => all.map((s) => (pos.has(s.id) ? { ...s, taskPriority: { ...s.taskPriority, [task]: pos.get(s.id)! } } : s)));
-    const res = await call("/services/reorder", "POST", { ids: next.map((s) => s.id), task });
-    if (!res?.ok) setError(await message(res, "Không đổi được thứ tự"));
-    await load();
   }
 
   async function patch(id: string, body: Record<string, unknown>) {
@@ -677,36 +671,74 @@ export function AiServicesConsole() {
   const hiddenCount = services.length - shown.length;
   const ownIndex = (s: Service) => shown.filter((x) => !x.readOnly).findIndex((x) => x.id === s.id);
   const ownCount = shown.filter((s) => !s.readOnly).length;
+  const ready = loaded && !loadFailed;
+  const formOpen = ready && (adding || services.length === 0);
+  const activeCount = services.filter((x) => x.enabled && x.status === "ok").length;
+  const troubled = services.filter((x) => x.enabled && (x.status === "error" || x.status === "invalid" || x.status === "cooldown")).length;
+  const firstId = shown.find((x) => x.enabled)?.id;
+  const isPdfTask = task === "ocr-exam" || task === "ocr-vocab";
+
+  /** Moves the service at position `from` to `to` (own services only) and saves the task's order. */
+  async function reorder(from: number, to: number) {
+    const next = shown.filter((s) => !s.readOnly);
+    if (from === to || to < 0 || to >= next.length) return;
+    next.splice(to, 0, ...next.splice(from, 1));
+    // Optimistic: give the moved services the new positions of THIS task only.
+    const pos = new Map(next.map((s, k) => [s.id, k]));
+    setServices((all) => all.map((s) => (pos.has(s.id) ? { ...s, taskPriority: { ...s.taskPriority, [task]: pos.get(s.id)! } } : s)));
+    const res = await call("/services/reorder", "POST", { ids: next.map((s) => s.id), task });
+    if (!res?.ok) setError(await message(res, "Không đổi được thứ tự"));
+    await load();
+  }
+
+  const drag = useDragReorder((from, to) => void reorder(from, to));
 
   return (
-    <div className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 sm:py-8">
-      <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between lg:gap-10">
+    <div className="mx-auto w-full max-w-5xl px-4 py-6 sm:px-6 sm:py-8">
+      <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between sm:gap-8">
         <div className="min-w-0">
           <h1 className="text-2xl font-semibold tracking-tight text-[var(--foreground)] sm:text-3xl">Dịch vụ AI</h1>
-          <p className="mt-2 max-w-2xl text-sm leading-relaxed text-[var(--muted-foreground)]">
-        Dùng để dịch, viết câu ví dụ và phân tích ngữ pháp. Mỗi việc có <strong>thứ tự ưu tiên riêng</strong>: hệ thống thử từng dịch vụ
-        theo thứ tự của việc đó, từ trên xuống; nếu một dịch vụ hết hạn mức, bị lỗi hoặc từ chối thì tự chuyển sang dịch vụ kế tiếp (dịch vụ lỗi
-        được nghỉ một lúc rồi mới thử lại). Khoá API được mã hoá khi lưu và không bao giờ hiển thị lại.
+          <p className="mt-2 max-w-[60ch] text-sm leading-relaxed text-[var(--muted-foreground)]">
+            Mỗi việc có thứ tự riêng. Hệ thống thử từ trên xuống; dịch vụ nào hết hạn mức hoặc bị lỗi thì chuyển sang dịch vụ kế tiếp.
           </p>
+          {ready && services.length > 0 && (
+            <p className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-1 text-sm tabular-nums text-[var(--muted-foreground)]">
+              <span><strong className="font-semibold text-[var(--foreground)]">{services.length}</strong> dịch vụ</span>
+              <span className="inline-flex items-center gap-1.5">
+                <span aria-hidden="true" className="size-2 rounded-full bg-emerald-500" />
+                <strong className="font-semibold text-[var(--foreground)]">{activeCount}</strong> đang hoạt động
+              </span>
+              {troubled > 0 && (
+                <span className="inline-flex items-center gap-1.5">
+                  <span aria-hidden="true" className="size-2 rounded-full bg-amber-500" />
+                  <strong className="font-semibold text-[var(--foreground)]">{troubled}</strong> cần chú ý
+                </span>
+              )}
+            </p>
+          )}
         </div>
-        <dl className="grid shrink-0 grid-cols-3 gap-2 sm:gap-3">
-          {[
-            { l: "Dịch vụ", v: services.length, c: "text-[var(--foreground)]" },
-            { l: "Đang hoạt động", v: services.filter((x) => x.enabled && x.status === "ok").length, c: "text-[#15803d] dark:text-[#86efac]" },
-            { l: "Cần chú ý", v: services.filter((x) => x.enabled && (x.status === "error" || x.status === "invalid" || x.status === "cooldown")).length, c: "text-[#b45309] dark:text-[#fde047]" },
-          ].map((m) => (
-            <div key={m.l} className="min-w-[5.5rem] rounded-2xl border border-[var(--border)] bg-[var(--background-1)] px-4 py-3 shadow-sm">
-              <dd className={"text-2xl font-semibold tabular-nums leading-none " + m.c}>{m.v}</dd>
-              <dt className="mt-1.5 text-[11px] text-[var(--muted-foreground)]">{m.l}</dt>
-            </div>
-          ))}
-        </dl>
-      </div>
+        {ready && services.length > 0 && (
+          <button
+            type="button"
+            aria-expanded={adding}
+            aria-controls="ai-add-service"
+            onClick={() => setAdding((v) => !v)}
+            className={adding ? `${btn} !h-10 shrink-0 !text-sm` : `${btnPrimary} shrink-0`}
+          >
+            {adding ? "Đóng" : "Thêm dịch vụ"}
+          </button>
+        )}
+      </header>
 
       {error && (
-        <p role="alert" className="mt-4 rounded-lg bg-[#fef2f2] px-4 py-3 text-sm text-[#b91c1c]">
-          {error}
-        </p>
+        <div role="alert" className="mt-5 flex flex-col gap-3 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-[var(--foreground)] sm:flex-row sm:items-center sm:justify-between">
+          <p>{error}</p>
+          {loadFailed && (
+            <button type="button" className={`${btn} !h-9 shrink-0`} onClick={() => void load()}>
+              Thử lại
+            </button>
+          )}
+        </div>
       )}
 
       <ConfirmDialog
@@ -724,57 +756,237 @@ export function AiServicesConsole() {
         onConfirm={() => void confirmDelete()}
       />
 
-      {/* Priority list — one order per task */}
-      <div className="mt-7 xl:grid xl:grid-cols-[minmax(0,1fr)_23rem] xl:items-start xl:gap-8">
-      <div className="min-w-0">
-      <AiTaskTabs className="" label="Thứ tự ưu tiên theo việc" value={task} onChange={setTask} />
-      <p className="mt-2 text-xs text-[var(--muted-foreground)]">
-        Thứ tự ưu tiên của “{TASK_LABELS[task]}” — dùng mũi tên để đổi. Thứ tự cũng tự sắp lại theo điểm mỗi khi một lần chạy ở{" "}
-        <Link href="/admin/ai-eval" className="underline">
-          Đánh giá AI
-        </Link>{" "}
-        hoàn tất (bật “cập nhật xếp hạng dịch vụ”).
-        {hiddenCount > 0 && ` ${hiddenCount} dịch vụ chỉ dịch được nên không nằm trong danh sách này.`}
-      </p>
-      <div className="mt-3 space-y-3">
-        {!loaded && <p className="text-sm text-[var(--muted-foreground)]">Đang tải…</p>}
-        {loaded && services.length === 0 && (
-          <p className="rounded-2xl border border-dashed border-[var(--border)] p-8 text-center text-sm text-[var(--muted-foreground)]">
-            Chưa có dịch vụ nào. Thêm một dịch vụ ở bên dưới — khi chưa có, ví dụ chỉ lấy từ Tatoeba.
+      {!loaded && <p className="mt-8 text-sm text-[var(--muted-foreground)]">Đang tải…</p>}
+
+      {formOpen && (
+        <form onSubmit={add} id="ai-add-service" className="mt-6 rounded-2xl border border-[color-mix(in_srgb,var(--primary)_40%,var(--border))] bg-[var(--background-1)] p-4 sm:p-6">
+          <h2 className="text-base font-semibold text-[var(--foreground)]">{services.length === 0 ? "Thêm dịch vụ đầu tiên" : "Thêm dịch vụ AI"}</h2>
+          <p className="mt-1 text-xs text-[var(--muted-foreground)]">
+            Khoá API được mã hoá khi lưu và không hiển thị lại.{services.length === 0 && " Khi chưa có dịch vụ nào, câu ví dụ chỉ lấy từ Tatoeba."}
           </p>
-        )}
-        {shown.map((s) => {
-          const i = ownIndex(s);
-          const t = testMsg[s.id];
-          return (
-            <div key={s.id} className={"@container rounded-2xl border border-[var(--border)] bg-[var(--background-1)] p-4 shadow-sm transition-colors hover:border-[color-mix(in_srgb,var(--primary)_35%,var(--border))] sm:p-5 " + (s.enabled ? "" : "opacity-75")}>
-              <div className="flex flex-col gap-4">
-                <div className="flex min-w-0 flex-1 items-start gap-3 sm:gap-4">
-                  <div className="hidden shrink-0 flex-col items-center gap-1 sm:flex">
-                    {!s.readOnly && (
-                      <button type="button" disabled={i <= 0} onClick={() => void move(i, -1)} aria-label="Tăng ưu tiên" title="Tăng ưu tiên" className="grid size-7 place-items-center rounded-lg text-xs text-[var(--muted-foreground)] hover:bg-[var(--layer-hover)] hover:text-[var(--foreground)] disabled:opacity-30">
-                        ▲
-                      </button>
-                    )}
+          <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <label className="text-sm">
+              <span className="text-[var(--muted-foreground)]">Dịch vụ (chọn từ danh sách)</span>
+              <select className={`mt-1 ${inputClass}`} value={pid} onChange={(e) => setPid(e.target.value)}>
+                {providers.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {!provider?.cli && <label className="text-sm">
+              <span className="text-[var(--muted-foreground)]">
+                Khoá API{provider?.custom && " (để trống nếu máy cục bộ không cần)"}
+              </span>
+              <input
+                required={!provider?.custom}
+                type="password"
+                autoComplete="off"
+                className={`mt-1 ${inputClass}`}
+                value={apiKey}
+                onChange={(e) => setApiKey(e.target.value)}
+                placeholder={provider?.custom ? "Tuỳ chọn" : "Dán khoá API"}
+              />
+            </label>}
+            {provider?.baseUrlTemplate && (
+              <label className="text-sm sm:col-span-2">
+                <span className="text-[var(--muted-foreground)]">Account ID (32 ký tự, ở dash.cloudflare.com)</span>
+                <input
+                  required
+                  className={`mt-1 ${inputClass}`}
+                  value={accountId}
+                  onChange={(e) => setAccountId(e.target.value)}
+                  placeholder="vd: 023e105f4ecef8ad9ca31a8372d0c353"
+                  spellCheck={false}
+                />
+              </label>
+            )}
+            {provider?.custom && (
+              <div className="space-y-2 sm:col-span-2">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_14rem]">
+                  <label className="text-sm">
+                    <span className="text-[var(--muted-foreground)]">Base URL</span>
+                    <input
+                      required
+                      className={`mt-1 ${inputClass}`}
+                      value={baseUrl}
+                      onChange={(e) => setBaseUrl(e.target.value)}
+                      placeholder="http://localhost:11434/v1"
+                      spellCheck={false}
+                    />
+                  </label>
+                  <label className="text-sm">
+                    <span className="text-[var(--muted-foreground)]">Định dạng API</span>
+                    <select className={`mt-1 ${inputClass}`} value={apiFormat} onChange={(e) => setApiFormat(e.target.value as "openai" | "anthropic")}>
+                      <option value="openai">OpenAI-compatible</option>
+                      <option value="anthropic">Anthropic (Messages)</option>
+                    </select>
+                  </label>
+                </div>
+                <p className="flex flex-wrap items-center gap-2 text-xs text-[var(--muted-foreground)]">
+                  Điền nhanh:
+                  {QUICK_ENDPOINTS.map((q) => (
+                    <button
+                      key={q.name}
+                      type="button"
+                      className={btn}
+                      onClick={() => {
+                        setBaseUrl(q.url);
+                        setApiFormat(q.format);
+                      }}
+                    >
+                      {q.name}
+                    </button>
+                  ))}
+                  <span>
+                    (máy nội bộ dùng http; địa chỉ công khai bắt buộc https — dán URL gốc, không gồm <code>/chat/completions</code>)
+                  </span>
+                </p>
+              </div>
+            )}
+            {provider?.cli ? (
+              <p className="text-sm text-[var(--muted-foreground)] sm:self-end">Model: chọn sau khi ủy quyền tài khoản Google (mặc định “{provider.defaultModel}”).</p>
+            ) : (
+              <label className="text-sm">
+                <span className="text-[var(--muted-foreground)]">Model</span>
+                <input className={`mt-1 ${inputClass}`} value={model} onChange={(e) => setModel(e.target.value)} />
+              </label>
+            )}
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <label className="text-sm">
+                <span className="text-[var(--muted-foreground)]">Tên hiển thị (tuỳ chọn)</span>
+                <input className={`mt-1 ${inputClass}`} value={label} onChange={(e) => setLabel(e.target.value)} />
+              </label>
+              <label className="text-sm">
+                <span className="text-[var(--muted-foreground)]">Yêu cầu/phút</span>
+                <input className={`mt-1 ${inputClass}`} inputMode="numeric" value={rpm} onChange={(e) => setRpm(e.target.value)} />
+              </label>
+            </div>
+          </div>
+          {provider && !provider.cli && (
+            <div className="mt-3">
+              <ModelPicker
+                providerId={provider.id}
+                apiKey={apiKey}
+                value={model}
+                onPick={setModel}
+                pricingUrl={provider.pricingUrl}
+                publicModels={provider.publicModels}
+                baseUrl={baseUrl}
+                apiFormat={apiFormat}
+              />
+            </div>
+          )}
+          {provider && (
+            <p className="mt-3 text-xs text-[var(--muted-foreground)]">
+              {provider.note}{" "}
+              {provider.keyUrl && <a href={provider.keyUrl} target="_blank" rel="noreferrer" className="font-medium text-[var(--primary)] hover:underline">
+                Lấy khoá API ↗
+              </a>}{" "}
+              · Tên model có thể đổi theo thời gian — bấm “Kiểm tra” sau khi {provider.cli ? "ủy quyền" : "thêm"}. Dịch vụ mới được xếp ở cuối danh sách ưu tiên.
+            </p>
+          )}
+          <button
+            type="submit"
+            disabled={
+              busy === "add" ||
+              (provider?.cli ? false : provider?.custom ? !baseUrl.trim() : apiKey.trim().length < 8) ||
+              (Boolean(provider?.baseUrlTemplate) && accountId.trim().length !== 32)
+            }
+            className={`mt-4 w-full sm:w-auto ${btnPrimary}`}
+          >
+            {busy === "add" ? "Đang thêm…" : "Thêm dịch vụ"}
+          </button>
+        </form>
+      )}
+
+      {ready && services.length > 0 && (
+        <section className="mt-8" aria-label="Thứ tự ưu tiên">
+          <AiTaskTabs label="Thứ tự ưu tiên theo việc" value={task} onChange={setTask} />
+          <h2 className="mt-6 text-base font-semibold text-[var(--foreground)]">Thứ tự cho “{TASK_LABELS[task]}”</h2>
+          {ownCount > 1 && <p className="mt-1 text-xs font-medium text-[var(--foreground)]">Kéo tay nắm để đổi chỗ, thả ra là lưu.</p>}
+          <p className="mt-1 max-w-[70ch] text-xs leading-relaxed text-[var(--muted-foreground)]">
+            {isPdfTask ? (
+              <>
+                {task === "ocr-exam"
+                  ? "Dùng khi nhập PDF đề thi: chép chữ từ trang scan và tách khối câu hỏi. Chép trang scan cần model đọc được ảnh; model chỉ nhận chữ bị bỏ qua ở bước đó."
+                  : "Dùng khi nhập PDF từ vựng dạng scan: cần model đọc được ảnh."}
+                {" Chưa chỉnh thì theo thứ tự chung; điểm đánh giá không tự đổi thứ tự này."}
+              </>
+            ) : (
+              <>
+                Thứ tự tự sắp lại theo điểm mỗi khi một lần chạy ở{" "}
+                <Link href="/admin/ai-eval" className="underline underline-offset-2 hover:text-[var(--foreground)]">
+                  Đánh giá AI
+                </Link>{" "}
+                hoàn tất (bật “cập nhật xếp hạng dịch vụ”).
+              </>
+            )}
+            {hiddenCount > 0 && ` ${hiddenCount} dịch vụ chỉ dịch được nên không nằm trong danh sách này.`}
+          </p>
+          {/* The list is one fallback route: the line joins each service to the one tried after it. */}
+          <ol className="mt-4 rounded-2xl border border-[var(--border)] bg-[var(--background-1)]">
+            {shown.map((s, row) => {
+              const i = ownIndex(s);
+              const t = testMsg[s.id];
+              const first = s.id === firstId;
+              const last = row === shown.length - 1;
+              return (
+                <li
+                  key={s.id}
+                  ref={s.readOnly ? undefined : drag.rowRef(i)}
+                  style={s.readOnly ? undefined : drag.styleOf(i)}
+                  className={
+                    "@container relative flex gap-3 border-b border-[var(--border)] p-3 last:border-b-0 sm:gap-4 sm:p-5 " +
+                    (!s.readOnly && drag.dragging === i ? "rounded-xl bg-[var(--background-1)] shadow-xl ring-2 ring-[var(--primary)]" : "")
+                  }
+                >
+                  <div className="relative flex w-9 shrink-0 flex-col items-center">
+                    {!last && !drag.active && <span aria-hidden="true" className="absolute -bottom-8 top-9 w-0.5 bg-[color-mix(in_srgb,var(--primary)_30%,var(--border))] sm:-bottom-10" />}
                     <span
-                      aria-label={`Ưu tiên ${s.readOnly ? "cuối" : i + 1}`}
-                      className="grid size-9 place-items-center rounded-xl bg-[color-mix(in_srgb,var(--primary)_14%,transparent)] text-sm font-bold tabular-nums text-[var(--primary)]"
+                      aria-label={s.readOnly ? "Thử sau cùng" : `Ưu tiên ${i + 1}`}
+                      className={
+                        "relative grid size-9 place-items-center rounded-full border-2 text-sm font-bold tabular-nums " +
+                        (first
+                          ? "border-[var(--primary)] bg-[var(--primary)] text-[var(--primary-foreground,#fff)]"
+                          : s.enabled
+                            ? "border-[color-mix(in_srgb,var(--primary)_55%,var(--border))] bg-[var(--background-1)] text-[var(--foreground)]"
+                            : "border-dashed border-[var(--border)] bg-[var(--background-1)] text-[var(--muted-foreground)]")
+                      }
                     >
                       {s.readOnly ? "·" : i + 1}
                     </span>
-                    {!s.readOnly && (
-                      <button type="button" disabled={i >= ownCount - 1} onClick={() => void move(i, 1)} aria-label="Giảm ưu tiên" title="Giảm ưu tiên" className="grid size-7 place-items-center rounded-lg text-xs text-[var(--muted-foreground)] hover:bg-[var(--layer-hover)] hover:text-[var(--foreground)] disabled:opacity-30">
-                        ▼
+                    {!s.readOnly && ownCount > 1 && (
+                      <button
+                        type="button"
+                        onPointerDown={(e) => drag.start(e, i, ownCount)}
+                        onKeyDown={(e) => {
+                          if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+                          e.preventDefault();
+                          void reorder(i, i + (e.key === "ArrowUp" ? -1 : 1));
+                        }}
+                        aria-label={`Kéo để đổi thứ tự ${s.label} (hoặc bấm mũi tên lên, xuống)`}
+                        title="Kéo để đổi thứ tự"
+                        className="relative mt-2 grid h-10 w-9 cursor-grab touch-none place-items-center rounded-lg border border-[var(--border)] bg-[var(--background-1)] text-[var(--muted-foreground)] hover:bg-[var(--layer-hover)] hover:text-[var(--foreground)] active:cursor-grabbing"
+                      >
+                        <svg aria-hidden="true" viewBox="0 0 12 18" className="h-4 w-3 fill-current">
+                          {[3, 9, 15].flatMap((y) => [3, 9].map((x) => <circle key={`${x}-${y}`} cx={x} cy={y} r="1.5" />))}
+                        </svg>
                       </button>
                     )}
+                    {!s.readOnly && (
+                      <div className="relative mt-2 flex flex-col overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--background-1)]">
+                        <button type="button" disabled={i <= 0} onClick={() => void reorder(i, i - 1)} aria-label={`Đưa ${s.label} lên trên`} title="Tăng ưu tiên" className={`${btnMove} border-b border-[var(--border)]`}>
+                          ▲
+                        </button>
+                        <button type="button" disabled={i >= ownCount - 1} onClick={() => void reorder(i, i + 1)} aria-label={`Đưa ${s.label} xuống dưới`} title="Giảm ưu tiên" className={btnMove}>
+                          ▼
+                        </button>
+                      </div>
+                    )}
                   </div>
-                  <span
-                    aria-label={`Ưu tiên ${s.readOnly ? "cuối" : i + 1}`}
-                    className="mt-0.5 grid size-7 shrink-0 place-items-center rounded-full bg-[var(--layer)] text-sm font-semibold text-[var(--foreground)] sm:hidden"
-                  >
-                    {s.readOnly ? "·" : i + 1}
-                  </span>
-                  <div className="min-w-0 flex-1">
+                  <div className={"min-w-0 flex-1 " + (s.enabled ? "" : "opacity-70")}>
                     <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[0.95rem] font-semibold text-[var(--foreground)] sm:text-base">
                       <span className="break-words">{s.label}</span>
                       <StatusBadge s={s} />
@@ -786,6 +998,7 @@ export function AiServicesConsole() {
                           chỉ dịch
                         </span>
                       )}
+                      {first && <span className="text-xs font-medium text-[var(--primary)]">Thử đầu tiên</span>}
                       {s.readOnly && (
                         <span className="rounded-full bg-[var(--layer)] px-2 py-0.5 text-xs font-medium text-[var(--muted-foreground)]">
                           từ .env · luôn thử sau cùng
@@ -832,288 +1045,138 @@ export function AiServicesConsole() {
                           })}
                       </div>
                     )}
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-2 max-sm:[&>button]:!h-10 max-sm:[&>button]:!w-full max-sm:[&>button]:!min-w-0 sm:flex sm:flex-wrap sm:items-center sm:border-t sm:border-[var(--border)] sm:pt-4">
-                  {!s.readOnly && (
-                    <>
-                      <button type="button" className={`${btnIcon} sm:hidden`} disabled={i <= 0} onClick={() => void move(i, -1)} aria-label="Tăng ưu tiên" title="Tăng ưu tiên">
-                        ▲
+                    <div className="mt-3 grid grid-cols-2 gap-2 max-sm:[&>button]:!h-10 max-sm:[&>button]:!w-full max-sm:[&>button]:!min-w-0 sm:flex sm:flex-wrap sm:items-center">
+                      {!s.readOnly && (
+                        <>
+                          <button
+                            type="button"
+                            role="switch"
+                            aria-checked={s.enabled}
+                            className={btn + (s.enabled ? " !border-[#16a34a]/50 !bg-[#16a34a]/10 !text-[#15803d] dark:!text-[#86efac]" : "")}
+                            disabled={busy === s.id}
+                            onClick={() => void patch(s.id, { enabled: !s.enabled })}
+                          >
+                            {s.enabled ? "Đang bật" : "Đang tắt"}
+                          </button>
+                        </>
+                      )}
+                      {s.cli && !s.readOnly && (
+                        <button type="button" className={btn} onClick={() => setAuthOpen(authOpen === s.id ? null : s.id)}>
+                          {s.authorized ? "Đổi tài khoản" : "Ủy quyền tài khoản Google"}
+                        </button>
+                      )}
+                      {s.cli && s.authorized && (
+                        <button
+                          type="button"
+                          className={btn}
+                          disabled={busy === s.id}
+                          title="Xoá trạng thái đăng nhập trên máy chủ. Để thu hồi hẳn quyền của ứng dụng, vào myaccount.google.com/permissions"
+                          onClick={async () => {
+                            setBusy(s.id);
+                            const res = await call(`/services/${s.id}/cli-login`, "DELETE");
+                            setBusy(null);
+                            if (!res?.ok) setError(await message(res, "Không đăng xuất được"));
+                            await load();
+                          }}
+                        >
+                          Đăng xuất
+                        </button>
+                      )}
+                      <button type="button" className={btn} disabled={busy === s.id} onClick={() => void test(s.id)}>
+                        {busy === s.id ? "Đang thử…" : "Kiểm tra"}
                       </button>
-                      <button type="button" className={`${btnIcon} sm:hidden`} disabled={i >= ownCount - 1} onClick={() => void move(i, 1)} aria-label="Giảm ưu tiên" title="Giảm ưu tiên">
-                        ▼
-                      </button>
-                      <button
-                        type="button"
-                        role="switch"
-                        aria-checked={s.enabled}
-                        className={btn + (s.enabled ? " !border-[#16a34a]/50 !bg-[#16a34a]/10 !text-[#15803d] dark:!text-[#86efac]" : "")}
-                        disabled={busy === s.id}
-                        onClick={() => void patch(s.id, { enabled: !s.enabled })}
-                      >
-                        {s.enabled ? "Đang bật" : "Đang tắt"}
-                      </button>
-                    </>
-                  )}
-                  {s.cli && !s.readOnly && (
-                    <button type="button" className={btn} onClick={() => setAuthOpen(authOpen === s.id ? null : s.id)}>
-                      {s.authorized ? "Đổi tài khoản" : "Ủy quyền tài khoản Google"}
-                    </button>
-                  )}
-                  {s.cli && s.authorized && (
-                    <button
-                      type="button"
-                      className={btn}
-                      disabled={busy === s.id}
-                      title="Xoá trạng thái đăng nhập trên máy chủ. Để thu hồi hẳn quyền của ứng dụng, vào myaccount.google.com/permissions"
-                      onClick={async () => {
-                        setBusy(s.id);
-                        const res = await call(`/services/${s.id}/cli-login`, "DELETE");
-                        setBusy(null);
-                        if (!res?.ok) setError(await message(res, "Không đăng xuất được"));
-                        await load();
-                      }}
-                    >
-                      Đăng xuất
-                    </button>
-                  )}
-                  <button type="button" className={btn} disabled={busy === s.id} onClick={() => void test(s.id)}>
-                    {busy === s.id ? "Đang thử…" : "Kiểm tra"}
-                  </button>
-                  {!s.readOnly && (
-                    <>
-                      <button
-                        type="button"
-                        className={btn}
-                        onClick={() => {
-                          setEditing(editing === s.id ? null : s.id);
-                          setEdit({ label: s.label, model: s.model, rpm: String(s.rpm), apiKey: "", baseUrl: s.baseUrl ?? "" });
-                        }}
-                      >
-                        Sửa
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setDeleting(s)}
-                        className="inline-flex h-8 min-w-[5.5rem] items-center justify-center whitespace-nowrap rounded-lg border border-[var(--destructive)] sm:ml-auto px-3 text-xs font-medium text-[var(--destructive)] hover:bg-[#fef2f2] dark:hover:bg-[#2a1215]"
-                      >
-                        Xoá
-                      </button>
-                    </>
-                  )}
-                </div>
-              </div>
-              {t && (
-                <p className={"mt-2 text-xs " + (t.ok ? "text-[#15803d] dark:text-[#86efac]" : "text-[#b91c1c]")}>{t.text}</p>
-              )}
-              {authOpen === s.id && s.cli && <CliLoginPanel serviceId={s.id} model={s.model} onClose={() => setAuthOpen(null)} onChanged={() => void load()} />}
-              {!t && s.lastError && s.status !== "ok" && (
-                <p className="mt-2 text-xs text-[var(--muted-foreground)]">Lần lỗi gần nhất: {s.lastError}</p>
-              )}
-              {editing === s.id && (
-                <div className="mt-3 grid gap-3 border-t border-[var(--border)] pt-3 sm:grid-cols-4">
-                  <label className="text-xs text-[var(--muted-foreground)]">
-                    Tên hiển thị
-                    <input className={`mt-1 ${inputClass}`} value={edit.label} onChange={(e) => setEdit({ ...edit, label: e.target.value })} />
-                  </label>
-                  {s.cli ? (
-                    <div className="sm:col-span-2">
-                      {s.authorized ? (
-                        <CliModelSelect serviceId={s.id} current={s.model} onSaved={() => void load()} />
-                      ) : (
-                        <p className="text-xs text-[var(--muted-foreground)]">Ủy quyền tài khoản Google trước, rồi mới chọn được model.</p>
+                      {!s.readOnly && (
+                        <>
+                          <button
+                            type="button"
+                            className={btn}
+                            onClick={() => {
+                              setEditing(editing === s.id ? null : s.id);
+                              setEdit({ label: s.label, model: s.model, rpm: String(s.rpm), apiKey: "", baseUrl: s.baseUrl ?? "" });
+                            }}
+                          >
+                            Sửa
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setDeleting(s)}
+                            className="inline-flex h-8 min-w-[4rem] items-center justify-center whitespace-nowrap rounded-lg border border-transparent sm:ml-auto px-3 text-xs font-medium text-[var(--destructive)] hover:border-[var(--destructive)] max-sm:border-[var(--border)]"
+                          >
+                            Xoá
+                          </button>
+                        </>
                       )}
                     </div>
-                  ) : (
-                    <label className="text-xs text-[var(--muted-foreground)]">
-                      Model
-                      <input className={`mt-1 ${inputClass}`} value={edit.model} onChange={(e) => setEdit({ ...edit, model: e.target.value })} />
-                    </label>
-                  )}
-                  <label className="text-xs text-[var(--muted-foreground)]">
-                    Yêu cầu/phút
-                    <input className={`mt-1 ${inputClass}`} inputMode="numeric" value={edit.rpm} onChange={(e) => setEdit({ ...edit, rpm: e.target.value })} />
-                  </label>
-                  {s.provider === "custom" && (
-                    <label className="text-xs text-[var(--muted-foreground)] sm:col-span-4">
-                      Base URL
-                      <input className={`mt-1 ${inputClass}`} value={edit.baseUrl} onChange={(e) => setEdit({ ...edit, baseUrl: e.target.value })} />
-                    </label>
-                  )}
-                  {!s.cli && <label className="text-xs text-[var(--muted-foreground)]">
-                    Khoá API mới (để trống = giữ nguyên)
-                    <input className={`mt-1 ${inputClass}`} type="password" autoComplete="off" value={edit.apiKey} onChange={(e) => setEdit({ ...edit, apiKey: e.target.value })} />
-                  </label>}
-                  {!s.cli && <div className="sm:col-span-4">
-                    <ModelPicker
-                      providerId={s.provider}
-                      apiKey={edit.apiKey}
-                      serviceId={s.id}
-                      value={edit.model}
-                      onPick={(id) => setEdit({ ...edit, model: id })}
-                      pricingUrl={providers.find((p) => p.id === s.provider)?.pricingUrl}
-                      publicModels={providers.find((p) => p.id === s.provider)?.publicModels}
-                      baseUrl={edit.baseUrl}
-                    />
-                  </div>}
-                  <div className="sm:col-span-4 flex gap-2">
-                    <button type="button" className={btn} disabled={busy === s.id} onClick={() => void saveEdit(s.id)}>
-                      Lưu
-                    </button>
-                    <button type="button" className={btn} onClick={() => setEditing(null)}>
-                      Huỷ
-                    </button>
+                    {t && (
+                      <p className={"mt-2 text-xs " + (t.ok ? "text-[#15803d] dark:text-[#86efac]" : "text-[#b91c1c]")}>{t.text}</p>
+                    )}
+                    {authOpen === s.id && s.cli && <CliLoginPanel serviceId={s.id} model={s.model} onClose={() => setAuthOpen(null)} onChanged={() => void load()} />}
+                    {!t && s.lastError && s.status !== "ok" && (
+                      <p className="mt-2 text-xs text-[var(--muted-foreground)]">Lần lỗi gần nhất: {s.lastError}</p>
+                    )}
+                    {editing === s.id && (
+                      <div className="mt-3 grid gap-3 border-t border-[var(--border)] pt-3 sm:grid-cols-4">
+                        <label className="text-xs text-[var(--muted-foreground)]">
+                          Tên hiển thị
+                          <input className={`mt-1 ${inputClass}`} value={edit.label} onChange={(e) => setEdit({ ...edit, label: e.target.value })} />
+                        </label>
+                        {s.cli ? (
+                          <div className="sm:col-span-2">
+                            {s.authorized ? (
+                              <CliModelSelect serviceId={s.id} current={s.model} onSaved={() => void load()} />
+                            ) : (
+                              <p className="text-xs text-[var(--muted-foreground)]">Ủy quyền tài khoản Google trước, rồi mới chọn được model.</p>
+                            )}
+                          </div>
+                        ) : (
+                          <label className="text-xs text-[var(--muted-foreground)]">
+                            Model
+                            <input className={`mt-1 ${inputClass}`} value={edit.model} onChange={(e) => setEdit({ ...edit, model: e.target.value })} />
+                          </label>
+                        )}
+                        <label className="text-xs text-[var(--muted-foreground)]">
+                          Yêu cầu/phút
+                          <input className={`mt-1 ${inputClass}`} inputMode="numeric" value={edit.rpm} onChange={(e) => setEdit({ ...edit, rpm: e.target.value })} />
+                        </label>
+                        {s.provider === "custom" && (
+                          <label className="text-xs text-[var(--muted-foreground)] sm:col-span-4">
+                            Base URL
+                            <input className={`mt-1 ${inputClass}`} value={edit.baseUrl} onChange={(e) => setEdit({ ...edit, baseUrl: e.target.value })} />
+                          </label>
+                        )}
+                        {!s.cli && <label className="text-xs text-[var(--muted-foreground)]">
+                          Khoá API mới (để trống = giữ nguyên)
+                          <input className={`mt-1 ${inputClass}`} type="password" autoComplete="off" value={edit.apiKey} onChange={(e) => setEdit({ ...edit, apiKey: e.target.value })} />
+                        </label>}
+                        {!s.cli && <div className="sm:col-span-4">
+                          <ModelPicker
+                            providerId={s.provider}
+                            apiKey={edit.apiKey}
+                            serviceId={s.id}
+                            value={edit.model}
+                            onPick={(id) => setEdit({ ...edit, model: id })}
+                            pricingUrl={providers.find((p) => p.id === s.provider)?.pricingUrl}
+                            publicModels={providers.find((p) => p.id === s.provider)?.publicModels}
+                            baseUrl={edit.baseUrl}
+                          />
+                        </div>}
+                        <div className="sm:col-span-4 flex gap-2">
+                          <button type="button" className={btn} disabled={busy === s.id} onClick={() => void saveEdit(s.id)}>
+                            Lưu
+                          </button>
+                          <button type="button" className={btn} onClick={() => setEditing(null)}>
+                            Huỷ
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
-
-      </div>
-
-      {/* Add from the preset list */}
-      <aside className="mt-8 xl:sticky xl:top-20 xl:mt-0 xl:max-h-[calc(100dvh-6rem)] xl:overflow-y-auto xl:rounded-2xl">
-      <form onSubmit={add} className="xl:[&_.grid]:!grid-cols-1 xl:[&_.grid>*]:!col-span-1 rounded-2xl rounded-2xl border border-[var(--border)] bg-[var(--background-1)] p-4 shadow-sm sm:p-5">
-        <h2 className="text-sm font-semibold text-[var(--foreground)]">Thêm dịch vụ AI</h2>
-        <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <label className="text-sm">
-            <span className="text-[var(--muted-foreground)]">Dịch vụ (chọn từ danh sách)</span>
-            <select className={`mt-1 ${inputClass}`} value={pid} onChange={(e) => setPid(e.target.value)}>
-              {providers.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          {!provider?.cli && <label className="text-sm">
-            <span className="text-[var(--muted-foreground)]">
-              Khoá API{provider?.custom && " (để trống nếu máy cục bộ không cần)"}
-            </span>
-            <input
-              required={!provider?.custom}
-              type="password"
-              autoComplete="off"
-              className={`mt-1 ${inputClass}`}
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-              placeholder={provider?.custom ? "Tuỳ chọn" : "Dán khoá API"}
-            />
-          </label>}
-          {provider?.baseUrlTemplate && (
-            <label className="text-sm sm:col-span-2">
-              <span className="text-[var(--muted-foreground)]">Account ID (32 ký tự, ở dash.cloudflare.com)</span>
-              <input
-                required
-                className={`mt-1 ${inputClass}`}
-                value={accountId}
-                onChange={(e) => setAccountId(e.target.value)}
-                placeholder="vd: 023e105f4ecef8ad9ca31a8372d0c353"
-                spellCheck={false}
-              />
-            </label>
-          )}
-          {provider?.custom && (
-            <div className="space-y-2 sm:col-span-2">
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_14rem]">
-                <label className="text-sm">
-                  <span className="text-[var(--muted-foreground)]">Base URL</span>
-                  <input
-                    required
-                    className={`mt-1 ${inputClass}`}
-                    value={baseUrl}
-                    onChange={(e) => setBaseUrl(e.target.value)}
-                    placeholder="http://localhost:11434/v1"
-                    spellCheck={false}
-                  />
-                </label>
-                <label className="text-sm">
-                  <span className="text-[var(--muted-foreground)]">Định dạng API</span>
-                  <select className={`mt-1 ${inputClass}`} value={apiFormat} onChange={(e) => setApiFormat(e.target.value as "openai" | "anthropic")}>
-                    <option value="openai">OpenAI-compatible</option>
-                    <option value="anthropic">Anthropic (Messages)</option>
-                  </select>
-                </label>
-              </div>
-              <p className="flex flex-wrap items-center gap-2 text-xs text-[var(--muted-foreground)]">
-                Điền nhanh:
-                {QUICK_ENDPOINTS.map((q) => (
-                  <button
-                    key={q.name}
-                    type="button"
-                    className={btn}
-                    onClick={() => {
-                      setBaseUrl(q.url);
-                      setApiFormat(q.format);
-                    }}
-                  >
-                    {q.name}
-                  </button>
-                ))}
-                <span>
-                  (máy nội bộ dùng http; địa chỉ công khai bắt buộc https — dán URL gốc, không gồm <code>/chat/completions</code>)
-                </span>
-              </p>
-            </div>
-          )}
-          {provider?.cli ? (
-            <p className="text-sm text-[var(--muted-foreground)] sm:self-end">Model: chọn sau khi ủy quyền tài khoản Google (mặc định “{provider.defaultModel}”).</p>
-          ) : (
-            <label className="text-sm">
-              <span className="text-[var(--muted-foreground)]">Model</span>
-              <input className={`mt-1 ${inputClass}`} value={model} onChange={(e) => setModel(e.target.value)} />
-            </label>
-          )}
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <label className="text-sm">
-              <span className="text-[var(--muted-foreground)]">Tên hiển thị (tuỳ chọn)</span>
-              <input className={`mt-1 ${inputClass}`} value={label} onChange={(e) => setLabel(e.target.value)} />
-            </label>
-            <label className="text-sm">
-              <span className="text-[var(--muted-foreground)]">Yêu cầu/phút</span>
-              <input className={`mt-1 ${inputClass}`} inputMode="numeric" value={rpm} onChange={(e) => setRpm(e.target.value)} />
-            </label>
-          </div>
-        </div>
-        {provider && !provider.cli && (
-          <div className="mt-3">
-            <ModelPicker
-              providerId={provider.id}
-              apiKey={apiKey}
-              value={model}
-              onPick={setModel}
-              pricingUrl={provider.pricingUrl}
-              publicModels={provider.publicModels}
-              baseUrl={baseUrl}
-              apiFormat={apiFormat}
-            />
-          </div>
-        )}
-        {provider && (
-          <p className="mt-3 text-xs text-[var(--muted-foreground)]">
-            {provider.note}{" "}
-            {provider.keyUrl && <a href={provider.keyUrl} target="_blank" rel="noreferrer" className="font-medium text-[var(--primary)] hover:underline">
-              Lấy khoá API ↗
-            </a>}{" "}
-            · Tên model có thể đổi theo thời gian — bấm “Kiểm tra” sau khi {provider.cli ? "ủy quyền" : "thêm"}. Dịch vụ mới được xếp ở cuối danh sách ưu tiên.
-          </p>
-        )}
-        <button
-          type="submit"
-          disabled={
-            busy === "add" ||
-            (provider?.cli ? false : provider?.custom ? !baseUrl.trim() : apiKey.trim().length < 8) ||
-            (Boolean(provider?.baseUrlTemplate) && accountId.trim().length !== 32)
-          }
-          className="mt-4 rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-semibold text-[var(--primary-foreground)] hover:bg-[var(--primary-hover)] disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          {busy === "add" ? "Đang thêm…" : "Thêm dịch vụ"}
-        </button>
-      </form>
-      </aside>
-      </div>
+                </li>
+              );
+            })}
+          </ol>
+        </section>
+      )}
     </div>
   );
 }
