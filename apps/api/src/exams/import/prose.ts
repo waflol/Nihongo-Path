@@ -1,5 +1,6 @@
 import { isGarbageText, pdfjsWasmUrl, renderPage } from "../../import/parsers/pdf.js";
 import { UnsupportedFormatError } from "../../import/parsers/types.js";
+import { readOcrMarks } from "./ocr-marks.js";
 import { extractFurigana, findStarSlots, findUnderlines, type Junk, type Mark, type Rule } from "./marks.js";
 
 /**
@@ -22,8 +23,10 @@ export interface ProsePdf {
   totalPages: number;
   /** Read page `n` (1-based) as joined text lines. `""` for a blank page. */
   pageText(n: number): Promise<string>;
-  /** Furigana + underlines of a page already read by `pageText` (text layer only; none for a scan). */
+  /** Furigana + underlines of a page already read by `pageText` (a scan gives only the underlines the OCR saw). */
   pageMarks?(n: number): Mark[];
+  /** Whether a page already read by `pageText` has no usable text layer (it needs OCR). */
+  pageIsScan?(n: number): boolean;
   /** The furigana lines removed from that page's text (to clean up an earlier import). */
   pageJunk?(n: number): Junk[];
   /** Release the parsed file; call once all reading is done. */
@@ -247,6 +250,7 @@ export async function openProsePdf(
 
   const marks = new Map<number, Mark[]>();
   const junk = new Map<number, Junk[]>();
+  const scans = new Set<number>();
   const pageText = async (n: number): Promise<string> => {
     const page = await doc.getPage(n);
     try {
@@ -271,12 +275,15 @@ export async function openProsePdf(
         return lines.join("\n");
       }
       // No usable text layer → render + OCR (the scan path).
+      scans.add(n);
       if (!ocr) return lines.join("\n"); // empty when neither text nor an OCR callback
       // Render from the open document: re-opening the file per page costs its whole size each time.
       const png = await renderPage(page);
       const text = await ocr(png, n);
       if (text === null) throw new OcrFailedError(n);
-      return text;
+      const read = readOcrMarks(text);
+      marks.set(n, read.marks);
+      return read.text;
     } finally {
       page.cleanup();
       void doc.cleanup();
@@ -289,6 +296,7 @@ export async function openProsePdf(
     pageText,
     pageMarks: (n) => marks.get(n) ?? [],
     pageJunk: (n) => junk.get(n) ?? [],
+    pageIsScan: (n) => scans.has(n),
     close: () => doc.loadingTask.destroy(),
   };
 }

@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { deskButton as btn, deskButtonPrimary as btnPrimary } from "./exam-import-draft-model";
-import { editFurigana, RichInput, TEXT_SIZES } from "./rich-input";
+import { FuriganaPopover } from "./furigana-popover";
+import { pickFurigana, RichInput, TEXT_SIZES, type FuriganaPick } from "./rich-input";
 
 export interface EditStimulus {
   key: string;
@@ -67,6 +68,13 @@ export function DraftEditor({
   const [questions, setQuestions] = useState<EditQuestion[]>(initialQuestions);
   const [showRaw, setShowRaw] = useState(initialStimuli.length === 0 && initialQuestions.length === 0);
   const [focused, setFocused] = useState<string | null>(null);
+  /** The open furigana popup; `n` gives every opening a fresh one. */
+  const [furigana, setFurigana] = useState<{ n: number; pick: FuriganaPick | null } | null>(null);
+  const openFurigana = () => {
+    const pick = pickFurigana();
+    setFurigana((f) => ({ n: (f?.n ?? 0) + 1, pick }));
+  };
+  const closeFurigana = useCallback(() => setFurigana(null), []);
 
   const patchStimulus = (key: string, p: Partial<EditStimulus>) =>
     setStimuli((l) => l.map((s) => (s.key === key ? { ...s, ...p } : s)));
@@ -149,7 +157,7 @@ export function DraftEditor({
         <button type="button" className={`${btn} underline`} onMouseDown={keepFocus} onClick={() => exec("underline")} title="Gạch chân (Ctrl+U)">
           U Gạch chân
         </button>
-        <button type="button" className={btn} onMouseDown={keepFocus} onClick={editFurigana} title="Thêm, sửa hoặc bỏ cách đọc trên chữ đang bôi đen">
+        <button type="button" className={btn} onMouseDown={keepFocus} onClick={openFurigana} aria-haspopup="dialog" title="Thêm, sửa hoặc bỏ cách đọc trên chữ đang bôi đen">
           <ruby>
             Furigana<rt className="text-[0.6em]">ふりがな</rt>
           </ruby>
@@ -167,6 +175,7 @@ export function DraftEditor({
         <p className="mb-1 text-xs font-semibold text-[var(--muted-foreground)]">Yêu cầu đề bài</p>
         <RichInput value={instruction} onChange={setInstruction} placeholder="問題… (yêu cầu in trên đề)" className="exam-ja text-[15px] leading-7" />
       </div>
+      {furigana && <FuriganaPopover key={furigana.n} pick={furigana.pick} onClose={closeFurigana} />}
       {showRaw && (
         <pre className="max-h-72 select-text overflow-auto whitespace-pre-wrap rounded-lg border border-[var(--sheet-rule)] bg-[var(--sheet)] p-3 text-xs text-[var(--foreground)]">
           {rawText || "(khối không có text gốc)"}

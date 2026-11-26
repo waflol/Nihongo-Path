@@ -10,6 +10,15 @@ User yêu cầu bỏ vì đã có Hộp thư phản hồi. Đã xoá: trang `/ad
 
 ---
 
+## Popup Furigana + gạch chân từ PDF scan (26/11/2026, nhánh np-407-furigana-popup, chưa gộp main)
+
+- **Popup Furigana** (`components/admin/furigana-popover.tsx`, thay `window.prompt`): hiện cạnh chữ đang chọn (điện thoại: đầu màn hình), tự điền cách đọc từ `POST /api/flashcards/reading` (kuromoji), chip gợi ý, xem trước, Enter lưu, Esc huỷ, "Bỏ furigana"; từ lẫn kana đặt cách đọc riêng trên chữ Hán (`rubyOverKanji`, có ô bỏ chọn). Chọn chữ: `pickFurigana()` trong `rich-input.tsx`. Đã chạy Chromium headless với API đọc giả (lưu, undo/redo, sửa, bỏ, Esc, 390px; trang tạm đã xoá).
+- **Gạch chân của PDF scan**: trước đây prompt OCR không yêu cầu nên mất hết. Giờ `ocrExamPageText` yêu cầu `<u>…</u>`; `import/ocr-marks.ts` gỡ thẻ thành `Mark` (text vẫn thuần cho tách khối/AI), gắn lại như PDF chữ. Nút "Bổ sung furigana" (`backfillMarks`) với trang scan: đọc lại bằng AI **ở nền** (`markScans`, trả `scanning`), lưu mark theo trang, chỉ sửa bản nháp mở và trường chưa định dạng; tiến độ ở nhật ký lần nhập. API restart sẽ dừng việc nền — bấm lại.
+- Vitest `src/exams` + `ai-complete-any` 182 đạt, tsc API + UI đạt. **Chưa thử OCR thật**: model có nhận ra gạch chân hay không phụ thuộc dịch vụ ở tab "Đọc PDF đề thi".
+- **OOM khi biên dịch đã sửa (26/11/2026):** `nest start --watch` cần ~700 MB heap trở lên nhưng bị `NODE_OPTIONS=--max-old-space-size=700` (từ `.env`) giới hạn → exit 134, pm2 restart, `dist/main` cũ mồ côi giữ cổng 3000. Script `dev` của API giờ truyền `--max-old-space-size=1280` (cờ dòng lệnh thắng `NODE_OPTIONS`; API con vẫn 700). Đã dọn tiến trình mồ côi, thử 2 lần biên dịch lại: không sập, RSS đỉnh ~1 GB. Nếu `EADDRINUSE` lại xuất hiện: PPID của `dist/main` phải là tiến trình watch; nếu không thì `pm2 stop api`, kill `dist/main`, `pm2 start api`.
+
+---
+
 ## `/admin/ai` thiết kế lại (26/11/2026)
 
 Một cột: đầu trang gọn + nút "Thêm dịch vụ" mở form (tự mở khi chưa có dịch vụ); tab tác vụ chia 2 nhóm, tự xuống dòng (trước bị cắt); danh sách là chuỗi ưu tiên đánh số nối bằng đường dọc. Tải lỗi (vd. API đang restart → 500 `ECONNREFUSED`) hiện thông báo + "Thử lại", không còn báo "0 dịch vụ". Đã chụp Chromium headless dữ liệu giả (850, 1100, 360 px; sáng/tối; lỗi, rỗng) qua trang tạm đã xoá; chưa thử đăng nhập thật. tsc đạt; ESLint còn 4 lỗi `set-state-in-effect` cũ.

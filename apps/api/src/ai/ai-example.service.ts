@@ -768,9 +768,10 @@ export class AiExampleService {
       "- the 答案/解答 lines (number + circled mark, e.g. `1① 2④`),",
       "- bracketed question numbers (【31】) and answer entries (【31】正解2), exactly as printed,",
       "- round headers (第7回) and section titles (漢字読み, 表記, 用法 …), each on its own line.",
+      "UNDERLINES matter: the questions ask about the underlined word. Wrap exactly the characters that have a line printed under them in <u>…</u>, e.g. 彼の<u>態度</u>はよくない。 Check every question sentence and option for one. Never underline anything that is not underlined in the image, and not the blanks to fill in.",
       "On a two-column page, transcribe the whole left column before the right one.",
       "Rules: do NOT translate, do NOT fix typos, do NOT renumber anything. Keep Japanese/Japanese text as printed (kanji stay kanji).",
-      "Output plain text only, one line per printed line, no JSON, no commentary.",
+      "Output plain text only (<u> is the only tag allowed), one line per printed line, no JSON, no commentary.",
     ];
     let blank = false;
     for (const svc of await this.services.available("ocr-exam")) {

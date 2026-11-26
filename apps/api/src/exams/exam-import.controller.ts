@@ -127,7 +127,7 @@ export class ExamImportController {
   @Post(":jobId/marks")
   @ContentAdmin()
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: "Add furigana + underlines from the kept PDF to this job's open drafts (no AI)" })
+  @ApiOperation({ summary: "Add furigana + underlines from the kept PDF to this job's open drafts (scanned pages are re-read by AI in the background)" })
   marks(@CurrentUser() caller: AuthUser, @Param("jobId") jobId: string) {
     return this.imports.backfillMarks(caller, jobId);
   }

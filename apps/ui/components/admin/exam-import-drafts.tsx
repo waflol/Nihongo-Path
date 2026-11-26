@@ -167,8 +167,16 @@ export function ExamImportDrafts({ jobId }: { jobId: string }) {
       setBulk({ busy: false, ok: false, text: res ? await errorOf(res) : "Mất kết nối khi đang bổ sung — bấm Tải lại để xem kết quả" });
       return;
     }
-    const r = (await res.json()) as { drafts: number; changed: number; skipped: number };
+    const r = (await res.json()) as { drafts: number; changed: number; skipped: number; scanning?: number };
     await load();
+    if (r.scanning) {
+      setBulk({
+        busy: false,
+        ok: true,
+        text: `AI đang đọc lại ${r.scanning} trang scan ở nền để bổ sung gạch chân (có thể mất nhiều phút). Xem tiến độ trong nhật ký lần nhập; bấm Tải lại để thấy các khối đã xong.`,
+      });
+      return;
+    }
     setBulk({
       busy: false,
       ok: true,

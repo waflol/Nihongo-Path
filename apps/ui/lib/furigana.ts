@@ -12,6 +12,18 @@ const KANJI = /[一-鿿々ヶ]/;
 const kataToHira = (s: string) => s.replace(/[ァ-ヶ]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0x60));
 const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
+/**
+ * A reading typed over a whole word, spread so it sits on the kanji only
+ * (申し込み + もうしこみ → 申[もう]し込[こ]み). The result always spells `base`
+ * and the reading exactly; when that is not possible it is one ruby over `base`.
+ */
+export function rubyOverKanji(base: string, reading: string): FuriganaPart[] {
+  const parts = furiganaParts(base, reading);
+  const spells = parts.map((p) => p.text).join("") === base;
+  const reads = kataToHira(parts.map((p) => p.rt ?? p.text).join("")) === kataToHira(reading);
+  return spells && reads && parts.some((p) => p.rt) ? parts : [{ text: base, rt: reading }];
+}
+
 /** Drop whitespace that sits between two Japanese characters. */
 export const squeezeJa = (s: string) => s.replace(/(?<=[\u3000-\u30ff\u4e00-\u9fff\uff00-\uffef])\s+(?=[\u3000-\u30ff\u4e00-\u9fff\uff00-\uffef])/g, "");
 

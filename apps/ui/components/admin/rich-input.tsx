@@ -28,42 +28,81 @@ const toHtml = (value: string) =>
     .replace(/&lt;\/size&gt;/g, "</font>")
     .replace(/&lt;(\/?[biu])&gt;/g, "<$1>");
 
+/** The words picked for furigana, remembered while the popup holds the focus. */
+export interface FuriganaPick {
+  /** The words without any reading. */
+  base: string;
+  /** The reading they carry now; "" when none, or when several separate readings were picked. */
+  reading: string;
+  /** Whether there is any furigana to remove. */
+  annotated: boolean;
+  /** Where the words are on screen now (they move when the page scrolls). */
+  rect: () => DOMRect;
+  /** Replace the furigana with these pieces (`rt` = reading over `text`; none removes it). */
+  apply: (pieces: { text: string; rt?: string }[]) => void;
+  /** Give the field its focus and selection back. */
+  restore: () => boolean;
+}
+
+const elementOf = (n: Node) => (n instanceof Element ? n : n.parentElement);
+
 /**
- * Put furigana on the selected words of a `RichInput`, change it, or (empty reading) remove it.
- * Goes through `insertHTML`, so Ctrl+Z undoes it.
+ * Read the selection of a `RichInput` for furigana; `null` when there are no words
+ * (on one line) to annotate. A caret or selection touching a furigana takes all of it.
  */
-export function editFurigana(): void {
+export function pickFurigana(): FuriganaPick | null {
   const sel = window.getSelection();
-  if (!sel || sel.rangeCount === 0) return;
+  if (!sel || sel.rangeCount === 0) return null;
   const range = sel.getRangeAt(0).cloneRange();
-  const elementOf = (n: Node) => (n instanceof Element ? n : n.parentElement);
   const field = elementOf(range.commonAncestorContainer)?.closest<HTMLElement>('[role="textbox"][contenteditable="true"]');
-  const ruby = elementOf(range.startContainer)?.closest("ruby");
-  if (ruby) range.selectNode(ruby);
+  if (!field) return null;
+  const first = elementOf(range.startContainer)?.closest("ruby");
+  const last = elementOf(range.endContainer)?.closest("ruby");
+  if (first) range.setStartBefore(first);
+  if (last) range.setEndAfter(last);
   const picked = range.cloneContents();
-  const old = ruby?.querySelector("rt")?.textContent ?? "";
+  const readings = [...picked.querySelectorAll("ruby")].map((r) => r.querySelector("rt")?.textContent ?? "");
+  const only = readings.length === 1 ? picked.querySelector("ruby")!.cloneNode(true) : null;
   picked.querySelectorAll("rt").forEach((rt) => rt.remove());
-  const base = (picked.textContent ?? "").trim() ? (picked.textContent ?? "") : "";
-  if (!field || !base || base.includes("\n")) {
-    window.alert("Bôi đen chữ cần phiên âm (trên một dòng) rồi bấm Furigana.");
-    return;
-  }
-  const reading = window.prompt(`Cách đọc của “${base}” (để trống để bỏ furigana)`, old);
-  if (reading === null) return;
-  const clean = reading.replace(/[<>\n]/g, "").trim();
-  field.focus();
-  sel.removeAllRanges();
-  sel.addRange(range);
-  let html = clean ? rubyHtml(escapeHtml(base), escapeHtml(clean)) : escapeHtml(base);
-  // `insertHTML` drops the formatting around what it replaces, so put it back.
-  for (const tag of ["u", "i", "b"]) {
-    const around = elementOf(range.commonAncestorContainer)?.closest(tag);
-    if ((around && field.contains(around)) || picked.querySelector(tag)) html = `<${tag}>${html}</${tag}>`;
-  }
-  const sized = elementOf(range.commonAncestorContainer)?.closest("font[size]") ?? picked.querySelector("font[size]");
-  const size = sized && sized !== field ? sized.getAttribute("size") : null;
-  if (size && /^[2356]$/.test(size)) html = `<font size="${size}">${html}</font>`;
-  document.execCommand("insertHTML", false, html);
+  const base = picked.textContent ?? "";
+  if (!base.trim() || base.includes("\n") || picked.querySelector("br, div, p")) return null;
+
+  const restore = () => {
+    if (!range.startContainer.isConnected || !range.endContainer.isConnected) return false;
+    field.focus({ preventScroll: true });
+    const now = window.getSelection();
+    now?.removeAllRanges();
+    now?.addRange(range);
+    return true;
+  };
+
+  return {
+    base,
+    // One furigana over exactly the picked words is "the reading"; a part of them is not.
+    reading: only && only.textContent?.replace(readings[0], "") === base ? readings[0] : "",
+    annotated: readings.length > 0,
+    rect: () => range.getBoundingClientRect(),
+    restore,
+    // Goes through `insertHTML`, so Ctrl+Z undoes it.
+    apply(pieces) {
+      if (!restore()) return;
+      let html = pieces
+        .map((p) => {
+          const rt = (p.rt ?? "").replace(/[<>\n]/g, "").trim();
+          return rt ? rubyHtml(escapeHtml(p.text), escapeHtml(rt)) : escapeHtml(p.text);
+        })
+        .join("");
+      // `insertHTML` drops the formatting around what it replaces, so put it back.
+      for (const tag of ["u", "i", "b"]) {
+        const around = elementOf(range.commonAncestorContainer)?.closest(tag);
+        if ((around && field.contains(around)) || picked.querySelector(tag)) html = `<${tag}>${html}</${tag}>`;
+      }
+      const sized = elementOf(range.commonAncestorContainer)?.closest("font[size]") ?? picked.querySelector("font[size]");
+      const size = sized && sized !== field ? sized.getAttribute("size") : null;
+      if (size && /^[2356]$/.test(size)) html = `<font size="${size}">${html}</font>`;
+      document.execCommand("insertHTML", false, html);
+    },
+  };
 }
 
 /** The editable DOM back to tagged text, whatever markup the browser produced. */

@@ -507,22 +507,27 @@ export class ExamImportService implements OnApplicationBootstrap {
   }
 
   /**
-   * Add furigana + underlines to the drafts of an earlier import, from the kept PDF
-   * (no AI). Only open drafts, and only text nobody has formatted by hand.
+   * Add furigana + underlines to the drafts of an earlier import, from the kept PDF.
+   * Only open drafts, and only text nobody has formatted by hand. Pages with a text
+   * layer are done at once (no AI); scanned pages are read again by the AI in the
+   * background (`scanning` = how many), with progress in the job log.
    */
-  async backfillMarks(caller: AuthUser, jobId: string): Promise<{ drafts: number; changed: number; skipped: number }> {
+  async backfillMarks(caller: AuthUser, jobId: string): Promise<{ drafts: number; changed: number; skipped: number; scanning: number }> {
     const job = await this.jobs.findById(jobId).select("status").lean().exec();
     if (!job) throw new NotFoundException("Import job not found");
     if (job.status === "running") throw new ConflictException("Đợi lần nhập này chạy xong đã");
     const lock = `marks:${jobId}`;
-    if (this.running.has(lock)) throw new ConflictException("Đang bổ sung cho lần nhập này — đợi xong đã");
+    if (this.running.has(lock)) throw new ConflictException("Đang bổ sung cho lần nhập này — đợi xong đã (xem nhật ký)");
     this.running.add(lock);
+    let background = false;
     try {
       const buffer = await readFile(join(this.dir, `${jobId}.pdf`)).catch(() => null);
       if (!buffer) throw new BadRequestException("File PDF của lần nhập này không còn trên máy chủ — hãy nhập lại PDF");
       const pdf = await openProsePdf(buffer);
       const docs = await this.drafts.find({ jobId, status: { $in: ["needs_review", "error"] } }).exec();
-      const read = new Map<number, { marks: Mark[]; junk: Junk[] }>();
+      const read = new Map<number, { marks: Mark[]; junk: Junk[]; scan: boolean }>();
+      const scanned: ExamImportDraftDocument[] = [];
+      const scanPages = new Set<number>();
       let changed = 0;
       let skipped = 0;
       try {
@@ -533,14 +538,23 @@ export class ExamImportService implements OnApplicationBootstrap {
           }
           const marks: Mark[] = [];
           const junk: Junk[] = [];
+          let scan = false;
           for (let n = doc.pageFrom; n <= Math.min(doc.pageTo ?? doc.pageFrom, pdf.numPages); n += 1) {
             let page = read.get(n);
             if (!page) {
               await pdf.pageText(n);
-              read.set(n, (page = { marks: pdf.pageMarks?.(n) ?? [], junk: pdf.pageJunk?.(n) ?? [] }));
+              read.set(n, (page = { marks: pdf.pageMarks?.(n) ?? [], junk: pdf.pageJunk?.(n) ?? [], scan: pdf.pageIsScan?.(n) ?? false }));
             }
             marks.push(...page.marks);
             junk.push(...page.junk);
+            if (page.scan) {
+              scan = true;
+              scanPages.add(n);
+            }
+          }
+          if (scan) {
+            scanned.push(doc);
+            continue;
           }
           if (!withMarks(doc, marks, (fields) => enrich(fields, marks, junk))) continue;
           doc.markModified("parsed");
@@ -550,11 +564,71 @@ export class ExamImportService implements OnApplicationBootstrap {
       } finally {
         await pdf.close();
       }
-      await this.log(jobId, "info", `Bổ sung furigana, gạch chân: ${changed}/${docs.length} bản nháp thay đổi`);
-      return { drafts: docs.length, changed, skipped };
+      await this.log(jobId, "info", `Bổ sung furigana, gạch chân: ${changed}/${docs.length - scanned.length} bản nháp thay đổi`);
+      if (scanned.length > 0) {
+        const ocr = await openProsePdf(buffer, (png, n) =>
+          retryRounds(() => this.ai.ocrExamPageText(png, n), this.retryDelaysMs),
+        );
+        background = true;
+        void this.markScans(jobId, ocr, scanned)
+          .catch((err) => this.log(jobId, "error", `Bổ sung gạch chân bị dừng: ${(err as Error).message}`))
+          .finally(async () => {
+            this.running.delete(lock);
+            await ocr.close().catch(() => undefined);
+          });
+      }
+      return { drafts: docs.length, changed, skipped, scanning: scanPages.size };
     } finally {
-      this.running.delete(lock);
+      if (!background) this.running.delete(lock);
     }
+  }
+
+  /**
+   * Underlines for drafts made from scanned pages: read each page once (marks kept
+   * with the page, so a second run does not ask again), then tag each draft as soon
+   * as its pages are done — re-fetched, so an edit made meanwhile is not lost.
+   */
+  private async markScans(jobId: string, pdf: ProsePdf, docs: ExamImportDraftDocument[]): Promise<void> {
+    await this.log(jobId, "info", `Đọc lại trang scan để bổ sung gạch chân cho ${docs.length} bản nháp`);
+    const read = new Map<number, Mark[]>();
+    let changed = 0;
+    let unreadInARow = 0;
+    for (const doc of [...docs].sort((a, b) => (a.pageFrom ?? 0) - (b.pageFrom ?? 0))) {
+      if (!(await this.jobs.exists({ _id: jobId }))) return; // deleted meanwhile
+      const marks: Mark[] = [];
+      for (let n = doc.pageFrom ?? 1; n <= Math.min(doc.pageTo ?? doc.pageFrom ?? 1, pdf.numPages); n += 1) {
+        let page = read.get(n);
+        if (!page) {
+          const row = await this.pages.findOne({ job: jobId, n }).lean().exec();
+          page = (row?.marks ?? []) as Mark[];
+          if (page.length === 0) {
+            try {
+              await pdf.pageText(n);
+              page = pdf.pageMarks?.(n) ?? [];
+              unreadInARow = 0;
+              await this.pages.updateOne({ job: jobId, n }, { $set: { marks: page } }).exec();
+              await this.log(jobId, "info", `Trang ${n}: ${page.length} chỗ gạch chân`);
+            } catch (err) {
+              if (!(err instanceof OcrFailedError)) throw err;
+              page = [];
+              unreadInARow += 1;
+              await this.log(jobId, "warn", `Trang ${n}: AI chưa đọc được`);
+              if (unreadInARow >= MAX_UNREAD_IN_A_ROW) {
+                throw new Error(`AI đọc ảnh không phản hồi ở ${unreadInARow} trang liên tiếp (đến trang ${n}) — kiểm tra dịch vụ AI rồi bấm lại`);
+              }
+            }
+          }
+          read.set(n, page);
+        }
+        marks.push(...page);
+      }
+      const fresh = await this.drafts.findOne({ _id: doc._id, status: { $in: ["needs_review", "error"] } }).exec();
+      if (!fresh || !withMarks(fresh, marks, (fields) => enrich(fields, marks, []))) continue;
+      fresh.markModified("parsed");
+      await fresh.save();
+      changed += 1;
+    }
+    await this.log(jobId, "info", `Xong gạch chân từ trang scan: ${changed}/${docs.length} bản nháp thay đổi`);
   }
 
   /** Poll the job: progress + the drafts it produced. */
