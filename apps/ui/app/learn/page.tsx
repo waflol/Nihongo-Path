@@ -18,74 +18,78 @@ export const metadata: Metadata = {
   robots: { index: false, follow: true },
 };
 
-/**
- * Learning area placeholder. No real business logic yet — this route is a
- * shell for the post-auth learning experience (Sprint 2+).
- */
 const SERIF = '"Yu Mincho","Hiragino Mincho ProN","Noto Serif JP","Shippori Mincho",serif';
 
-type Tile = { href: string | null; kanji: string; title: string; desc: string; area: string };
+type Tile = {
+  href: string | null;
+  kanji: string;
+  title: string;
+  desc: string;
+  featured?: boolean;
+};
 
-// Bento layout: one featured tile, the rest sized by how often they are used.
+// Bento: one featured 2×2 tile, six compact tiles, one full-width "coming soon" strip.
 const tiles: Tile[] = [
-  { href: "/learn/decks", kanji: "札", title: "Flashcard", desc: "Bộ thẻ cá nhân, ôn theo thuật toán lặp lại ngắt quãng.", area: "col-span-3 sm:col-span-2 lg:col-span-4 lg:h-28" },
-  { href: "/learn/review", kanji: "復", title: "Ôn tập hôm nay", desc: "Những từ đã đến hạn ôn.", area: "" },
-  { href: "/learn/exercises", kanji: "練", title: "Bài tập", desc: "Trắc nghiệm, gõ đáp án, đặt câu.", area: "" },
-  { href: "/learn/exam", kanji: "試", title: "Luyện thi", desc: "6 dạng 問題 kiểu JLPT.", area: "" },
-  { href: "/learn/kanji", kanji: "漢", title: "Kanji N5–N1", desc: "Tra theo cấp, Hán Việt, thứ tự nét, on/kun.", area: "" },
-  { href: "/learn/exams", kanji: "試", title: "Đề thi có thời gian", desc: "Làm đề, chấm điểm trên máy chủ, xem lại lỗi.", area: "lg:col-span-2" },
-  { href: null, kanji: "聴", title: "Luyện nghe", desc: "Đang chuẩn bị, sẽ có ở Sprint 6.", area: "lg:col-span-2" },
+  { href: "/learn/decks", kanji: "札", title: "Flashcard", desc: "Bộ thẻ cá nhân, ôn theo thuật toán lặp lại ngắt quãng.", featured: true },
+  { href: "/learn/review", kanji: "復", title: "Ôn tập hôm nay", desc: "Những từ đã đến hạn ôn." },
+  { href: "/learn/exercises", kanji: "練", title: "Bài tập", desc: "Trắc nghiệm, gõ đáp án, đặt câu." },
+  { href: "/learn/exam", kanji: "試", title: "Luyện thi", desc: "6 dạng 問題 kiểu JLPT." },
+  { href: "/learn/kanji", kanji: "漢", title: "Kanji N5–N1", desc: "Tra theo cấp, Hán Việt, thứ tự nét, on/kun." },
+  { href: "/learn/grammar", kanji: "文", title: "Ngữ pháp N5–N1", desc: "Theo cấp độ, chủ đề, bối cảnh và giáo trình." },
+  { href: "/learn/exams", kanji: "考", title: "Đề thi có thời gian", desc: "Làm đề, chấm điểm trên máy chủ, xem lại lỗi." },
+  { href: null, kanji: "聴", title: "Luyện nghe", desc: "Đang chuẩn bị, sẽ có ở Sprint 6." },
 ];
 
-function TileBody({ t, featured }: { t: Tile; featured: boolean }) {
+function tileClasses(t: Tile): string {
+  const featured = !!t.featured;
+  return [
+    "learn-tile relative flex min-h-0 flex-col items-center justify-center gap-2.5 overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--background-1)] p-4 text-center transition-all duration-300 sm:gap-3",
+    featured ? "learn-tile-featured col-span-2 sm:row-span-2 sm:items-start sm:text-left lg:gap-4 lg:p-6" : "",
+    !t.href ? "border-dashed bg-transparent col-span-2 opacity-90 sm:col-span-2" : "",
+    t.href
+      ? "hover:z-10 hover:scale-[1.02] hover:border-[color-mix(in_srgb,var(--primary)_45%,var(--border))] hover:shadow-[0_14px_30px_-18px_color-mix(in_srgb,var(--primary)_55%,transparent)] motion-reduce:hover:scale-100 focus-visible:z-10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--primary)]"
+      : "lg:flex-row lg:justify-start lg:gap-4 lg:text-left lg:items-center",
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+function TileBody({ t }: { t: Tile }) {
+  const featured = !!t.featured;
   return (
     <>
       <span
         aria-hidden="true"
         style={{ fontFamily: SERIF }}
         className={
-          "pointer-events-none absolute -bottom-[0.18em] -right-[0.04em] select-none leading-none text-[var(--foreground)] opacity-[0.07] transition-all duration-500 group-hover:-translate-y-1 group-hover:text-[var(--primary)] group-hover:opacity-[0.16] " +
-          (featured ? "text-[4.5rem] sm:text-[clamp(4rem,14vh,8rem)] lg:text-[8rem]" : "text-[3.25rem] sm:text-[clamp(4rem,14vh,8rem)] lg:text-[6rem]")
+          "flex shrink-0 items-center justify-center rounded-xl bg-[color-mix(in_srgb,var(--primary)_13%,transparent)] font-bold text-[var(--primary)] " +
+          (featured ? "size-12 text-3xl lg:size-14 lg:text-4xl" : "max-sm:size-9 max-sm:text-lg size-10 text-xl lg:size-11 lg:text-2xl")
         }
       >
         {t.kanji}
       </span>
-
-      {featured && (
-        <div aria-hidden="true" className="pointer-events-none absolute right-[6%] top-1/2 hidden h-[78%] w-28 -translate-y-1/2 lg:block">
-          <div className="absolute inset-0 rotate-[7deg] rounded-xl border border-[var(--border)] bg-[var(--background)] opacity-70 transition-transform duration-500 group-hover:rotate-[11deg]" />
-          <div className="absolute inset-0 -rotate-[3deg] rounded-xl border border-[var(--border)] bg-[var(--background)] shadow-lg transition-transform duration-500 group-hover:-rotate-[6deg]">
-            <div className="flex h-full flex-col items-center justify-center gap-1">
-              <span style={{ fontFamily: SERIF }} className="text-[clamp(1.8rem,5vh,3.2rem)] leading-none text-[var(--foreground)]">言葉</span>
-              <span className="text-xs text-[var(--muted-foreground)]">ことば · từ vựng</span>
-            </div>
-          </div>
-        </div>
-      )}
-
-      <span
-        aria-hidden="true"
-        style={{ fontFamily: SERIF }}
-        className="relative flex size-9 shrink-0 max-sm:[:not(.featured)>&]:size-8 max-sm:[:not(.featured)>&]:text-base max-sm:[@media(max-height:700px)]:size-7 max-sm:[@media(max-height:700px)]:text-sm sm:mb-1 items-center justify-center rounded-lg bg-[color-mix(in_srgb,var(--primary)_16%,transparent)] text-lg font-bold text-[var(--primary)] sm:size-8 sm:text-lg lg:mb-0 lg:size-10 lg:text-xl lg:[.featured_&]:hidden"
-      >
-        {t.kanji}
-      </span>
-      <div className="relative min-w-0 sm:mt-auto lg:mt-0">
-        <h2 className={(featured ? "text-[15px] sm:text-base lg:text-2xl" : "text-[13px] leading-tight max-sm:line-clamp-2 sm:text-base lg:text-base") + " font-semibold tracking-tight text-[var(--foreground)]"}>
+      <div className="min-w-0">
+        <h2
+          className={
+            "tracking-tight text-[var(--foreground)] " +
+            (featured ? "text-lg font-semibold lg:text-[26px]" : "max-sm:text-sm text-[15px] font-semibold")
+          }
+        >
           {t.title}
         </h2>
-        <p className={(featured ? "max-w-xs max-sm:[@media(max-height:700px)]:hidden lg:max-w-md lg:text-base" : "max-w-[16rem] max-sm:hidden lg:text-[13px]") + " mt-0.5 line-clamp-2 max-sm:line-clamp-1 text-xs leading-snug text-[var(--muted-foreground)] sm:mt-1 sm:text-sm"}>
+        <p
+          className={
+            featured
+              ? "mt-1.5 max-w-[19rem] text-sm leading-relaxed text-[var(--muted-foreground)] lg:text-[15px]"
+              : "mt-0.5 line-clamp-2 max-sm:line-clamp-1 text-xs leading-snug text-[var(--muted-foreground)] sm:text-[13px]"
+          }
+        >
           {t.desc}
         </p>
       </div>
-
       {!t.href && (
-        <span
-          style={{ fontFamily: SERIF }}
-          className="absolute right-2 top-2 flex size-6 -rotate-6 lg:right-4 lg:top-4 lg:size-9 items-center justify-center rounded-md bg-[var(--primary)] text-sm font-bold text-white shadow-sm"
-          title="Sắp ra mắt"
-        >
-          近
+        <span className="absolute right-3 top-3 rounded-full bg-[color-mix(in_srgb,var(--primary)_12%,transparent)] px-2.5 py-1 text-[11px] font-medium text-[var(--primary)] max-sm:hidden sm:right-4 sm:top-4">
+          Sắp ra mắt
         </span>
       )}
     </>
@@ -96,67 +100,59 @@ export default function LearnPage() {
   return (
     <div
       data-learn
-      className="mx-auto flex min-h-0 w-full max-w-7xl flex-col px-3 pb-3 pt-2 sm:px-6 sm:py-3 lg:min-h-[calc(100dvh-65px)] lg:py-5"
+      className="mx-auto flex min-h-0 w-full max-w-[1360px] flex-col px-4 pb-4 pt-3 sm:px-8 sm:py-5 lg:min-h-[calc(100dvh-65px)] lg:px-10 lg:py-8"
     >
       <FitScreen lg media="(min-width: 1024px)" />
-      <div className="flex shrink-0 flex-col gap-3 max-lg:gap-2 max-lg:rounded-2xl max-lg:border max-lg:border-[var(--border)] max-lg:bg-[var(--background-1)] max-lg:p-2.5 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex shrink-0 flex-col gap-3 max-lg:rounded-3xl max-lg:border max-lg:border-[var(--border)] max-lg:bg-[var(--background-1)] max-lg:p-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex min-w-0 items-center gap-3">
           <span
             aria-hidden="true"
             style={{ fontFamily: SERIF }}
-            className="flex size-8 shrink-0 -rotate-3 lg:size-11 items-center justify-center rounded-lg bg-[var(--primary)] text-lg font-bold lg:text-xl text-white shadow-md lg:text-2xl"
+            className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-[var(--primary)] text-lg font-bold text-[var(--primary-foreground)] lg:size-10 lg:text-xl"
           >
             学
           </span>
           <TodayStrip />
         </div>
-        <div className="flex shrink-0 flex-wrap items-center gap-2 [&>*:first-child]:flex-1 sm:[&>*:first-child]:flex-none">
-        <DueButton />
-        <ExtraDialog
-          ariaLabel="Nhắc ôn tập & cài ứng dụng"
-          title="Nhắc ôn tập & cài ứng dụng"
-          className="w-10 shrink-0 sm:w-auto sm:px-3"
-          label={
-            <svg aria-hidden="true" viewBox="0 0 24 24" className="size-5 sm:size-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
-              <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
-            </svg>
-          }
-        >
-          <PushReminderCard />
-          <InstallAppCard />
-        </ExtraDialog>
-        <ExtraDialog label="Chi tiết" title="Tiến độ ghi nhớ"><ProgressPanel dense /></ExtraDialog>
+        <div className="flex shrink-0 flex-wrap items-center gap-2 sm:justify-end">
+          <DueButton />
+          <ExtraDialog
+            ariaLabel="Nhắc ôn tập & cài ứng dụng"
+            title="Nhắc ôn tập & cài ứng dụng"
+            className="w-10 shrink-0 sm:w-auto sm:px-3.5"
+            label={
+              <svg aria-hidden="true" viewBox="0 0 24 24" className="size-5 sm:size-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
+                <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
+              </svg>
+            }
+          >
+            <PushReminderCard />
+            <InstallAppCard />
+          </ExtraDialog>
+          <ExtraDialog label="Chi tiết" title="Tiến độ ghi nhớ">
+            <ProgressPanel dense />
+          </ExtraDialog>
         </div>
       </div>
 
-      <div className="mt-2 flex min-h-0 flex-1 flex-col gap-2 sm:mt-3 sm:gap-3 lg:mt-5 lg:grid lg:flex-none lg:grid-cols-[26rem_minmax(0,1fr)] lg:grid-rows-[auto_auto] lg:gap-3">
-      <div className="grid shrink-0 grid-cols-3 gap-2 max-lg:order-2 sm:h-[clamp(8.5rem,23dvh,13rem)] sm:grid-cols-4 sm:grid-rows-2 lg:col-span-2 lg:row-start-2 lg:h-auto lg:min-h-0 lg:grid-rows-[auto_auto_auto] lg:gap-3">
-        {tiles.map((t, i) => {
-          const featured = i === 0;
-          const cls =
-            "learn-tile group relative flex min-h-0 min-h-14 max-sm:[@media(max-height:700px)]:min-h-11 max-sm:[@media(max-height:700px)]:py-1.5 items-center gap-2.5 overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--background-1)] p-2.5 sm:min-h-0 sm:flex-col sm:items-stretch sm:gap-0 sm:p-4 lg:flex-row lg:items-center lg:gap-3 lg:p-4 transition-all duration-300 hover:z-10 hover:scale-[1.05] motion-reduce:hover:scale-100 " +
-            t.area + (featured ? " featured" : " max-sm:flex-col max-sm:justify-center max-sm:gap-1 max-sm:px-1.5 max-sm:py-2 max-sm:text-center max-sm:[@media(max-height:700px)]:py-1.5");
-          const node = t.href ? (
-            <Link
-              key={t.title}
-              href={t.href}
-              className={cls + " hover:border-[var(--primary)] hover:shadow-[0_10px_30px_-12px_color-mix(in_srgb,var(--primary)_45%,transparent)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--primary)]"}
-            >
-              <TileBody t={t} featured={featured} />
-            </Link>
-          ) : (
-            <div key={t.title} className={cls + " border-dashed"}>
-              <TileBody t={t} featured={featured} />
-            </div>
-          );
-          return node;
-        })}
-      </div>
+      <div className="mt-4 flex min-h-0 flex-1 flex-col gap-3 sm:mt-5 lg:grid lg:flex-none lg:grid-cols-[26rem_minmax(0,1fr)] lg:grid-rows-[auto_auto] lg:gap-4">
+        <div className="grid grid-cols-2 gap-3 max-lg:order-2 sm:grid-cols-4 sm:gap-4 lg:col-span-2 lg:row-start-2">
+          {tiles.map((t) =>
+            t.href ? (
+              <Link key={t.title} href={t.href} className={tileClasses(t)}>
+                <TileBody t={t} />
+              </Link>
+            ) : (
+              <div key={t.title} className={tileClasses(t)}>
+                <TileBody t={t} />
+              </div>
+            )
+          )}
+        </div>
 
-      <ReviewChart className="hidden lg:col-start-2 lg:row-start-1 lg:-ml-3 lg:flex lg:rounded-l-none" />
-
-      <LearnSidebar />
+        <ReviewChart className="hidden lg:-ml-3 lg:col-start-2 lg:row-start-1 lg:flex lg:rounded-l-none" />
+        <LearnSidebar />
       </div>
     </div>
   );

@@ -147,24 +147,26 @@ html.fit-screen body main {
   }
 }
 
-/* /learn light mode: warm washi paper backdrop, white tiles that float on it. */
+/* /learn: quiet editorial canvas. Keep the page calm; let the primary action lead. */
 :root.learn-bg:not([data-theme="dark"]) body {
   background:
-    radial-gradient(60rem 30rem at 12% -10%, color-mix(in srgb, var(--primary-500) 9%, transparent), transparent 60%),
-    radial-gradient(50rem 30rem at 100% 110%, color-mix(in srgb, var(--primary-300) 14%, transparent), transparent 60%),
-    color-mix(in srgb, var(--primary-50) 45%, #f8f4ea);
+    radial-gradient(60rem 30rem at 92% -20%, color-mix(in srgb, var(--primary-500) 6%, transparent), transparent 68%),
+    #fafafa;
 }
 :root:not([data-theme="dark"]) [data-learn] {
   --background-1: #ffffff;
-  --border: #e6dfd0;
-  --muted-foreground: #6b6558;
-  --foreground: #2a2620;
+  --border: #e8e8e8;
+  --muted-foreground: #737373;
+  --foreground: #202020;
 }
 :root:not([data-theme="dark"]) [data-learn] .learn-tile {
-  box-shadow: 0 1px 2px rgba(60, 40, 10, 0.05), 0 8px 24px -14px rgba(60, 40, 10, 0.18);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.025);
+}
+:root:not([data-theme="dark"]) [data-learn] .learn-tile-featured {
+  background: linear-gradient(145deg, color-mix(in srgb, var(--primary-50) 55%, white), white 72%);
 }
 :root:not([data-theme="dark"]) [data-learn] .learn-tile:hover {
-  box-shadow: 0 14px 34px -14px color-mix(in srgb, var(--primary) 45%, transparent);
+  box-shadow: 0 14px 30px -18px color-mix(in srgb, var(--primary) 48%, transparent);
 }
 
 /* Home hero, light mode: a bright dawn sky instead of a dark indigo slab. */
