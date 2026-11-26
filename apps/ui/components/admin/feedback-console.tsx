@@ -258,6 +258,11 @@ export function FeedbackConsole() {
                     <p className="mt-2 line-clamp-2 break-words text-sm leading-5 text-[var(--foreground)]">{f.message}</p>
                     <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px]">
                       <span className="rounded-full bg-[var(--primary)]/10 px-2 py-0.5 font-semibold text-[var(--primary)]">{sourceLabel(f.source)}</span>
+                      {f.target && (
+                        <span className="max-w-[12rem] truncate rounded-full bg-[var(--foreground)]/[0.06] px-2 py-0.5 text-[var(--muted-foreground)]">
+                          Thẻ <span lang="ja">{f.target.front}</span> · {f.target.deckTitle}
+                        </span>
+                      )}
                       {f.suggestion && <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 font-medium text-emerald-700 dark:text-emerald-300">Có đề xuất</span>}
                       {f.historyCount > 0 && <span className="text-[var(--muted-foreground)]">· {f.historyCount} lần xử lý</span>}
                     </div>

@@ -7,11 +7,27 @@ import {
 import { InjectModel } from "@nestjs/mongoose";
 import { FilterQuery, Model, Types } from "mongoose";
 import type { AuthUser } from "../auth/auth.types.js";
+import { Flashcard, type FlashcardDocument } from "../flashcards/schemas/card.schema.js";
+import { FlashcardDeck, type FlashcardDeckDocument } from "../flashcards/schemas/deck.schema.js";
 import type { UserFeedbackDocument, FeedbackStatus } from "./schemas/user-feedback.schema.js";
 import { FEEDBACK_SOURCES, FEEDBACK_STATUSES, UserFeedback } from "./schemas/user-feedback.schema.js";
 
 /** Max open general feedbacks one user may file per day (anti-spam, like card reports). */
 const DAILY_LIMIT = 30;
+
+/**
+ * What a feedback's `targetId` points at, resolved for the admin inbox so the
+ * admin can jump straight to the thing to fix (today: a flashcard → its deck).
+ */
+export type FeedbackTarget = {
+  kind: "card";
+  cardId: string;
+  front: string;
+  deckId: string;
+  deckTitle: string;
+  /** `false` → the learner's own personal deck, not admin content. */
+  shared: boolean;
+};
 
 /** Populated `history.by` → display name / email; a dangling ref → its id. */
 function adminName(by: unknown): string | null {
@@ -23,7 +39,48 @@ function adminName(by: unknown): string | null {
 
 @Injectable()
 export class FeedbackService {
-  constructor(@InjectModel(UserFeedback.name) private readonly feedbacks: Model<UserFeedbackDocument>) {}
+  constructor(
+    @InjectModel(UserFeedback.name) private readonly feedbacks: Model<UserFeedbackDocument>,
+    @InjectModel(Flashcard.name) private readonly cards?: Model<FlashcardDocument>,
+    @InjectModel(FlashcardDeck.name) private readonly decks?: Model<FlashcardDeckDocument>,
+  ) {}
+
+  /**
+   * Batch-resolve `targetId`s to their card + deck (2 queries for a whole
+   * page). Unknown / non-card ids simply have no entry — the inbox then shows
+   * the raw id as before.
+   */
+  async resolveTargets(targetIds: (string | null | undefined)[]): Promise<Map<string, FeedbackTarget>> {
+    const out = new Map<string, FeedbackTarget>();
+    const ids = [...new Set(targetIds.filter((t): t is string => !!t && Types.ObjectId.isValid(t) && String(new Types.ObjectId(t)) === t))];
+    if (!ids.length || !this.cards || !this.decks) return out;
+    const cards = await this.cards
+      .find({ _id: { $in: ids.map((i) => new Types.ObjectId(i)) } })
+      .select("deck front")
+      .lean()
+      .exec();
+    if (!cards.length) return out;
+    const deckIds = [...new Set(cards.map((c) => String(c.deck)))];
+    const decks = await this.decks
+      .find({ _id: { $in: deckIds.map((i) => new Types.ObjectId(i)) } })
+      .select("title shared")
+      .lean()
+      .exec();
+    const deckById = new Map(decks.map((d) => [String(d._id), d]));
+    for (const c of cards) {
+      const d = deckById.get(String(c.deck));
+      if (!d) continue;
+      out.set(String(c._id), {
+        kind: "card",
+        cardId: String(c._id),
+        front: c.front,
+        deckId: String(d._id),
+        deckTitle: d.title,
+        shared: d.shared === true,
+      });
+    }
+    return out;
+  }
 
   async create(caller: AuthUser, input: { source?: string; targetId?: string; context?: string; message?: string; suggestion?: string }) {
     const source = (input.source ?? "general") as string;
@@ -59,10 +116,35 @@ export class FeedbackService {
       .find(filter)
       .sort({ createdAt: -1 })
       .limit(100)
-      .populate("user", "email displayName")
       .lean()
       .exec();
-    return docs.map((d) => this.shape(d));
+    return docs.map((d) => FeedbackService.shapeMine(d));
+  }
+
+  /**
+   * Learner view of one thread: own content + status + the processing
+   * timeline (status changes and admin notes, newest last). Never exposes
+   * *which* admin acted — only that the team did.
+   */
+  static shapeMine(d: Record<string, unknown>) {
+    const history = (Array.isArray(d.history) ? d.history : []) as Array<{
+      from?: string;
+      to: string;
+      note?: string;
+      at: Date;
+    }>;
+    return {
+      id: String(d._id),
+      source: d.source,
+      targetId: (d.targetId as string) ?? null,
+      context: (d.context as string) ?? null,
+      message: d.message,
+      suggestion: (d.suggestion as string) ?? null,
+      status: d.status,
+      history: history.map((h) => ({ from: h.from ?? null, to: h.to, note: h.note ?? null, at: h.at })),
+      createdAt: d.createdAt,
+      updatedAt: d.updatedAt,
+    };
   }
 
   /**
@@ -84,7 +166,9 @@ export class FeedbackService {
     ]);
     const counts = Object.fromEntries(FEEDBACK_STATUSES.map((st) => [st, 0])) as Record<string, number>;
     for (const g of grouped) counts[g._id] = g.n;
-    return { page, limit, total, counts, items: docs.map((d) => this.shape(d)) };
+    const targets = await this.resolveTargets(docs.map((d) => d.targetId));
+    const items = docs.map((d) => ({ ...this.shape(d), target: (d.targetId && targets.get(d.targetId)) || null }));
+    return { page, limit, total, counts, items };
   }
 
   /**
@@ -124,8 +208,10 @@ export class FeedbackService {
       .exec();
     if (!doc) throw new NotFoundException("Góp ý không tồn tại");
     const u = (doc.user as unknown as { email?: string; displayName?: string } | null) ?? null;
+    const targets = await this.resolveTargets([doc.targetId]);
     return {
       ...this.shape(doc),
+      target: (doc.targetId && targets.get(doc.targetId)) || null,
       reporter: u?.displayName || u?.email || "—",
       history: (doc.history ?? []).map((h) => ({
         from: h.from ?? null,

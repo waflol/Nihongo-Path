@@ -106,3 +106,57 @@ describe("FeedbackService.adminList counts", () => {
     expect(aggregate).toHaveBeenCalledWith([{ $match: { source: "exam" } }, { $group: { _id: "$status", n: { $sum: 1 } } }]);
   });
 });
+
+describe("FeedbackService.shapeMine (learner thread view)", () => {
+  it("returns the processing timeline with notes but without the admin's identity", () => {
+    const at = new Date("2026-11-26T10:00:00Z");
+    const out = FeedbackService.shapeMine({
+      _id: new Types.ObjectId(),
+      source: "vocabulary",
+      targetId: "card-1",
+      context: "Thẻ: 猫 — con mèo",
+      message: "[Cách đọc sai] ねご",
+      status: "RESOLVED",
+      user: new Types.ObjectId(),
+      history: [
+        { to: "IN_PROGRESS", from: "OPEN", by: new Types.ObjectId(), at },
+        { to: "RESOLVED", from: "IN_PROGRESS", by: new Types.ObjectId(), note: "Đã sửa thành ねこ", at },
+      ],
+    });
+    expect(out.history).toEqual([
+      { from: "OPEN", to: "IN_PROGRESS", note: null, at },
+      { from: "IN_PROGRESS", to: "RESOLVED", note: "Đã sửa thành ねこ", at },
+    ]);
+    expect(JSON.stringify(out)).not.toMatch(/"by"|"user"|reporter/);
+    expect(out).toMatchObject({ targetId: "card-1", context: "Thẻ: 猫 — con mèo", status: "RESOLVED" });
+  });
+});
+
+describe("FeedbackService.resolveTargets (inbox deep link)", () => {
+  const q = (rows: unknown[]) => ({ select: () => ({ lean: () => ({ exec: async () => rows }) }) });
+
+  it("maps a card id to its card + deck, skipping unknown and non-ObjectId targets", async () => {
+    const cardId = new Types.ObjectId();
+    const deckId = new Types.ObjectId();
+    const cards = { find: vi.fn(() => q([{ _id: cardId, deck: deckId, front: "猫" }])) };
+    const decks = { find: vi.fn(() => q([{ _id: deckId, title: "JLPT N5", shared: true }])) };
+    const svc = new FeedbackService({} as never, cards as never, decks as never);
+    const out = await svc.resolveTargets([String(cardId), "not-an-id", null, String(new Types.ObjectId())]);
+    expect(out.size).toBe(1);
+    expect(out.get(String(cardId))).toEqual({
+      kind: "card",
+      cardId: String(cardId),
+      front: "猫",
+      deckId: String(deckId),
+      deckTitle: "JLPT N5",
+      shared: true,
+    });
+  });
+
+  it("makes no query when there is nothing resolvable", async () => {
+    const cards = { find: vi.fn() };
+    const svc = new FeedbackService({} as never, cards as never, { find: vi.fn() } as never);
+    expect((await svc.resolveTargets([null, "x"])).size).toBe(0);
+    expect(cards.find).not.toHaveBeenCalled();
+  });
+});

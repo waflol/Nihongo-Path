@@ -1,6 +1,8 @@
 import { Module, type DynamicModule } from "@nestjs/common";
 import { MongooseModule } from "@nestjs/mongoose";
 import { buildAuthModule } from "../auth/auth.module.js";
+import { Flashcard, FlashcardSchema } from "../flashcards/schemas/card.schema.js";
+import { FlashcardDeck, FlashcardDeckSchema } from "../flashcards/schemas/deck.schema.js";
 import { AdminFeedbackController } from "./admin-feedback.controller.js";
 import { FeedbackController } from "./feedback.controller.js";
 import { FeedbackService } from "./feedback.service.js";
@@ -21,7 +23,12 @@ export function buildFeedbackModule(): DynamicModule {
     module: FeedbackModule,
     imports: [
       buildAuthModule(),
-      MongooseModule.forFeature([{ name: UserFeedback.name, schema: UserFeedbackSchema }]),
+      MongooseModule.forFeature([
+        { name: UserFeedback.name, schema: UserFeedbackSchema },
+        // Read-only: resolve a feedback's card target → deck for the inbox deep link.
+        { name: Flashcard.name, schema: FlashcardSchema },
+        { name: FlashcardDeck.name, schema: FlashcardDeckSchema },
+      ]),
     ],
     controllers: [FeedbackController, AdminFeedbackController],
     providers: [FeedbackService],

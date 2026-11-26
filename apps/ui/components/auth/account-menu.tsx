@@ -41,6 +41,8 @@ const ADMIN_LINKS = [
 ] as const;
 
 const ACCOUNT_ICON = "M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z";
+/** Speech bubble: own card reports / feedback with status. */
+const FEEDBACK_ICON = "M4 4h16v12H7l-3 4zM8 8h8M8 11h5";
 const LOGOUT_ICON = "M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9";
 
 function MenuIcon({ d }: { d: string }) {
@@ -196,6 +198,12 @@ export function AccountMenu({
             </Link>
           </li>
           <li>
+            <Link href="/account/feedback" onClick={onNavigate} className={rowClass}>
+              <MenuIcon d={FEEDBACK_ICON} />
+              Báo lỗi &amp; góp ý
+            </Link>
+          </li>
+          <li>
             <button type="button" onClick={logout} className={`${rowClass} font-medium`}>
               <MenuIcon d={LOGOUT_ICON} />
               Đăng xuất
@@ -287,6 +295,16 @@ export function AccountMenu({
             >
               <MenuIcon d={ACCOUNT_ICON} />
               Tài khoản
+            </Link>
+          </li>
+          <li className="relative flex cursor-pointer items-center gap-2.5 px-3 py-2 text-sm text-[var(--dropdown-item-foreground)] hover:bg-[var(--dropdown-item-hover)] focus:bg-[var(--dropdown-item-focus)] active:bg-[var(--dropdown-item-active)]">
+            <Link
+              onClick={() => setOpen(false)}
+              href="/account/feedback"
+              className="flex w-full items-center gap-2.5 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--dropdown-item-focus)]"
+            >
+              <MenuIcon d={FEEDBACK_ICON} />
+              Báo lỗi &amp; góp ý
             </Link>
           </li>
           <li className="relative flex cursor-pointer items-center gap-2.5 px-3 py-2 text-sm font-medium text-[var(--dropdown-item-foreground)] hover:bg-[var(--dropdown-item-hover)] focus:bg-[var(--dropdown-item-focus)] active:bg-[var(--dropdown-item-active)]">

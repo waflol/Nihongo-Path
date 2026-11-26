@@ -13,8 +13,22 @@ export interface HistoryEntry {
   at: string;
 }
 
+/** What `targetId` resolves to (API `FeedbackTarget`); `null` when it isn't a known card. */
+export interface FeedbackTarget {
+  kind: "card";
+  cardId: string;
+  front: string;
+  deckId: string;
+  deckTitle: string;
+  shared: boolean;
+}
+
+/** Admin page that opens the reported card in edit mode. */
+export const targetHref = (t: FeedbackTarget) => `/admin/decks/${t.deckId}?card=${t.cardId}`;
+
 export interface FeedbackItem {
   id: string;
+  target?: FeedbackTarget | null;
   source: string;
   targetId: string | null;
   context: string | null;
@@ -150,8 +164,34 @@ export function FeedbackDetail({
             {meta.label}
           </span>
           <span className="rounded-full bg-[var(--primary)]/10 px-2.5 py-1 font-semibold text-[var(--primary)]">{sourceLabel(item.source)}</span>
-          {item.targetId && <code className="rounded-md bg-[var(--foreground)]/[0.06] px-2 py-0.5 font-mono text-[var(--muted-foreground)]">#{item.targetId}</code>}
+          {item.targetId && !item.target && (
+            <code className="rounded-md bg-[var(--foreground)]/[0.06] px-2 py-0.5 font-mono text-[var(--muted-foreground)]">#{item.targetId}</code>
+          )}
         </div>
+
+        {item.target && (
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--primary)]/30 bg-[var(--primary)]/[0.06] px-4 py-3">
+            <div className="min-w-0">
+              <p className="text-xs font-semibold uppercase tracking-wide text-[var(--primary)]">Thẻ bị báo lỗi</p>
+              <p className="mt-0.5 truncate text-sm text-[var(--foreground)]">
+                <span lang="ja" className="font-semibold">{item.target.front}</span>
+                <span className="text-[var(--muted-foreground)]">
+                  {" "}· {item.target.deckTitle}
+                  {item.target.shared ? "" : " (bộ cá nhân của người học)"}
+                </span>
+              </p>
+            </div>
+            <a
+              href={targetHref(item.target)}
+              className={`inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-[var(--primary)] px-3 py-2 text-sm font-semibold text-white hover:opacity-90 ${focusRing}`}
+            >
+              Mở thẻ để sửa
+              <svg aria-hidden viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M5 12h14M13 6l6 6-6 6" />
+              </svg>
+            </a>
+          </div>
+        )}
 
         <div className="mt-4 flex items-center gap-3">
           <Initials name={item.reporter} />
@@ -228,7 +268,7 @@ export function FeedbackDetail({
           value={note}
           onChange={(e) => setNote(e.target.value)}
           maxLength={1000}
-          placeholder="Ghi chú xử lý (tuỳ chọn) — được lưu vào lịch sử khi đổi trạng thái"
+          placeholder="Ghi chú xử lý (tuỳ chọn) — lưu vào lịch sử và người gửi sẽ thấy"
           className={`w-full resize-none rounded-xl border border-[var(--border)] bg-[var(--background-1)] px-3.5 py-2.5 text-sm leading-6 text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] ${focusRing}`}
         />
         <div className="mt-2.5 flex flex-wrap justify-end gap-2">

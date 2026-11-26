@@ -1,31 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
+import { FEEDBACK_SOURCE_LABEL, MyFeedbackList } from "@/components/account/my-feedback-list";
 
-const SOURCES: { value: string; label: string }[] = [
-  { value: "vocabulary", label: "Từ vựng" },
-  { value: "grammar", label: "Ngữ pháp" },
-  { value: "transcript", label: "Phiên âm / transcript" },
-  { value: "translation", label: "Bản dịch" },
-  { value: "exam", label: "Đề thi" },
-  { value: "general", label: "Khác" },
-];
-
-const STATUS_LABEL: Record<string, string> = {
-  OPEN: "Chờ xử lý",
-  IN_PROGRESS: "Đang xử lý",
-  RESOLVED: "Đã giải quyết",
-  REJECTED: "Bỏ qua",
-};
-
-interface MyFeedback {
-  id: string;
-  source: string;
-  message: string;
-  status: string;
-  historyCount: number;
-  createdAt: string;
-}
+const SOURCES = Object.entries(FEEDBACK_SOURCE_LABEL).map(([value, label]) => ({ value, label }));
 
 /**
  * Learner feedback panel (P5-FEEDBACK-01): file a general feedback and follow
@@ -39,16 +17,7 @@ export function FeedbackPanel() {
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [mine, setMine] = useState<MyFeedback[] | null>(null);
-
-  const loadMine = useCallback(() => {
-    fetch("/api/feedback/me", { cache: "no-store" })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((rows: MyFeedback[] | null) => setMine(rows ?? []))
-      .catch(() => setMine([]));
-  }, []);
-
-  useEffect(loadMine, [loadMine]);
+  const [reloadKey, setReloadKey] = useState(0);
 
   async function submit() {
     if (!message.trim()) {
@@ -72,7 +41,7 @@ export function FeedbackPanel() {
     setMessage("");
     setContext("");
     setSuggestion("");
-    loadMine();
+    setReloadKey((k) => k + 1);
   }
 
   const field =
@@ -153,30 +122,8 @@ export function FeedbackPanel() {
         </>
       )}
 
-      <h3 className="mt-6 text-sm font-semibold text-[var(--foreground)]">Góp ý của bạn</h3>
-      {mine === null ? (
-        <p className="mt-2 text-sm text-[var(--muted-foreground)]">Đang tải…</p>
-      ) : mine.length === 0 ? (
-        <p className="mt-2 text-sm text-[var(--muted-foreground)]">Chưa có góp ý nào.</p>
-      ) : (
-        <ul className="mt-2 space-y-2">
-          {mine.map((f) => (
-            <li key={f.id} className="rounded-lg border border-[var(--border)] px-3 py-2 text-sm">
-              <div className="flex items-center justify-between gap-2">
-                <span className="truncate text-[var(--foreground)]">{f.message}</span>
-                <span className="shrink-0 rounded-full bg-[var(--layer-hover)] px-2 py-0.5 text-xs text-[var(--muted-foreground)]">
-                  {STATUS_LABEL[f.status] ?? f.status}
-                </span>
-              </div>
-              <p className="mt-0.5 text-xs text-[var(--muted-foreground)]">
-                {SOURCES.find((s) => s.value === f.source)?.label ?? f.source} ·{" "}
-                {f.historyCount > 0 ? `đã xử lý ${f.historyCount} lần` : "chưa được xử lý"} ·{" "}
-                {new Date(f.createdAt).toLocaleDateString("vi-VN")}
-              </p>
-            </li>
-          ))}
-        </ul>
-      )}
+      <h3 className="mt-6 text-sm font-semibold text-[var(--foreground)]">Báo lỗi &amp; góp ý gần đây</h3>
+      <MyFeedbackList limit={3} reloadKey={reloadKey} />
     </section>
   );
 }
