@@ -10,6 +10,8 @@ import type {
   Flashcard,
   FlashcardDocument,
 } from "../flashcards/schemas/card.schema.js";
+import type { GrammarPointDocument } from "../content/schemas/grammar-point.schema.js";
+import { grammarTextbookFilter } from "../content/grammar-filter.js";
 import type {
   FlashcardDeckDocument,
 } from "../flashcards/schemas/deck.schema.js";
@@ -119,6 +121,8 @@ export class SrsService {
     private readonly card: Model<FlashcardDocument>,
     @InjectModel("FlashcardDeck")
     private readonly deck: Model<FlashcardDeckDocument>,
+    @InjectModel("GrammarPoint")
+    private readonly grammar: Model<GrammarPointDocument>,
     @InjectModel("UserCardProgress")
     private readonly progress: Model<UserCardProgressDocument>,
     @InjectModel("StudySession")
@@ -207,6 +211,8 @@ export class SrsService {
     tz?: string,
     limit = 20,
     mode: "learn" | "review" = "review",
+    kind?: Flashcard["kind"],
+    grammarFilter?: { level?: string; themeId?: string; contextId?: string; textbookId?: string; unitId?: string },
   ): Promise<StudyQueue> {
     // `all` = the review hub: every card the caller has already learned, from
     // any deck they can read — no new cards, no deck distinction.
@@ -221,6 +227,18 @@ export class SrsService {
     ]);
     const today = localDayKey(Date.now(), timezone);
     const userId = new Types.ObjectId(caller.sub);
+    const grammarIds = kind === "GRAMMAR" && grammarFilter && Object.values(grammarFilter).some(Boolean)
+      ? (await this.grammar.find({
+          ...(grammarFilter.level ? { level: grammarFilter.level } : {}),
+          ...(grammarFilter.themeId ? { themeIds: grammarFilter.themeId } : {}),
+          ...(grammarFilter.contextId ? { contextIds: grammarFilter.contextId } : {}),
+          ...grammarTextbookFilter(grammarFilter.textbookId, grammarFilter.unitId),
+        }).select("_id").lean().exec()).map((g: { _id: Types.ObjectId }) => g._id)
+      : undefined;
+    const cardFilter = {
+      ...(kind ? { kind } : {}),
+      ...(grammarIds ? { grammar: { $in: grammarIds } } : {}),
+    };
 
     let cards: FlashcardDocument[];
     let progressDocs: UserCardProgressDocument[];
@@ -238,6 +256,7 @@ export class SrsService {
         .find({
           _id: { $in: progressDocs.map((p) => p.card) },
           deck: { $in: decks.map((d) => d._id) },
+          ...cardFilter,
         })
         .select("_id front reading")
         .sort({ order: 1, _id: 1 })
@@ -258,7 +277,7 @@ export class SrsService {
       cards = cards.filter((c) => keep.has(String(c._id)));
     } else {
       cards = (await this.card
-        .find({ deck: new Types.ObjectId(deckId) })
+        .find({ deck: new Types.ObjectId(deckId), ...cardFilter })
         .select("_id")
         .sort({ order: 1, _id: 1 })
         .lean()

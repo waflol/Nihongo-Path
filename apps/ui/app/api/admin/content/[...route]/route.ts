@@ -12,7 +12,7 @@ async function forward(
     return NextResponse.json({ error: "Không đăng nhập" }, { status: 401 });
   }
 
-  const target = `${API_BASE_URL}/admin/content/${route.join("/")}`;
+  const target = `${API_BASE_URL}/admin/content/${route.join("/")}${new URL(request.url).search}`;
   const method = request.method.toUpperCase();
   const hasBody = method !== "GET" && method !== "DELETE";
 

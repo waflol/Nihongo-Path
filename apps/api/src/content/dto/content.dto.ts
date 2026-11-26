@@ -3,6 +3,7 @@ import { PartialType } from "@nestjs/mapped-types";
 import { Type } from "class-transformer";
 import {
   IsArray,
+  IsIn,
   IsInt,
   IsOptional,
   IsString,
@@ -49,6 +50,42 @@ export class PublicContentQuery {
   @IsOptional()
   @IsString()
   textbookId?: string;
+
+  /** Grammar textbook lesson, used together with `textbookId`. */
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  unitId?: string;
+
+  /** Grammar theme id, e.g. `nguyen-nhan`. */
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  themeId?: string;
+
+  /** Grammar context id, e.g. `cong-ty`. */
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  contextId?: string;
+
+  /** Substring search on grammar label / meaning / pattern. */
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  search?: string;
+}
+
+/** Admin lists may also narrow by publication status. */
+export class AdminContentQuery extends PublicContentQuery {
+  @ApiPropertyOptional({ enum: ["DRAFT", "PUBLISHED"] })
+  @IsOptional()
+  @IsIn(["DRAFT", "PUBLISHED"])
+  status?: "DRAFT" | "PUBLISHED";
 }
 
 // ── Textbooks ─────────────────────────────────────────────────────────

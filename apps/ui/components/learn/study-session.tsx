@@ -129,7 +129,7 @@ const FLUSH_DEBOUNCE_MS = 1500;
  * `useSearchParams` call in a statically-rendered tree fails the build, so
  * the real component is wrapped in its own `<Suspense>` boundary here.
  */
-export function StudySession({ mode }: { mode: "learn" | "review" }) {
+export function StudySession({ mode, kind, grammarFilter }: { mode: "learn" | "review"; kind?: "GRAMMAR"; grammarFilter?: { level?: string; themeId?: string; contextId?: string; textbookId?: string; unitId?: string } }) {
   return (
     <Suspense
       fallback={
@@ -138,12 +138,12 @@ export function StudySession({ mode }: { mode: "learn" | "review" }) {
         </p>
       }
     >
-      <StudySessionInner mode={mode} />
+      <StudySessionInner mode={mode} kind={kind} grammarFilter={grammarFilter} />
     </Suspense>
   );
 }
 
-function StudySessionInner({ mode }: { mode: "learn" | "review" }) {
+function StudySessionInner({ mode, kind, grammarFilter }: { mode: "learn" | "review"; kind?: "GRAMMAR"; grammarFilter?: { level?: string; themeId?: string; contextId?: string; textbookId?: string; unitId?: string } }) {
   const searchParams = useSearchParams();
   const deckParam = searchParams.get("deck");
   // `learn` (/learn/study): new words in deck order, up to the daily amount.
@@ -306,10 +306,17 @@ function StudySessionInner({ mode }: { mode: "learn" | "review" }) {
 
   const current = merged[index] ?? requeue[index - merged.length];
 
+  // A string, so a fresh `grammarFilter` object does not reload the queue.
+  const grammarQuery = Object.entries(grammarFilter ?? {})
+    .filter(([, value]) => value)
+    .map(([key, value]) => `&${key}=${encodeURIComponent(value)}`)
+    .join("");
+
   /** Load the deck list + the queue for the target deck. */
   const loadQueue = useCallback(
     async (target: DeckRef) => {
-      const qRes = await fetch(`/api/srs/queue/${target._id}?limit=100&mode=${mode}`, {
+      const kindQuery = kind ? `&kind=${kind}` : "";
+      const qRes = await fetch(`/api/srs/queue/${target._id}?limit=100&mode=${mode}${kindQuery}${grammarQuery}`, {
         cache: "no-store",
       }).catch(() => null);
       if (!qRes || !qRes.ok) {
@@ -327,7 +334,7 @@ function StudySessionInner({ mode }: { mode: "learn" | "review" }) {
       );
       setQueue(q);
     },
-    [mode],
+    [grammarQuery, kind, mode],
   );
 
   useEffect(() => {
@@ -670,7 +677,7 @@ function StudySessionInner({ mode }: { mode: "learn" | "review" }) {
       />
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border)] pb-4 max-sm:flex-nowrap max-sm:pb-2">
         <h1 className="shrink-0 text-lg sm:text-2xl font-semibold tracking-tight text-[var(--foreground)]">
-          {mode === "learn" ? "Học từ mới" : "Ôn tập SRS"}
+          {kind === "GRAMMAR" ? "Học ngữ pháp" : mode === "learn" ? "Học từ mới" : "Ôn tập SRS"}
         </h1>
         <div className="flex min-w-0 max-w-full items-center gap-3 max-sm:flex-1 max-sm:justify-end">
           {/* Always rendered (just hidden when idle) so the header height —
@@ -747,11 +754,13 @@ function StudySessionInner({ mode }: { mode: "learn" | "review" }) {
 
       {!loading && queue && !merged.length && queue.total === 0 && (
         <div className="mt-8 rounded-2xl border border-dashed border-[var(--border)] p-8 text-center text-sm text-[var(--muted-foreground)]">
-          {deck?._id === ALL_DECKS._id
-            ? "Bạn chưa học thẻ nào để ôn tập. Hãy học thẻ mới từ một bộ thẻ tại"
-            : "Chưa có thẻ nào trong bộ này. Tạo thẻ tại"}{" "}
-          <Link href="/learn/decks" className="font-medium text-[var(--primary)] hover:underline">
-            danh sách bộ thẻ
+          {kind === "GRAMMAR"
+            ? "Bạn chưa lưu mẫu ngữ pháp nào. Hãy chọn một mẫu tại"
+            : deck?._id === ALL_DECKS._id
+              ? "Bạn chưa học thẻ nào để ôn tập. Hãy học thẻ mới từ một bộ thẻ tại"
+              : "Chưa có thẻ nào trong bộ này. Tạo thẻ tại"}{" "}
+          <Link href={kind === "GRAMMAR" ? "/learn/grammar" : "/learn/decks"} className="font-medium text-[var(--primary)] hover:underline">
+            {kind === "GRAMMAR" ? "danh sách ngữ pháp" : "danh sách bộ thẻ"}
           </Link>{" "}
           hoặc nhập hàng loạt tại khu quản trị.
         </div>
@@ -771,9 +780,9 @@ function StudySessionInner({ mode }: { mode: "learn" | "review" }) {
             </>
           ) : (
             <>
-              Hôm nay bạn đã học đủ số từ mới ({queue.newToday ?? 0}/{queue.newPerDay ?? 0}) hoặc bộ này không còn từ mới. Ôn lại các từ đến hạn tại{" "}
+              {kind === "GRAMMAR" ? "Hôm nay bạn đã học đủ số mẫu mới" : `Hôm nay bạn đã học đủ số từ mới (${queue.newToday ?? 0}/${queue.newPerDay ?? 0})`} hoặc bộ này không còn thẻ mới. Ôn lại tại{" "}
               <Link href={`/learn/review${deck ? `?deck=${deck._id}` : ""}`} className="font-medium text-[var(--primary)] hover:underline">
-                Ôn tập SRS
+                {kind === "GRAMMAR" ? "Ngữ pháp đã lưu" : "Ôn tập SRS"}
               </Link>
               .
             </>
@@ -1360,7 +1369,7 @@ function LearnCard({
         </button>
       )}
 
-{/* Term audio: always on top, doesn't rotate with the card. */}
+      {/* Term audio: always on top, doesn't rotate with the card. */}
       {supported && (
         <button
           type="button"

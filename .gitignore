@@ -151,6 +151,8 @@ vite.config.ts.timestamp-*
 # Turbo Repo
 .turbo
 
+# content import caches (external sources)
+apps/api/data/grammar/
 # kanji import cache
 apps/api/data/kanji/
 # Browser evidence screenshots for checklist verification (P2 etc.)

@@ -1097,9 +1097,11 @@ export class FlashcardsService implements OnModuleInit {
     caller: AuthUser,
     grammarId: string,
   ): Promise<SavedVocabCard> {
-    const entry = await this.grammar
-      .findById(new Types.ObjectId(grammarId))
-      .exec();
+    const entry = Types.ObjectId.isValid(grammarId)
+      ? await this.grammar
+          .findOne({ _id: new Types.ObjectId(grammarId), status: "PUBLISHED" })
+          .exec()
+      : null;
     if (!entry) throw new NotFoundException("Grammar point not found");
 
     const target = await this.defaultDeckFor(caller);
@@ -1794,7 +1796,12 @@ export class FlashcardsService implements OnModuleInit {
   }
 
   private grammarBack(entry: GrammarPointDocument): string {
-    return entry.meaning;
+    const parts = [entry.meaning];
+    if (entry.coreExplanation) parts.push(entry.coreExplanation);
+    if (entry.forms?.length) parts.push(entry.forms.join("\n"));
+    const example = entry.examples?.[0];
+    if (example) parts.push(`${example.sentence}\n${example.translation}`);
+    return parts.join("\n\n");
   }
 }
 

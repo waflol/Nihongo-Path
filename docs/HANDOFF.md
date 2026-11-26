@@ -12,7 +12,32 @@ User yêu cầu bỏ vì đã có Hộp thư phản hồi. Đã xoá: trang `/ad
 
 ---
 
-## Popup Furigana + gạch chân từ PDF scan (26/11/2026, nhánh np-407-furigana-popup, chưa gộp main)
+## NP-1004…1012 — Học ngữ pháp theo nguồn Super Honki (27/11/2026, chưa commit)
+
+**Trang reload liên tục (26/11, đã sửa):** `next dev` chạy lâu gửi HMR `type:"restart"` cho chunk entry ~2 lần/giây → trình duyệt tải lại mãi (mọi trang, kể cả `/`). `pm2 restart ui` là hết; nguyên nhân gốc trong Turbopack chưa rõ. Kiểm nhanh: mở WebSocket `ws://localhost:3001/_next/hmr?id=x` và đếm message `restart`. Cùng lượt: `/learn/grammar/study` đưa `getSession` vào Suspense (hết lỗi Blocking Route). Còn thấy: màn học ngữ pháp mặc định chọn bộ thẻ đầu tiên nên admin chưa lưu mẫu nào sẽ thấy trống.
+
+**Plan tổng thể MVP:** [plans/plan-complete-mvp.md](./plans/plan-complete-mvp.md) — lát dọc A (commit bảo vệ working tree) → B (grammar end-to-end) → C (P4 + NP-021) → D (verify P5 live) → E (production gate). Grammar ở đây là Slice B.
+
+**Sửa lỗi chặn NP-1005…1010 (26/11, giờ máy chủ; chưa commit)** — các dòng cũ bên dưới về mapping/`--write` đã lỗi thời:
+- Mapper đọc đúng `theme`/`ctx` (mảng) và `book` (`[[id,unit,order]]`), cấp độ viết hoa. Đã chạy lại import `--write`: 630 DRAFT, chủ đề 565, bối cảnh 630, giáo trình 506 (khớp nguồn). Bản sao lưu trước khi chạy: `apps/api/data/grammar/backup-grammarpoints-20261126.ejson`.
+- `GET /content/grammar/:id` và `saveGrammar` chỉ nhận `PUBLISHED`. Admin list nhận `status` (`AdminContentQuery`), gateway admin content giờ chuyển query string.
+- Bộ lọc học thẻ đã gắn vào URL queue. Chi tiết ngữ pháp: `components/learn/grammar-detail.tsx` (furigana `漢[かん]`, `{…}` tô đậm), console `/admin/content/grammar-import` bấm vào mẫu để xem.
+- Đã chạy: vitest content+srs+flashcards 96 đạt, tsc API + UI sạch. **Chưa bấm thử trình duyệt.** Chưa chạy `grammar:catalog` (sẽ tạo unit PUBLISHED).
+- **Đã publish 99 mẫu N5** theo yêu cầu user (26/11, cập nhật thẳng DB nên không có audit log); N4–N1 vẫn DRAFT. Kiểm qua API + gateway: N5 total 99, chi tiết 200, N4 0.
+- Còn lại: `textbookId` dạng chuỗi gây 500; `kind=GRAMMAR` vượt hạn mức thẻ mới/ngày; dedupe thẻ theo nội dung; import ghi đè trường admin sửa; preview bị giới hạn body 400 KB; console chỉ hiện 100 mẫu; thẻ flashcard còn hiện markup thô; bộ lọc chủ đề UI thiếu nhãn.
+
+Slice dọc đã dựng (tsc API + UI sạch, 3 test parser xanh, lint không lỗi mới):
+- **ADR** `docs/adr/ADR-grammar-source.md`: provenance + import preview, KHÔNG chạy JS tải từ mạng, không publish nội dung Super Honki trước khi xác nhận quyền/attribution. Ticket `docs/issues/NP-1004…1012.md` + index `README.md`/`TICKETS.md` (P11, song song P11-1101… — coi grammar là feature riêng).
+- **Schema** `content/schemas/grammar-point.schema.ts`: + `sourceProvider/sourceKey/sourceHash/…` (index unique thưa `(sourceProvider,sourceKey)`), `pattern, coreExplanation, forms[], explanations[], senses[] (n/label/explanation/examples), themeIds[], contextIds[], textbookRefs[] {textbookId,unitId,order}, compareWith[]`. Level giữ `string` (không enum) để không phá dữ liệu cũ.
+- **Importer lõi** `content/grammar-source.ts` + spec: `parseRegisteredJson` chỉ nhận wrapper `SB.register({...})` (chống function/require), `mapSuperHonkiPattern` map `theme/ctx/book` (chuỗi `minna,1,1` → refs). **Chưa có**: loader Mongo + endpoint admin preview/commit + import 630 mẫu thật (chưa gọi API Super Honki).
+- **API** `content`: `listGrammar` + theme/context/search; `grammarFacets()` (aggregate PUBLISHED); `saveGrammar` (flashcards) dùng `grammarBack` mới (meaning+core+forms+1 ví dụ).
+- **UI** mới: `/learn/grammar` (browser: tab cấp + tìm + chủ đề), `/learn/grammar/[id]` (chi tiết + nút `SaveGrammarButton`), gateway `/api/grammar/[[...route]]` (public), gạch "Ngữ pháp" vào `/learn`.
+- **NP-1004 được user cho phép crawl/lưu DB** (27/11/2026). Đã thêm `apps/api/scripts/import-grammar-superhonki.mjs` + script `grammar:import`; cache tại `apps/api/data/grammar/superhonki/` (gitignored). Dry-run đã crawl đủ **N5 99 + N4 94 + N3 143 + N2 149 + N1 145 = 630**. Lệnh ghi DB là `node apps/api/scripts/import-grammar-superhonki.mjs --write`; script upsert collection `grammarpoints`, DRAFT khi insert, giữ status cũ khi re-import. Đã sửa conflict `tags` (không còn ghi cả `$set` và `$setOnInsert`) và MongoDB parallel-array index (theme/context index tách riêng); cần build/restart API để Mongoose tạo index mới trước khi chạy lại import.
+- **Còn làm (theo ticket):** NP-1006 cần chạy `--write` được cấp quyền + admin preview/commit; NP-1009/1010 UI flashcard học theo queue FSRS (hiện mới là xem/lưu, chưa có màn lật thẻ riêng cho ngữ pháp); NP-1011 bài tập; NP-1012 console admin + audit. Chưa đụng issue GitHub.
+
+---
+
+## Popup Furigana + gạch chân từ PDF scan (26/11/2026, đã gộp main: d0c0e2a)
 
 - **Popup Furigana** (`components/admin/furigana-popover.tsx`, thay `window.prompt`): hiện cạnh chữ đang chọn (điện thoại: đầu màn hình), tự điền cách đọc từ `POST /api/flashcards/reading` (kuromoji), chip gợi ý, xem trước, Enter lưu, Esc huỷ, "Bỏ furigana"; từ lẫn kana đặt cách đọc riêng trên chữ Hán (`rubyOverKanji`, có ô bỏ chọn). Chọn chữ: `pickFurigana()` trong `rich-input.tsx`. Đã chạy Chromium headless với API đọc giả (lưu, undo/redo, sửa, bỏ, Esc, 390px; trang tạm đã xoá).
 - **Gạch chân của PDF scan**: trước đây prompt OCR không yêu cầu nên mất hết. Giờ `ocrExamPageText` yêu cầu `<u>…</u>`; `import/ocr-marks.ts` gỡ thẻ thành `Mark` (text vẫn thuần cho tách khối/AI), gắn lại như PDF chữ. Nút "Bổ sung furigana" (`backfillMarks`) với trang scan: đọc lại bằng AI **ở nền** (`markScans`, trả `scanning`), lưu mark theo trang, chỉ sửa bản nháp mở và trường chưa định dạng; tiến độ ở nhật ký lần nhập. API restart sẽ dừng việc nền — bấm lại.

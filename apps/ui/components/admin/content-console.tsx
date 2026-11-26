@@ -3,6 +3,7 @@
 import { useConfirm } from "@/components/learn/use-confirm";
 import { useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
+import { GrammarEditor } from "@/components/admin/grammar-editor";
 
 /**
  * Admin content console (P2-UI-04). One tab per content type (textbooks,
@@ -157,6 +158,8 @@ export function AdminContentConsole() {
       ...pickEditable(item, spec),
       __id: item._id,
     });
+    // The grammar editor replaces the form above the list; bring it into view.
+    if (kind === "grammar") window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   return (
@@ -166,12 +169,15 @@ export function AdminContentConsole() {
         <h1 className="text-2xl font-semibold tracking-tight text-[var(--foreground)]">
           Quản trị nội dung
         </h1>
+        <div className="flex items-center gap-4">
+        <Link href="/admin/content/grammar-import" className="text-sm font-medium text-[var(--primary)] hover:text-[var(--primary-hover)]">Duyệt ngữ pháp</Link>
         <Link
           href="/learn"
           className="text-sm font-medium text-[var(--primary)] hover:text-[var(--primary-hover)]"
         >
           ← Về khu học
         </Link>
+        </div>
       </div>
 
       {error && (
@@ -202,7 +208,20 @@ export function AdminContentConsole() {
         ))}
       </div>
 
-      {/* Create / edit form */}
+      {/* Grammar points carry much more than the generic fields: use the full editor. */}
+      {kind === "grammar" && editingId ? (
+        <div className="mt-6 rounded-2xl border border-[var(--border)] bg-[var(--background-1)] p-5">
+          <GrammarEditor
+            key={editingId}
+            id={editingId}
+            onClose={() => setForm({})}
+            onSaved={() => {
+              setForm({});
+              refetch();
+            }}
+          />
+        </div>
+      ) : (
       <form
         onSubmit={submit}
         className="mt-6 rounded-2xl border border-[var(--border)] bg-[var(--background-1)] p-5"
@@ -276,6 +295,7 @@ export function AdminContentConsole() {
           )}
         </div>
       </form>
+      )}
 
       {/* List */}
       <div className="mt-6 overflow-hidden rounded-2xl border border-[var(--border)]">

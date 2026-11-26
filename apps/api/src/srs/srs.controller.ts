@@ -53,6 +53,31 @@ class QueueQuery {
   @IsOptional()
   @IsIn(["learn", "review"])
   mode?: "learn" | "review";
+
+  /** Restrict a queue to one card kind, e.g. GRAMMAR. */
+  @IsOptional()
+  @IsIn(["VOCABULARY", "GRAMMAR", "CUSTOM"])
+  kind?: "VOCABULARY" | "GRAMMAR" | "CUSTOM";
+
+  @IsOptional()
+  @IsString()
+  level?: string;
+
+  @IsOptional()
+  @IsString()
+  themeId?: string;
+
+  @IsOptional()
+  @IsString()
+  contextId?: string;
+
+  @IsOptional()
+  @IsString()
+  textbookId?: string;
+
+  @IsOptional()
+  @IsString()
+  unitId?: string;
 }
 
 export class ReviewDto {
@@ -163,7 +188,13 @@ export class SrsController {
     @Param("deckId") deckId: string,
     @Query() query: QueueQuery,
   ) {
-    return this.srs.getQueue(caller, deckId, query.tz, query.limit ?? 20, query.mode);
+    return this.srs.getQueue(caller, deckId, query.tz, query.limit ?? 20, query.mode, query.kind, {
+      level: query.level,
+      themeId: query.themeId,
+      contextId: query.contextId,
+      textbookId: query.textbookId,
+      unitId: query.unitId,
+    });
   }
 
   @Post("reviews")

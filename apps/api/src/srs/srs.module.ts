@@ -2,6 +2,7 @@ import { Module, type DynamicModule } from "@nestjs/common";
 import { MongooseModule } from "@nestjs/mongoose";
 import { buildDatabaseModule } from "../database/database.module.js";
 import { Flashcard, FlashcardSchema } from "../flashcards/schemas/card.schema.js";
+import { GrammarPoint, GrammarPointSchema } from "../content/schemas/grammar-point.schema.js";
 import { FlashcardDeck, FlashcardDeckSchema } from "../flashcards/schemas/deck.schema.js";
 import { UserCardProgress, UserCardProgressSchema } from "./schemas/progress.schema.js";
 import { SrsReviewLog, SrsReviewLogSchema } from "./schemas/review-log.schema.js";
@@ -30,6 +31,7 @@ export function buildSrsModule(): DynamicModule {
       buildDatabaseModule(),
       MongooseModule.forFeature([
         { name: Flashcard.name, schema: FlashcardSchema },
+        { name: GrammarPoint.name, schema: GrammarPointSchema },
         { name: FlashcardDeck.name, schema: FlashcardDeckSchema },
         { name: UserCardProgress.name, schema: UserCardProgressSchema },
         { name: StudySession.name, schema: StudySessionSchema },

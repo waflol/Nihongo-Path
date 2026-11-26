@@ -8,6 +8,8 @@ import {
 import type { TextbookDocument } from "./schemas/textbook.schema.js";
 import type { UnitDocument } from "./schemas/unit.schema.js";
 import type { VocabularyDocument } from "./schemas/vocabulary.schema.js";
+import { mapSuperHonkiSource } from "./grammar-source.js";
+import { grammarTextbookFilter } from "./grammar-filter.js";
 
 /** A stable page of results (P2-CONTENT-04). */
 export interface PageResult<T> {
@@ -23,6 +25,10 @@ export interface ContentQuery {
   status?: string;
   level?: string;
   textbookId?: string;
+  themeId?: string;
+  contextId?: string;
+  unitId?: string;
+  search?: string;
 }
 
 /**
@@ -69,6 +75,24 @@ export interface GrammarPointInput {
   meaning: string;
   structure?: string;
   usage?: string;
+  pattern?: string;
+  coreExplanation?: string;
+  forms?: string[];
+  explanations?: string[];
+  notes?: string[];
+  senses?: unknown[];
+  groupNo?: number;
+  groupJa?: string;
+  groupVi?: string;
+  themeIds?: string[];
+  contextIds?: string[];
+  textbookRefs?: unknown[];
+  compareWith?: unknown[];
+  sourceKey?: string;
+  sourceProvider?: string;
+  sourceUrl?: string;
+  sourceVersion?: string;
+  sourceHash?: string;
   examples?: GrammarExample[];
   level?: string;
   tags?: string[];
@@ -309,11 +333,21 @@ export class ContentService {
     const filter: FilterQuery<GrammarPointDocument> = {};
     if (query.status) filter.status = query.status;
     if (query.level) filter.level = query.level;
-    if (query.textbookId) filter.textbooks = objectId(query.textbookId);
+    Object.assign(filter, grammarTextbookFilter(query.textbookId, query.unitId));
+    if (query.themeId) filter.themeIds = query.themeId;
+    if (query.contextId) filter.contextIds = query.contextId;
+    if (query.search?.trim()) {
+      const escaped = query.search.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      filter.$or = [
+        { label: { $regex: escaped, $options: "i" } },
+        { meaning: { $regex: escaped, $options: "i" } },
+        { pattern: { $regex: escaped, $options: "i" } },
+      ];
+    }
     const [items, total] = await Promise.all([
       this.grammar
         .find(filter)
-        .sort({ _id: -1 })
+        .sort({ level: 1, sortOrder: 1, _id: 1 })
         .skip(skip)
         .limit(limit)
         .exec(),
@@ -326,6 +360,74 @@ export class ContentService {
     const doc = await this.grammar.findById(objectId(id)).exec();
     if (!doc) throw new NotFoundException("Grammar point not found");
     return doc;
+  }
+
+  /** Public read: a draft is indistinguishable from a missing point (NP-1007). */
+  async getPublishedGrammar(id: string): Promise<GrammarPointDocument> {
+    const doc = Types.ObjectId.isValid(id)
+      ? await this.grammar.findOne({ _id: objectId(id), status: "PUBLISHED" }).exec()
+      : null;
+    if (!doc) throw new NotFoundException("Grammar point not found");
+    return doc;
+  }
+
+  /**
+   * Every point with just the fields needed to browse by level, theme, context
+   * and textbook lesson; the UI counts and groups them itself.
+   */
+  grammarIndex(status?: "DRAFT" | "PUBLISHED") {
+    return this.grammar
+      .find(status ? { status } : {})
+      .select("label meaning level status sourceKey groupNo groupJa groupVi themeIds contextIds textbookRefs")
+      .sort({ level: -1, sortOrder: 1, _id: 1 })
+      .lean()
+      .exec();
+  }
+
+  /** Facet counts across published grammar points, for the filter UI (NP-1007). */
+  /** Preview a downloaded Super Honki source without mutating the database. */
+  previewGrammarImport(source: string, version?: string) {
+    const points = mapSuperHonkiSource(source, version);
+    const keys = new Set(points.map((p) => `${p.sourceProvider}:${p.sourceKey}`));
+    return { total: points.length, duplicateKeys: points.length - keys.size, levels: points.reduce<Record<string, number>>((a, p) => { a[p.level ?? ""] = (a[p.level ?? ""] ?? 0) + 1; return a; }, {}) };
+  }
+
+  /** Publish/unpublish one grammar point, preserving a small before snapshot for audit callers. */
+  async setGrammarStatus(id: string, status: "DRAFT" | "PUBLISHED") {
+    const before = await this.getGrammar(id);
+    const after = await this.grammar.findByIdAndUpdate(objectId(id), { $set: { status } }, { new: true, runValidators: true }).exec();
+    if (!after) throw new NotFoundException("Grammar point not found");
+    return { before: before.toObject(), after: after.toObject() };
+  }
+
+  async grammarFacets(): Promise<{
+    levels: Record<string, number>;
+    themes: Record<string, number>;
+    contexts: Record<string, number>;
+  }> {
+    const base: FilterQuery<GrammarPointDocument> = { status: "PUBLISHED" };
+    const [byLevel, byTheme, byContext] = await Promise.all([
+      this.grammar.aggregate<{ _id: string; n: number }>([
+        { $match: base },
+        { $group: { _id: "$level", n: { $sum: 1 } } },
+      ]),
+      this.grammar.aggregate<{ _id: string; n: number }>([
+        { $match: base },
+        { $unwind: "$themeIds" },
+        { $group: { _id: "$themeIds", n: { $sum: 1 } } },
+      ]),
+      this.grammar.aggregate<{ _id: string; n: number }>([
+        { $match: base },
+        { $unwind: "$contextIds" },
+        { $group: { _id: "$contextIds", n: { $sum: 1 } } },
+      ]),
+    ]);
+    const fold = (rows: { _id: string | null; n: number }[]) => {
+      const out: Record<string, number> = {};
+      for (const r of rows) if (r._id) out[String(r._id)] = r.n;
+      return out;
+    };
+    return { levels: fold(byLevel), themes: fold(byTheme), contexts: fold(byContext) };
   }
 
   createGrammar(input: GrammarPointInput): Promise<GrammarPointDocument> {

@@ -18,6 +18,8 @@
     "lint": "oxlint --type-aware src/ test/",
     "tatoeba:import": "node scripts/import-tatoeba.mjs",
     "kanji:import": "node scripts/import-kanji.mjs",
+    "grammar:import": "node scripts/import-grammar-superhonki.mjs",
+    "grammar:catalog": "node scripts/seed-grammar-catalog.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",

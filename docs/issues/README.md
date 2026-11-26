@@ -65,6 +65,15 @@ Mỗi file là một issue (ID `NP-nnn`); nguồn gốc và tiến độ tổng 
 | [NP-1001](./NP-1001.md) | blocked | P10 | ADR AdSense + cấu hình placement trong DB + admin toggle/audit (P10-ADS-01/02/07) |
 | [NP-1002](./NP-1002.md) | todo | P10 | AdSlot, nạp script một lần, gate theo route/gói, cờ tắt toàn bộ (P10-ADS-03…06) |
 | [NP-1003](./NP-1003.md) | blocked | P10 | ads.txt, an toàn PII, a11y (P10-ADS-08, P10-SEC-01, P10-A11Y-01) |
+| [NP-1004](./NP-1004.md) | partial | P11 | ADR và chính sách nguồn dữ liệu ngữ pháp |
+| [NP-1005](./NP-1005.md) | partial | P11 | Grammar schema và catalog |
+| [NP-1006](./NP-1006.md) | todo | P11 | Importer dữ liệu ngữ pháp Super Honki |
+| [NP-1007](./NP-1007.md) | partial | P11 | Grammar API và bộ lọc đa chiều |
+| [NP-1008](./NP-1008.md) | partial | P11 | Tích hợp grammar flashcard và FSRS |
+| [NP-1009](./NP-1009.md) | todo | P11 | UI danh mục và chi tiết ngữ pháp |
+| [NP-1010](./NP-1010.md) | todo | P11 | UI flashcard ngữ pháp |
+| [NP-1011](./NP-1011.md) | todo | P11 | Bài luyện tập ngữ pháp |
+| [NP-1012](./NP-1012.md) | todo | P11 | Admin review và chất lượng nội dung grammar |
 | [NP-1101](./NP-1101.md) | todo | P11 | Chạy toàn bộ backlog T-* + E2E luồng chính (P11-TEST-01/02) |
 | [NP-1102](./NP-1102.md) | todo | P11 | Security review, rate limit toàn endpoint công khai, rà secret/log (P11-SEC-01…03) |
 | [NP-1103](./NP-1103.md) | blocked | P11 | Monitoring/alert, backup + restore, cấu hình production (P11-OPS-01…03) |

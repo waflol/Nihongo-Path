@@ -9,13 +9,16 @@ import {
   Patch,
   Post,
   Query,
+  Req,
 } from "@nestjs/common";
+import { attachAuditNote, type AuditRequest } from "../logs/audit-note.js";
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from "@nestjs/swagger";
 import { ContentAdmin } from "../auth/decorators/roles.decorator.js";
 import { IsPublic } from "../auth/decorators/is-public.decorator.js";
 import {
   GrammarPointDto,
   GrammarPointUpdateDto,
+  AdminContentQuery,
   PublicContentQuery,
   TextbookDto,
   TextbookUpdateDto,
@@ -106,14 +109,30 @@ export class ContentController {
       limit: query.limit,
       level: query.level,
       textbookId: query.textbookId,
+      unitId: query.unitId,
+      themeId: query.themeId,
+      contextId: query.contextId,
+      search: query.search,
       status: "PUBLISHED",
     });
+  }
+
+  @Get("content/grammar/facets")
+  @IsPublic()
+  grammarFacets() {
+    return this.content.grammarFacets();
+  }
+
+  @Get("content/grammar/index")
+  @IsPublic()
+  grammarIndex() {
+    return this.content.grammarIndex("PUBLISHED");
   }
 
   @Get("content/grammar/:id")
   @IsPublic()
   getGrammar(@Param("id") id: string) {
-    return this.content.getGrammar(id);
+    return this.content.getPublishedGrammar(id);
   }
 
   // ── Admin reads (all statuses, for the CRUD console) ───────────────
@@ -143,10 +162,44 @@ export class ContentController {
   }
 
   @ApiBearerAuth()
+  @Get("admin/content/grammar/index")
+  @ContentAdmin()
+  @ApiOperation({ summary: "Browse index of all grammar points incl. drafts (admin)" })
+  adminGrammarIndex() {
+    return this.content.grammarIndex();
+  }
+
+  @ApiBearerAuth()
+  @Get("admin/content/grammar/:id")
+  @ContentAdmin()
+  @ApiOperation({ summary: "One grammar point in any status (admin review)" })
+  adminGetGrammar(@Param("id") id: string) {
+    return this.content.getGrammar(id);
+  }
+
+  @ApiBearerAuth()
+  @Post("admin/content/grammar/import/preview")
+  @ContentAdmin()
+  previewGrammarImport(@Body() body: { source: string; version?: string }) {
+    return this.content.previewGrammarImport(body.source, body.version);
+  }
+
+  @Patch("admin/content/grammar/:id/status")
+  @ContentAdmin()
+  async setGrammarStatus(@Req() req: AuditRequest, @Param("id") id: string, @Body() body: { status: "DRAFT" | "PUBLISHED" }) {
+    const result = await this.content.setGrammarStatus(id, body.status);
+    attachAuditNote(req, {
+      before: { _id: String(result.before._id), status: result.before.status, sourceKey: result.before.sourceKey, label: result.before.label },
+      after: { _id: String(result.after._id), status: result.after.status, sourceKey: result.after.sourceKey, label: result.after.label },
+      summary: `grammar ${result.before.status} → ${result.after.status}: ${result.after.sourceKey ?? result.after.label}`,
+    });
+    return result.after;
+  }
+
   @Get("admin/content/grammar")
   @ContentAdmin()
   @ApiOperation({ summary: "List all grammar points incl. drafts (admin)" })
-  adminListGrammar(@Query() query: PublicContentQuery) {
+  adminListGrammar(@Query() query: AdminContentQuery) {
     return this.content.listGrammar(query);
   }
 

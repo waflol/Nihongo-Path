@@ -161,6 +161,19 @@ Plan chi tiết: [plans/plan-jlpt-question-bank.md](./plans/plan-jlpt-question-b
 | NP-1002 | `AdSlot`, nạp script một lần, gate theo route/gói, cờ tắt toàn bộ (P10-ADS-03…06) | NP-1001, NP-502 |
 | NP-1003 | `ads.txt`, an toàn PII, a11y (P10-ADS-08, P10-SEC-01, P10-A11Y-01) | Publisher ID ⏸ |
 
+### P11 — Grammar learning
+| Ticket | Cụm task | Chặn bởi |
+|---|---|---|
+| NP-1004 | ADR và chính sách nguồn dữ liệu ngữ pháp | Xác nhận quyền source |
+| NP-1005 | Grammar schema và catalog | NP-1004 |
+| NP-1006 | Importer dữ liệu ngữ pháp Super Honki | NP-1005 |
+| NP-1007 | Grammar API và bộ lọc đa chiều | NP-1005 |
+| NP-1008 | Tích hợp grammar flashcard và FSRS | NP-1005 |
+| NP-1009 | UI danh mục và chi tiết ngữ pháp | NP-1007 |
+| NP-1010 | UI flashcard ngữ pháp | NP-1008, NP-1009 |
+| NP-1011 | Bài luyện tập ngữ pháp | NP-1007 |
+| NP-1012 | Admin review và chất lượng nội dung grammar | NP-1006 |
+
 ### P11 — Sẵn sàng production
 | Ticket | Cụm task | Chặn bởi |
 |---|---|---|
@@ -186,9 +199,14 @@ Plan chi tiết: [plans/plan-jlpt-question-bank.md](./plans/plan-jlpt-question-b
 
 ## 7. Việc nên làm kế tiếp (đề xuất)
 
-1. **Đóng nốt P5**: audit phản hồi và đổi role (NP-024), request song song của quota (NP-501/502); sau đó xét đóng GitHub #16–#18.
-2. **P4** (NP-401…404): cần verify API/trình duyệt thật; **NP-021** còn OCR PDF scan thật.
-3. **Hỏi chủ sản phẩm Q-12**: quyết định được dùng đề thi chính thức hay chỉ đề tự soạn.
+Plan tổng thể: [plans/plan-complete-mvp.md](./plans/plan-complete-mvp.md) (27/11/2026 — thứ tự các lát dọc A→E để về MVP, không làm P6–P10 khi còn quyết định sản phẩm ⏸).
+
+1. **Đóng và bảo vệ working tree** (Slice A): commit lát dọc theo nhóm + HANDOFF, không để dồn một đống.
+2. **Grammar end-to-end** (Slice B): sửa lỗi còn ghi ở HANDOFF, chạy `--write`, admin preview/publish, flashcard + luyện tập (NP-1006→1012).
+3. **P4 + NP-021** (Slice C): verify API/trình duyệt thật, import file scan thật, NP-408/409.
+4. **P5** (Slice D): audit phản hồi và đổi role (NP-024), request song song của quota (NP-501/502); sau đó xét đóng GitHub #16–#18.
+5. **Production gate** (Slice E): chạy backlog `T-*`, security review, backup/restore, production build (NP-1101→1104).
+6. **Hỏi chủ sản phẩm Q-12**: quyết định được dùng đề thi chính thức hay chỉ đề tự soạn.
 
 ## 8. Nhãn gợi ý khi tạo GitHub Issues
 
