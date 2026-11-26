@@ -22,7 +22,7 @@ Sửa rò bộ nhớ khi OCR PDF scan (file 43 MB, 167 trang từng bị earlyoo
 
 ## Đồng bộ trạng thái ticket (25/11/2026)
 
-`docs/TICKETS.md`, `docs/issues/README.md` và frontmatter đã khớp nhau: NP-022 `done`; NP-407, NP-501/502/503 `partial` (chờ verify thật). Checklist P5-ADMIN-04 và P4-JLPT-05 còn `[ ]` (chưa tick vì thiếu bằng chứng). Chưa đụng issue GitHub.
+`docs/TICKETS.md`, `docs/issues/README.md` và frontmatter đã khớp nhau: NP-022 `done`; NP-407, NP-501/502/503 `partial` (chờ verify thật). Checklist P5-ADMIN-04, P4-JLPT-05, P4-JLPT-07 là `[~]` (đã code, chưa verify thật); P5-SEC-01 `[x]` và NP-504 `done` (151 route admin, 0 thiếu guard quyền). Tổng 100/193. Chưa đụng issue GitHub: #2, #6–#9 còn open dù ticket file đã `done`.
 
 ---
 

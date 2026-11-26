@@ -1,7 +1,7 @@
 # Danh sách ticket & tiến độ — Nihongo Path
 
 > **Cập nhật:** 25/11/2026. Nguồn: [IMPLEMENTATION_CHECKLIST.md](./IMPLEMENTATION_CHECKLIST.md) (trạng thái từng task),
-> [OPEN_QUESTIONS.md](./OPEN_QUESTIONS.md) (quyết định đang chờ), `git log` đến `96ed2ec`, [HANDOFF.md](./HANDOFF.md).
+> [OPEN_QUESTIONS.md](./OPEN_QUESTIONS.md) (quyết định đang chờ), `git log` đến `b9775eb`, [HANDOFF.md](./HANDOFF.md).
 >
 > **Cách đọc trạng thái:** theo quy ước checklist §0.1. `✅` = checklist đã `[x]` có bằng chứng; `🟡` = `[~]` làm dở / chưa kiểm
 > chứng đủ; `⬜` = chưa làm; `⏸` = chờ chủ sản phẩm quyết định; `➕` = đã làm **ngoài** checklist gốc (có commit, chưa có tiêu chí nghiệm thu).
@@ -21,15 +21,15 @@
 | P1 | Foundation | 34 | 0 | 0 | 0 | 100% |
 | P2 | Identity & Content | 22 | 0 | 0 | 0 | 100% |
 | P3 | Flashcards & SRS | 25 | 2 | 0 | 0 | 92% (+2 dở) |
-| P4 | Exercises & Exams | 5 | 12 | 3 | 0 | 25% (+12 dở, chờ verify trình duyệt) |
-| P5 | Admin, Feedback, Entitlements | 7 | 5 | 2 | 0 | 50% (+5 dở) |
+| P4 | Exercises & Exams | 5 | 14 | 1 | 0 | 25% (+14 dở, chờ verify trình duyệt) |
+| P5 | Admin, Feedback, Entitlements | 8 | 6 | 0 | 0 | 57% (+6 dở) |
 | P6 | Media & STT | 0 | 0 | 14 | 1 | 0% |
 | P7 | Phân tích câu & Shadowing | 0 | 0 | 11 | 1 | 0% |
 | P8 | AI Kaiwa | 0 | 0 | 7 | 1 | 0% |
 | P9 | Thanh toán | 0 | 0 | 11 | 1 | 0% |
 | P10 | AdSense | 0 | 0 | 8 | 2 | 0% |
 | P11 | Production readiness | 0 | 0 | 12 | 1 | 0% |
-| **Tổng** | | **99** | **19** | **68** | **7** | **~51% xong** (99/193) |
+| **Tổng** | | **100** | **22** | **64** | **7** | **~52% xong** (100/193) |
 
 \* % = ✅ / tổng task của phase. Ô checklist có kèm ghi chú được đếm theo ký hiệu đầu ô.
 
@@ -51,6 +51,7 @@
 | NP-026 | Kiểm chứng FSRS-4.5 | NP-101 | Spec 6/6, so lịch với SM-2, nâng cấp thẻ SM-2 thật lên `schemaVersion: 2` (commit `51049d6`) |
 | NP-405 | Cập nhật `database.md` nhóm exam | P4-DOC-01 | `exams`, `exam_attempts` khớp code (18/11) |
 | NP-406 | Ngân hàng JLPT GĐ1: mã dạng mondai, `exam_stimuli`, xáo theo nhóm, chấm theo điểm/phần | P4-JLPT-01…04 | vitest 424 xanh (19/11); đề phẳng không đổi hành vi |
+| NP-504 | Rà least privilege endpoint admin + ADR entitlement | P5-SEC-01, P5-DOC-01 | 151 route admin đều có guard quyền (25/11) |
 
 ## 3. Đang dở (🟡) — việc còn lại để đóng
 
@@ -63,10 +64,10 @@
 | NP-402 | API làm bài: bắt đầu/nộp, hết giờ server, xáo, chấm | P4-EXAM-04…06 | Verify API với thời gian giả lập (code + vitest xong 18/11) |
 | NP-403 | Xem lại lỗi + thống kê + màn kết quả | P4-EXAM-07/08, P4-UI-02 | Verify API + trình duyệt |
 | NP-404 | Màn làm bài có timer/lưu nháp + admin soạn đề (`app/admin/exams`) | P4-EXAM-09, P4-UI-01 | Code xong (commit 39c481b); còn verify trình duyệt |
-| NP-407 | Verify trình duyệt/DB thật, đo RSS, đối chiếu tiêu chí | P4-JLPT-05 (`[ ]`) | Theo plan-jlpt-question-bank |
-| NP-409 | Bấm thử trình duyệt; nút "Đề ngẫu nhiên" + mục ngân hàng admin (chờ NP-408) | P4-JLPT-07 (`[ ]`) | Chromium headless + mobile 375 px |
+| NP-407 | Verify trình duyệt/DB thật, đo RSS, đối chiếu tiêu chí | P4-JLPT-05 (`[~]`) | Theo plan-jlpt-question-bank |
+| NP-409 | Bấm thử trình duyệt; nút "Đề ngẫu nhiên" + mục ngân hàng admin (chờ NP-408) | P4-JLPT-07 (`[~]`) | Chromium headless + mobile 375 px |
 | NP-501, 502 | Verify live quota trên VPS | P5-QUOTA-01…06 (`[x]`) | Vượt hạn mức → 429; đổi gói có hiệu lực |
-| NP-503 | Verify `/admin/entitlements` trên VPS | P5-ADMIN-04 (`[ ]`) | Sửa limit → có hiệu lực ngay |
+| NP-503 | Verify `/admin/entitlements` trên VPS | P5-ADMIN-04 (`[~]`) | Sửa limit → có hiệu lực ngay |
 | NP-027 | Thử Antigravity CLI với tài khoản Google thật | `plans/plan-antigravity-cli.md` §3 | Gọi `agy` thật qua đăng nhập dùng chung |
 
 ## 4. Đã làm ngoài checklist (➕)
@@ -115,14 +116,14 @@ Plan chi tiết: [plans/plan-jlpt-question-bank.md](./plans/plan-jlpt-question-b
 
 ### P5 — Hạn mức & quản trị
 
-> **Cập nhật 25/11/2026:** NP-501/502/503 đã code xong trong commit `fff98f1`; NP-504 đã rà soát quyền endpoint admin, không phát hiện endpoint admin thiếu authorization check. Trạng thái 🟡 (§3): còn verify live trên VPS trước khi đóng ticket GitHub #18.
+> **Cập nhật 25/11/2026:** NP-501/502/503 đã code xong trong commit `fff98f1`; NP-504 xong (§2): không endpoint admin nào thiếu authorization check. NP-501…503 còn 🟡 (§3): verify live trên VPS trước khi đóng ticket GitHub #18.
 
 | Ticket | Cụm task | Chặn bởi |
 |---|---|---|
 | NP-501 | Schema + service quota reserve→settle→release, reset theo kỳ/tz (P5-QUOTA-01…05) | — (code xong) |
 | NP-502 | `EntitlementGuard`/`QuotaGuard` + chính sách vượt hạn mức (P5-QUOTA-04/06) | — (code xong) |
 | NP-503 | Màn cấu hình hạn mức theo gói (P5-ADMIN-04) | — (code xong) |
-| NP-504 | Rà least privilege endpoint admin (P5-SEC-01; ADR của P5-DOC-01 đã xong) | NP-024 |
+| NP-504 ✅ | Rà least privilege endpoint admin (P5-SEC-01; ADR của P5-DOC-01) | — (xong 25/11) |
 
 ### P6 — Media & STT
 | Ticket | Cụm task | Chặn bởi |
@@ -185,10 +186,9 @@ Plan chi tiết: [plans/plan-jlpt-question-bank.md](./plans/plan-jlpt-question-b
 
 ## 7. Việc nên làm kế tiếp (đề xuất)
 
-1. **Verify trên VPS** NP-024, NP-025 và quota (NP-501…503): code + test đã có; đóng được GitHub #16–#18 (#16 còn cần NP-504).
-2. **NP-504**: rà `@Roles` toàn bộ endpoint admin, không cần quyết định mới.
-3. **P4** (NP-401…404): cần verify API/trình duyệt thật; **NP-021** còn OCR PDF scan thật.
-4. **Hỏi chủ sản phẩm Q-12**: quyết định được dùng đề thi chính thức hay chỉ đề tự soạn.
+1. **Verify trên VPS** NP-024, NP-025 và quota (NP-501…503): code + test đã có; đóng được GitHub #16–#18.
+2. **P4** (NP-401…404): cần verify API/trình duyệt thật; **NP-021** còn OCR PDF scan thật.
+3. **Hỏi chủ sản phẩm Q-12**: quyết định được dùng đề thi chính thức hay chỉ đề tự soạn.
 
 ## 8. Nhãn gợi ý khi tạo GitHub Issues
 

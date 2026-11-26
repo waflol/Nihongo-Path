@@ -4,7 +4,7 @@
 > duy nhất, phụ thuộc, file/module dự kiến, tiêu chí hoàn thành kiểm chứng được
 > và cách kiểm thử.
 >
-> **Ngày lập:** 30/10/2026. Cập nhật lần cuối: 18/11/2026. Danh sách ticket + tiến độ: [TICKETS.md](./TICKETS.md).
+> **Ngày lập:** 30/10/2026. Cập nhật lần cuối: 25/11/2026. Danh sách ticket + tiến độ: [TICKETS.md](./TICKETS.md).
 
 ---
 
@@ -374,9 +374,9 @@ chặn route, CRUD nội dung. Test case: `T-P2-01` … `T-P2-10`.
 | P4-JLPT-02 | Schema: +3 `kind`, trường §5.2, `exam_stimuli`, `Exam.sections/generated`, `attempt` chấm theo phần (NP-406) | P4-JLPT-01 | `schemas/{exercise-question,stimulus,exam,attempt}.schema.ts` | Đề phẳng cũ không đổi hành vi; đề có phần có `sections[]` | xem schema + vitest (19/11) | `[x]` |
 | P4-JLPT-03 | `groupedOrder` + chấm `points`/`sectionScores` + `estimateJlptScaled` + sit payload có `stimuli` không lộ đáp án (NP-406) | P4-JLPT-02 | `shuffle.ts`, `exams.service.ts` | Cùng seed → cùng thứ tự; nhóm bài đọc liền nhau; payload đệ quy không có khoá `answer/explain/correct` | vitest `shuffle.spec`, `grading.spec`, `sit-payload.spec` (19/11) | `[x]` |
 | P4-JLPT-04 | CRUD admin `exam_stimuli` + `adminAuthorQuestion` nới theo `optionCountsOf` (NP-406) | P4-JLPT-03 | `stimuli.service.ts`, `exams.controller.ts` | Route `exams/admin/stimuli` guard admin; câu 3 phương án cho `listening` | vitest (19/11); chưa verify API/trình duyệt thật | `[x]` |
-| P4-JLPT-05 | Import PDF đề → draft có người duyệt (NP-407) | P4-JLPT-04 | `src/exams/import/*` | Draft nhóm đúng kỳ × mondai; ≥ 90% câu ngôn ngữ N3 7/2010 tách đúng; publish idempotent theo `contentHash` | vitest + đo RSS (chưa bắt đầu) | `[ ]` |
+| P4-JLPT-05 | Import PDF đề → draft có người duyệt (NP-407) | P4-JLPT-04 | `src/exams/import/*` | Draft nhóm đúng kỳ × mondai; ≥ 90% câu ngôn ngữ N3 7/2010 tách đúng; publish idempotent theo `contentHash` | vitest + đo RSS; đã code (`NP-407`), còn verify trình duyệt/DB thật và đối chiếu tiêu chí (25/11/2026) | `[~]` |
 | P4-JLPT-06 | Bộ sinh đề theo blueprint (NP-408) | P4-JLPT-04 | `src/exams/{blueprints,generator}.ts` | Đề đúng blueprint; khoá Q-12: người học chỉ bốc `own\|licensed` | vitest (chưa bắt đầu) | `[ ]` |
-| P4-JLPT-07 | UI làm đề theo phần + admin phủ ngân hàng (NP-409) | P4-JLPT-05, P4-JLPT-06 | `apps/ui/...` | Bấm thử Chromium headless + mobile 375 px | (chưa bắt đầu) | `[ ]` |
+| P4-JLPT-07 | UI làm đề theo phần + admin phủ ngân hàng (NP-409) | P4-JLPT-05, P4-JLPT-06 | `apps/ui/...` | Bấm thử Chromium headless + mobile 375 px | Chromium headless + mobile 375 px; màn làm bài + kết quả đã code 22/11, chưa bấm thử; phủ ngân hàng/đề ngẫu nhiên chờ NP-408 | `[~]` |
 
 ---
 
@@ -388,18 +388,18 @@ chặn route, CRUD nội dung. Test case: `T-P2-01` … `T-P2-10`.
 |---|---|---|---|---|---|---|
 | P5-QUOTA-01 | Schema cấu hình tính năng (`featureKey`, bật/tắt, limit, chu kỳ, tz reset) | P4-EXAM-03 | `src/entitlements/schemas/feature-config.schema.ts` | Cấu hình được không cần deploy | xem schema | `[x]` |
 | P5-QUOTA-02 | Schema `quota_reservations` + `usage_records` | P5-QUOTA-01 | `src/entitlements/schemas/*` | Có index theo `(userId, featureKey, period)` | xem index | `[x]` |
-| P5-QUOTA-03 | Service reserve → settle → release | P5-QUOTA-02 | `src/entitlements/quota.service.ts` | Reserve trừ hạn mức; settle chốt; release hoàn lại | gọi service | `[x]` (13 spec; interceptor settle/release chờ hoàn tất trước response) |
-| P5-QUOTA-04 | `EntitlementGuard` + `QuotaGuard` | P5-QUOTA-03, P2-AUTH-06 | `src/entitlements/guards/*` | Plan không có quyền → 403; hết hạn mức → 429/403 theo quy ước | gọi API | `[x]` (11 spec guards; đã áp `@Quota("ai-sentence-grade")` lên `POST decks/:id/grade-sentence`) |
-| P5-QUOTA-05 | Reset theo chu kỳ + timezone | P5-QUOTA-03 | `quota.service.ts` | Sang kỳ mới hạn mức về mặc định đúng tz | giả lập thời gian | `[x]` (periodKey DAY/MONTH theo tz IANA, test bằng instant giả lập) |
-| P5-QUOTA-06 | Chính sách vượt hạn mức (chặn / cho vượt có ghi nhận) | P5-QUOTA-04 | `quota.service.ts` | Hành vi khớp quyết định của Tôi | gọi API vượt | `[x]` (BLOCK=429+thu hồi slot / ALLOW=ghi `overLimit`; con số chốt bởi Q-07 trong admin) |
+| P5-QUOTA-03 | Service reserve → settle → release | P5-QUOTA-02 | `src/entitlements/quota.service.ts` | Reserve trừ hạn mức; settle chốt; release hoàn lại | gọi service; 13 spec; interceptor settle/release chờ hoàn tất trước response | `[x]` |
+| P5-QUOTA-04 | `EntitlementGuard` + `QuotaGuard` | P5-QUOTA-03, P2-AUTH-06 | `src/entitlements/guards/*` | Plan không có quyền → 403; hết hạn mức → 429/403 theo quy ước | gọi API; 11 spec guards; đã áp `@Quota("ai-sentence-grade")` lên `POST decks/:id/grade-sentence` | `[x]` |
+| P5-QUOTA-05 | Reset theo chu kỳ + timezone | P5-QUOTA-03 | `quota.service.ts` | Sang kỳ mới hạn mức về mặc định đúng tz | giả lập thời gian; periodKey DAY/MONTH theo tz IANA, test bằng instant giả lập | `[x]` |
+| P5-QUOTA-06 | Chính sách vượt hạn mức (chặn / cho vượt có ghi nhận) | P5-QUOTA-04 | `quota.service.ts` | Hành vi khớp quyết định của Tôi | gọi API vượt; BLOCK=429+thu hồi slot / ALLOW=ghi `overLimit`; con số chốt bởi Q-07 trong admin | `[x]` |
 | P5-ADMIN-01 | Khung admin + RBAC (`USER`/`ADMIN`/`SUPER_ADMIN`) | P2-UI-04 | `app/admin/layout.tsx`, `src/admin/*` | Vào `/admin` khi không đủ quyền → 403 | **403 có spec `admin-rbac.spec.ts` (RolesGuard: USER→403, ADMIN→SUPER route 403, pass-through); còn verify trình duyệt thật** | `[~]` |
 | P5-ADMIN-02 | Quản lý người dùng (trạng thái tài khoản, đổi role — least privilege) | P5-ADMIN-01 | `app/admin/users/*`, `src/users/*` | Không tự nâng quyền; thao tác có audit | **`setRole` chặn tự đổi role + chỉ SUPER_ADMIN (lớp service, spec 6 test); còn verify trình duyệt thật** | `[~]` |
 | P5-ADMIN-03 | Audit log cho thao tác quản trị (ai, khi nào, giá trị trước/sau) | P5-ADMIN-02 | `src/admin/audit.interceptor.ts`, `audit_logs` | Mọi thao tác ghi trong P5 đều có bản ghi | **`attachAuditNote` ghi `before`/`after`/`summary` vào `audit_logs` (role/status/password/revoke-sessions); interceptor spec 4 test; UI logs tab audit hiện Trước→Sau; còn kiểm DB thật** | `[~]` |
 | P5-FEEDBACK-01 | Schema + API gửi phản hồi (từ vựng/transcript/bản dịch) | P2-AUTH-06 | `src/feedback/*` | Người dùng gửi được; có trạng thái | **`user_feedbacks` (source: vocabulary/grammar/transcript/translation/exam/general, status OPEN→IN_PROGRESS→RESOLVED/REJECTED, history) + `/feedback` (POST + `/me`); UI `/account` panel gửi + theo dõi; card_reports cũng có `history`; còn verify API thật** | `[~]` |
 | P5-FEEDBACK-02 | Hộp thư phản hồi cho admin (lọc theo trạng thái, lịch sử xử lý) | P5-FEEDBACK-01, P5-ADMIN-01 | `app/admin/feedback/*` | Đổi trạng thái + ghi lịch sử | **`/admin/feedback` (GET/PATCH) + `/admin/feedback` UI: lọc nguồn/trạng thái, đổi trạng thái có note, xem lịch sử xử lý (ai, từ→đến, khi nào, note); mọi đổi trạng thái ghi `history`; card reports có history; còn verify trình duyệt thật** | `[~]` |
-| P5-ADMIN-04 | Màn hình cấu hình tính năng/hạn mức theo gói | P5-QUOTA-01, P5-ADMIN-01 | `app/admin/entitlements/*` | Sửa limit → có hiệu lực ngay | thao tác rồi gọi API | `[ ]` |
-| P5-SEC-01 | Rà soát least privilege toàn bộ endpoint admin | P5-ADMIN-03 | `src/**/*.controller.ts` | Mọi endpoint admin có `@Roles` | `grep -L "@Roles" src/**/*.controller.ts` | `[ ]` |
-| P5-DOC-01 | Cập nhật `database.md` + ADR entitlement | P5-QUOTA-05 | `docs/database.md`, `docs/adr/ADR-entitlements.md` | ADR `Proposed`/`Accepted` rõ | đối chiếu | `[x]` (`database.md` §5b + §9; ADR Accepted — còn phần rà least-privilege thuộc P5-SEC-01/NP-504) |
+| P5-ADMIN-04 | Màn hình cấu hình tính năng/hạn mức theo gói | P5-QUOTA-01, P5-ADMIN-01 | `app/admin/entitlements/*` | Sửa limit → có hiệu lực ngay | thao tác rồi gọi API; code + vitest xong (commit `fff98f1`), chưa verify live "sửa limit → có hiệu lực ngay" | `[~]` |
+| P5-SEC-01 | Rà soát least privilege toàn bộ endpoint admin | P5-ADMIN-03 | `src/**/*.controller.ts` | Mọi endpoint admin có `@Roles` | `grep -L "@Roles" src/**/*.controller.ts`; 25/11/2026: quét `*.controller.ts`, 151 route có đoạn `admin`, 0 route thiếu `@ContentAdmin()`/`@Roles`; `AuthGuard` + `RolesGuard` đăng ký toàn cục (`auth.module.ts`). Các controller mà `grep -L` liệt kê đều không có route `admin` | `[x]` |
+| P5-DOC-01 | Cập nhật `database.md` + ADR entitlement | P5-QUOTA-05 | `docs/database.md`, `docs/adr/ADR-entitlements.md` | ADR `Proposed`/`Accepted` rõ | đối chiếu; `database.md` §5b + §9; ADR Accepted; phần rà least-privilege: xem P5-SEC-01 | `[x]` |
 
 **Checkpoint P5:** build/lint/typecheck; thử reserve→settle→release bằng tay.
 Test case: `T-P5-01` … `T-P5-12`.

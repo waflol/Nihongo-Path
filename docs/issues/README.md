@@ -48,7 +48,7 @@ Mỗi file là một issue (ID `NP-nnn`); nguồn gốc và tiến độ tổng 
 | [NP-501](./NP-501.md) | partial | P5 | Schema + service quota reserve→settle→release, reset theo kỳ/tz (P5-QUOTA-01…05) |
 | [NP-502](./NP-502.md) | partial | P5 | EntitlementGuard/QuotaGuard + chính sách vượt hạn mức (P5-QUOTA-04/06) |
 | [NP-503](./NP-503.md) | partial | P5 | Màn cấu hình hạn mức theo gói (P5-ADMIN-04) |
-| [NP-504](./NP-504.md) | todo | P5 | Rà least privilege endpoint admin + ADR entitlement (P5-SEC-01, P5-DOC-01) |
+| [NP-504](./NP-504.md) | done | P5 | Rà least privilege endpoint admin + ADR entitlement (P5-SEC-01, P5-DOC-01) |
 | [NP-601](./NP-601.md) | blocked | P6 | ADR media + storage + giới hạn (P6-MEDIA-01, 04) |
 | [NP-602](./NP-602.md) | todo | P6 | Upload, state machine, SSRF, retention (P6-MEDIA-02/03/05/06) |
 | [NP-603](./NP-603.md) | blocked | P6 | STT provider-independent + queue/worker + job state + quota (P6-STT-01…05) |
