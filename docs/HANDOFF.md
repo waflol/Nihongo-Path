@@ -4,6 +4,15 @@
 
 ---
 
+## Gia đình Kanji + flashcard theo gia đình (27/11/2026)
+
+- `/learn/kanji/families` (tab "Gia đình"): lọc N5–N1, tìm chữ / Hán Việt, sắp xếp **A–Z Hán Việt** (mặc định) hoặc "Mặc định" (cấp dễ trước, gia đình lớn trước — thứ tự tự tính, không phải của trang mẫu). `?f=云` mở một gia đình.
+- Dữ liệu `content/kanji-families.data.ts` (382 gia đình, 1702 chữ, dòng = thứ tự A–Z): **chép cách gom nhóm từ superhonki.com/kanji ngày 27/11/2026, chủ sản phẩm cho biết đã được cho phép** (nên lưu bằng chứng cho phép trước khi phát hành). Âm đọc / cấp lấy từ `kanjis` của app; 15 chữ app chưa có hiện mờ: 栗鞄斧雀鳩鴨猪頒烏炒狼龍冒蝶椀.
+- API: `GET /kanji/families`; `GET /srs/queue/families?family=<thành phần|all>&mode=learn|review` — dùng thẻ của bộ Kanji hệ thống N5–N1 (tiến độ SRS chung), thứ tự theo gia đình, chung hạn mức thẻ Kanji mới/ngày. UI: `/learn/kanji/{study,review}?family=`, ô "Bộ thẻ" có mục gia đình; ẩn nút Đặt lại khi không phải một bộ thẻ thật.
+- Đã chạy: vitest `src/srs src/content/kanji-families`, tsc file UI sạch, watcher API 0 lỗi; Chrome máy tính: danh sách A–Z, lọc N5, trang gia đình 云, học `family=云` và `all`. **Chưa kiểm:** điện thoại, chấm thẻ / ôn tập trong chế độ gia đình. ESLint còn 1 lỗi `react-hooks/refs` ở `study-session.tsx` (đoạn tự phát âm, không sửa ở việc này).
+
+---
+
 ## Furigana ở `/admin/content` (27/11/2026)
 
 - Bảng tab Ngữ pháp và Từ vựng (`components/admin/content-console.tsx`) vẽ `漢[かん]` bằng `JaMarkup` thay vì chữ thô; nút "Furigana: Bật/Tắt" trên bảng, nhớ ở localStorage `np.admin.showFurigana` (mặc định bật). Tắt thì ẩn cách đọc, giữ chỗ nên dòng không nhảy. Form sửa vẫn hiện markup gốc.
@@ -19,6 +28,7 @@
 - Markup `漢[かん]` / `{mẫu}` vẽ bằng `JaMarkup` (`furigana.tsx`), nút あ bật/tắt; dùng cả ở thẻ trong bộ, bài tập; bảng bộ thẻ hiện chữ trơn.
 - Đã chạy: vitest `src/srs src/flashcards` 76 đạt, tsc file UI sạch, watcher API 0 lỗi; Chrome máy tính: mặt thẻ ngữ pháp N5 + nút あ, thẻ Kanji. Chưa xem điện thoại.
 - Trang bộ thẻ (`deck-cards-manager.tsx`) cho bộ Ngữ pháp / Kanji: bỏ công cụ từ vựng, tìm kiếm cùng hàng với Thẻ/Bảng, Học trỏ `/learn/{grammar,kanji}/study`, quay về khu của mảng; bộ có `systemKey` chỉ đọc (kể cả admin). Bộ từ vựng giữ nguyên. Trang học Ngữ pháp / Kanji xếp bộ N5→N1 (mặc định N5), tiêu đề "Học Kanji mới".
+- Khung "Từ AI đã tạo ví dụ nhưng chưa hiện trong thẻ" chỉ còn ở bộ từ vựng. Tab Bảng · Nhóm 20 chữ · Gia đình ở trang bộ Kanji: đã chuyển cho phiên "Phần gia đình kanji" (chưa xác nhận đã nhận).
 - Đã xem Chrome máy tính: hai bộ N5, hai trang học; tsc sạch. Chưa xem điện thoại, trang admin, bộ cá nhân ngữ pháp/Kanji, trang bộ từ vựng.
 
 ---
