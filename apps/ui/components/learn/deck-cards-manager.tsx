@@ -20,6 +20,7 @@ import { CategoryChip } from "@/components/learn/category-filter";
 import { useHanVietPref } from "@/lib/use-han-viet-pref";
 import { AiUnusedExamples } from "@/components/learn/ai-unused-examples";
 import { startExamples } from "@/components/learn/deck-processing";
+import { KanjiDeckViews } from "@/components/learn/kanji-deck-views";
 
 /**
  * Full-page card manager for one deck: search, filter by tag / "no example",
@@ -95,6 +96,18 @@ const CONTENT_PILLARS = {
   kanji: { name: "Kanji", search: "Tìm theo chữ, Hán Việt, on/kun…" },
 };
 
+type View = "cards" | "table" | "groups" | "families";
+
+const DECK_VIEWS: { id: View; label: string }[] = [
+  { id: "cards", label: "Thẻ" },
+  { id: "table", label: "Bảng" },
+];
+const KANJI_VIEWS: { id: View; label: string }[] = [
+  { id: "table", label: "Bảng" },
+  { id: "groups", label: "Nhóm 20 chữ" },
+  { id: "families", label: "Gia đình" },
+];
+
 const emptyForm = {
   front: "",
   back: "",
@@ -147,18 +160,16 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
   const [formKey, setFormKey] = useState(0);
   const [form, setForm] = useState(emptyForm);
   const [hanVietPref, toggleHanViet] = useHanVietPref();
-  const [view, setView] = useState<"cards" | "table">("cards");
+  // Kanji decks have their own views, remembered apart from the other decks'.
+  const [deckView, setDeckView] = useState<View>("cards");
+  const [kanjiView, setKanjiView] = useState<View>("table");
   useEffect(() => {
     try {
-      if (window.localStorage.getItem("deck-view") === "table") setView("table");
+      if (window.localStorage.getItem("deck-view") === "table") setDeckView("table");
+      const saved = window.localStorage.getItem("deck-view-kanji");
+      if (saved === "groups" || saved === "families") setKanjiView(saved);
     } catch {}
   }, []);
-  function changeView(v: "cards" | "table") {
-    setView(v);
-    try {
-      window.localStorage.setItem("deck-view", v);
-    } catch {}
-  }
 
   // Deck info editor (rename / level / category / summary).
   const [editInfo, setEditInfo] = useState(false);
@@ -169,6 +180,22 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
   const pillar = deck ? deckPillar(deck) : "vocab";
   // Grammar / kanji decks have none of the vocabulary tools (checks, AI, word classes).
   const content = pillar === "vocab" ? null : CONTENT_PILLARS[pillar];
+  const views = pillar === "kanji" ? KANJI_VIEWS : DECK_VIEWS;
+  // A `?card=` link shows that one card, so it needs a list of cards.
+  const view = pillar !== "kanji" ? deckView : focusCard ? "table" : kanjiView;
+  /** The whole deck at once (groups / families) instead of one page of cards. */
+  const overview = view === "groups" || view === "families" ? view : null;
+  function changeView(v: View) {
+    if (pillar === "kanji") setKanjiView(v);
+    else setDeckView(v);
+    if (v === "groups" || v === "families") {
+      clearSelection();
+      setEditingId(null);
+    }
+    try {
+      window.localStorage.setItem(pillar === "kanji" ? "deck-view-kanji" : "deck-view", v);
+    } catch {}
+  }
   // Hand edits to a default deck would be overwritten by the next sync, so it is read-only.
   const isSystem = Boolean(deck?.systemKey);
   const canWrite = !isSystem && (mode === "admin" || (deck !== null && !deck.shared));
@@ -730,20 +757,20 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
         </div>
         <div className={"flex flex-wrap items-center gap-2" + (content ? " w-full" : "")}>
           <div role="group" aria-label="Chế độ xem" className="inline-flex overflow-hidden rounded-lg border border-[var(--border)] text-xs font-semibold">
-            {(["cards", "table"] as const).map((v) => (
+            {views.map((v) => (
               <button
-                key={v}
+                key={v.id}
                 type="button"
-                aria-pressed={view === v}
-                onClick={() => changeView(v)}
+                aria-pressed={view === v.id}
+                onClick={() => changeView(v.id)}
                 className={
                   "h-9 px-3 " +
-                  (view === v
+                  (view === v.id
                     ? "bg-[var(--primary)] text-[var(--primary-foreground)]"
                     : "text-[var(--foreground)] hover:bg-[var(--layer-hover)]")
                 }
               >
-                {v === "cards" ? "Thẻ" : "Bảng"}
+                {v.label}
               </button>
             ))}
           </div>
@@ -1099,7 +1126,7 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
       )}
 
       {/* Selection / bulk tagging */}
-      {canWrite && items.length > 0 && (
+      {canWrite && !overview && items.length > 0 && (
         <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
           <label className="inline-flex items-center gap-2 text-[var(--foreground)]">
             <input
@@ -1166,8 +1193,9 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
         </div>
       )}
       <div className="mt-4">
-        {loading && !data && <p className="text-sm text-[var(--muted-foreground)]">Đang tải thẻ…</p>}
-        {!loading && items.length === 0 && (
+        {overview && deck && <KanjiDeckViews view={overview} deckId={deckId} q={q} tag={tag} version={version} />}
+        {loading && !data && !overview && <p className="text-sm text-[var(--muted-foreground)]">Đang tải thẻ…</p>}
+        {!overview && !loading && items.length === 0 && (
           <p className="rounded-2xl border border-dashed border-[var(--border)] p-8 text-center text-sm text-[var(--muted-foreground)]">
             {q || tag || missing || pos || review ? "Không có thẻ nào khớp bộ lọc." : "Bộ này chưa có thẻ."}
           </p>
@@ -1317,7 +1345,7 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
             </table>
           </div>
         )}
-        <ul className={"space-y-3 transition-opacity " + (loading && data ? "opacity-60" : "") + (view === "table" ? " hidden" : "")}>
+        <ul className={"space-y-3 transition-opacity " + (loading && data ? "opacity-60" : "") + (view !== "cards" ? " hidden" : "")}>
           {items.map((card, i) =>
             editingId === card._id ? (
               <li key={card._id} className="rounded-2xl border border-[var(--primary)] bg-[var(--background)] p-4 shadow-sm">
@@ -1383,7 +1411,7 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
           )}
         </ul>
 
-        {pages > 1 && (
+        {!overview && pages > 1 && (
           <nav className="mt-6 flex items-center justify-center gap-2" aria-label="Phân trang">
             <button
               type="button"

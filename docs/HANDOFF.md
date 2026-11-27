@@ -4,6 +4,14 @@
 
 ---
 
+## Trang bộ thẻ Kanji: Bảng · Nhóm 20 chữ · Gia đình (27/11/2026)
+
+- `/learn/decks/[id]` và `/admin/decks/[id]`: bộ Kanji bỏ chế độ "Thẻ", còn 3 chế độ (mặc định Bảng, nhớ ở localStorage `deck-view-kanji`); bộ từ vựng / ngữ pháp vẫn Thẻ|Bảng. Link `?card=` luôn mở dạng Bảng.
+- `kanji-deck-views.tsx`: tải mọi thẻ khớp tìm kiếm / tag (100 thẻ mỗi lần, tuần tự); Nhóm 20 chữ dùng `KanjiGroups` (số nhóm theo `order` của thẻ); Gia đình hiện các gia đình có chữ trong bộ, chữ ngoài bộ để mờ, bấm vào mở `/learn/kanji/families?f=`. Chọn / phân trang ẩn ở 2 chế độ này.
+- Đã chạy: tsc 2 file sạch (eslint còn 2 lỗi `set-state-in-effect` kiểu cũ); Chrome máy tính với bộ Kanji N2. Chưa xem điện thoại, chưa thử bộ Kanji cá nhân.
+
+---
+
 ## Gia đình Kanji + flashcard theo gia đình (27/11/2026)
 
 - `/learn/kanji/families` (tab "Gia đình"): lọc N5–N1, tìm chữ / Hán Việt, sắp xếp **A–Z Hán Việt** (mặc định) hoặc "Mặc định" (cấp dễ trước, gia đình lớn trước — thứ tự tự tính, không phải của trang mẫu). `?f=云` mở một gia đình.
