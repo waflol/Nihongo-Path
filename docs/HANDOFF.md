@@ -4,12 +4,33 @@
 
 ---
 
+## Furigana ở `/admin/content` (27/11/2026)
+
+- Bảng tab Ngữ pháp và Từ vựng (`components/admin/content-console.tsx`) vẽ `漢[かん]` bằng `JaMarkup` thay vì chữ thô; nút "Furigana: Bật/Tắt" trên bảng, nhớ ở localStorage `np.admin.showFurigana` (mặc định bật). Tắt thì ẩn cách đọc, giữ chỗ nên dòng không nhảy. Form sửa vẫn hiện markup gốc.
+- Tab Đơn vị: ô nhập id giáo trình thay bằng `components/admin/textbook-select.tsx` (tìm không phân biệt dấu, phím ↑↓ Enter Esc); bảng hiện tên giáo trình. Bấm Sửa giờ điền sẵn giáo trình đang gắn.
+- Đã chạy: tsc + eslint hai file này sạch. **Chưa xem trên trình duyệt** (phiên Chrome đăng nhập vai trò USER).
+
+---
+
+## Mặt thẻ flashcard Kanji và Ngữ pháp (27/11/2026)
+
+- Kanji (`kanji-card-faces.tsx`): trước = chữ; sau = âm Hán Việt, on, kun (tách từ `card.reading`, tối đa 2 âm mỗi loại như lúc đồng bộ); không hiện nghĩa.
+- Ngữ pháp (`grammar-card-faces.tsx`): trước = mẫu; sau = nghĩa, cách dùng, ví dụ kèm dịch. `GET /srs/queue` trả thêm `grammarDetail` đọc trực tiếp từ `grammarpoints` đã PUBLISHED.
+- Markup `漢[かん]` / `{mẫu}` vẽ bằng `JaMarkup` (`furigana.tsx`), nút あ bật/tắt; dùng cả ở thẻ trong bộ, bài tập; bảng bộ thẻ hiện chữ trơn.
+- Đã chạy: vitest `src/srs src/flashcards` 76 đạt, tsc file UI sạch, watcher API 0 lỗi; Chrome máy tính: mặt thẻ ngữ pháp N5 + nút あ, thẻ Kanji. Chưa xem điện thoại.
+- Trang bộ thẻ (`deck-cards-manager.tsx`) cho bộ Ngữ pháp / Kanji: bỏ công cụ từ vựng, tìm kiếm cùng hàng với Thẻ/Bảng, Học trỏ `/learn/{grammar,kanji}/study`, quay về khu của mảng; bộ có `systemKey` chỉ đọc (kể cả admin). Bộ từ vựng giữ nguyên. Trang học Ngữ pháp / Kanji xếp bộ N5→N1 (mặc định N5), tiêu đề "Học Kanji mới".
+- Đã xem Chrome máy tính: hai bộ N5, hai trang học; tsc sạch. Chưa xem điện thoại, trang admin, bộ cá nhân ngữ pháp/Kanji, trang bộ từ vựng.
+
+---
+
 ## Đồ thị tiến độ theo từng phần Từ vựng · Ngữ pháp · Kanji (27/11/2026)
 
 - `/learn/{vocab,grammar,kanji}` có khối đồ thị riêng ở đầu trang (`components/learn/pillar-progress.tsx`: `ProgressPanel compact` + `ReviewChart`, prop `pillar`); `/learn` vẫn là số gộp. Nhãn "từ / mẫu / chữ" lấy từ `PILLAR_NOUN`; ô giới hạn mới/ngày lưu `newCardsPerDayByPillar[pillar]`.
 - Sửa lỗi: `GET /srs/stats` nhận `pillar` nhưng `masteryStats` bỏ qua. Giờ lọc thẻ, tiến độ, phiên học, heatmap và hạn mức theo mảng. Phiên học tính theo bộ thẻ: bộ trộn nhiều loại thẻ sẽ được đếm ở cả hai mảng.
 - `SettingsDto.newCardsPerDayByPillar` giờ kiểm tra 1–500.
 - Test: `srs.stats-pillar.spec.ts`.
+- Sửa lỗi thẻ hệ thống bị nhân bản mỗi lần API khởi động (`system-decks.service.ts`): đồng bộ khớp theo `kanji` / `grammar` (thẻ cũ nhất), không theo `dedupeKey` (bị `FlashcardsService.onModuleInit` đổi). Test `system-decks.service.spec.ts`; vitest `src/flashcards src/srs` 74 đạt. Sau khi API khởi động lại 19:40: 0 thẻ mới, 2235 thẻ được cập nhật.
+- Đã xoá 7268 bản trùng (chủ sản phẩm đồng ý); còn 2136 thẻ Kanji + 99 thẻ ngữ pháp hệ thống. Bản sao lưu EJSON: `/root/backups/flashcards-duplicates-20261127.json` (trên VPS, ngoài repo).
 
 ---
 
@@ -53,7 +74,7 @@
 
 ---
 
-## NP-407: hình trong phần 聴解 + bỏ khung "File nghe" ở trang Nhập đề (27/11/2026, chưa commit)
+## NP-407: hình trong phần 聴解 + bỏ khung "File nghe" ở trang Nhập đề (27/11/2026)
 
 - **Trang Nhập đề** (`exam-import-form.tsx`): bỏ khung "File nghe (聴解)" (tải/gắn theo ObjectId) — file nghe gắn ở màn duyệt, trên từng khối nghe. Route `PUT /api/exam-audio` và API attach vẫn còn (không còn UI dùng).
 - **Hình của câu nghe** (phương án vẽ ở 課題理解/ポイント理解, tranh 発話表現): câu có `image` (id = sha256 PNG). `ExamImageService` (`EXAM_IMAGE_DIR`, mặc định `storage/exam-images`) cắt vùng từ ảnh trang (`pageImage`, @napi-rs/canvas) và lưu theo hash; `GET /exams/images/:id` (mọi người đã đăng nhập) + proxy UI `/api/exam-image/[id]`.
@@ -99,7 +120,7 @@
 
 ---
 
-## NP-407: đề N3 `Đề thi JLPT N3 7_2022.pdf` sai cấu trúc — đã sửa (27/11/2026, chưa commit)
+## NP-407: đề N3 `Đề thi JLPT N3 7_2022.pdf` sai cấu trúc — đã sửa (27/11/2026)
 
 Job `6b094fd9a0d5cd8d3789453c` (18 trang có lớp chữ, chia sẻ kèm watermark "Group / Yuuki Bùi / Tôi Yêu Ngoại ngữ" rải từng mảnh). Nguyên nhân:
 1. **問題2–5 của 文字・語彙 dồn vào 問題1 (34 câu):** NFKC biến `問題 2＿＿＿の…` thành `問題 2___…`, `_` là ký tự chữ nên `\b` trong `MONDAI_HEADING` không khớp; `間題 3`/`間題 5` (gõ/đọc nhầm) cũng không khớp.
@@ -115,7 +136,7 @@ Job `6b094fd9a0d5cd8d3789453c` (18 trang có lớp chữ, chia sẻ kèm waterma
 
 ---
 
-## NP-407 / NP-410: nhập phần 聴解 (nghe hiểu) + file nghe theo câu / cả phần (27/11/2026, chưa commit)
+## NP-407 / NP-410: nhập phần 聴解 (nghe hiểu) + file nghe theo câu / cả phần (27/11/2026)
 
 Trước: mọi khối nghe là `mondai: "listening"`, `structureBlock` bỏ qua → 0 câu (job `6b09400f0557200406493b91`, `17.N2 12-2025 _260410.pdf`: 5 khối nghe trống). Khoá đáp án của khối nghe còn bị khớp nhầm sang `問題N` của 文字・語彙 (cùng số).
 - **Dạng mondai mới** (`mondai.ts`): `listening-task` 課題理解, `listening-point` ポイント理解, `listening-summary` 概要理解, `listening-utterance` 発話表現, `listening-quick` 即時応答, `listening-integrated` 統合理解 (`listening` cũ = chưa rõ dạng). `classifyListening` theo lời dẫn (cả kana N4/N5); `optionCountsOf`: quick/utterance = 3. `STIMULUS_KINDS` thêm `listening`.
@@ -178,7 +199,7 @@ Kiểm tra:
 
 ---
 
-## NP-407: nhập `De_Chinh_Thuc_N2.pdf` lỗi nhiều — đã sửa (27/11/2026, chưa commit)
+## NP-407: nhập `De_Chinh_Thuc_N2.pdf` lỗi nhiều — đã sửa (27/11/2026)
 
 File 115 trang scan, 6 đề (2010-07 … 2015-07), mỗi đề kèm trang đáp án riêng. Job `6b08e729c9600d28ac99dbb4` ra 147 khối, 94 lỗi. Nguyên nhân (đọc lại từ trang đã lưu trong DB, không gọi AI):
 1. **Trang đáp án thành khối rác (~80/94 lỗi):** đầu trang là `2010年7月新日本語能力試験N2 答案` rồi `問題N` / hàng số câu / hàng đáp án, sang trang sau không có tiêu đề. `ANSWER_MARK` chỉ nhận dòng đúng chữ `答案`, `SHEET_HEADING` chỉ biết dạng `問題 7 12x3(36d)` → mỗi `問題N` của đáp án mở một khối, không đề nào có đáp án.
