@@ -29,7 +29,8 @@
 - Đã chạy: vitest `src/exams src/import src/ai` 470 đạt (1 skip), watcher tsc 0 lỗi, tsc 2 spec 0 lỗi; thử tạo / soạn câu / sửa giờ phần / quyền với MongoDB thật trên database tạm (đã xoá collection).
 - Giai đoạn 1.4 xong (UI, 27/11): form nhập chọn loại + tên bộ đề; đổi tên kỳ (`exam-import-rename.tsx`); nút "Xuất bản đề" + cảnh báo; admin `exams-console` bỏ tab ngân hàng, thêm editor đề (`exam-admin-editor.tsx`); learn `exams-console` lọc đầy đủ / theo phần. Không còn chỗ nào gọi `admin/exam-questions`.
 - Đã chạy: vitest `src/exams` 293 đạt; tsc API + UI sạch; oxlint API 0 lỗi; eslint các file UI sửa sạch (còn 1 cảnh báo `window.location.href` ở learn `exams-console.tsx`). **Chưa bấm thử trình duyệt** (nhập → duyệt → xuất bản → làm bài, 375 px).
-- Việc tiếp: 1.5 (dọn tài liệu, ADR), rồi giai đoạn 2 (sách luyện tập).
+- Giai đoạn 1.5 xong (tài liệu): NP-408 đóng (không làm), NP-409 thu hẹp, checklist P4-JLPT-06/07, `database.md`, `docs/adr/ADR-exam-by-source.md`.
+- Việc tiếp: bấm thử trình duyệt giai đoạn 1, rồi giai đoạn 2 (sách luyện tập).
 
 ---
 

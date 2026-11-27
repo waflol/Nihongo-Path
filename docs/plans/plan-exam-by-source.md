@@ -1,6 +1,6 @@
 # Plan — Đề thi theo nguồn: đề đầy đủ, đề theo phần, sách luyện tập (bỏ ngân hàng câu hỏi)
 
-> **Ngày lập:** 27/11/2026. **Trạng thái:** chủ dự án đã duyệt 27/11/2026 (gồm 3 đề xuất ở §8). Xong giai đoạn 0 và 1.1–1.4 (UI chưa kiểm trình duyệt); tiếp theo 1.5.
+> **Ngày lập:** 27/11/2026. **Trạng thái:** chủ dự án đã duyệt 27/11/2026 (gồm 3 đề xuất ở §8). Xong giai đoạn 0 và 1.1–1.5 (UI chưa kiểm trình duyệt); tiếp theo giai đoạn 2 (sách luyện tập).
 > **Thay thế:** các phần ngân hàng / sinh đề của [plan-jlpt-question-bank.md](./plan-jlpt-question-bank.md) (NP-408, và phần "phủ ngân hàng / sinh đề thử" của NP-409). Phần schema, import (NP-406/407) và màn làm bài vẫn dùng.
 > **Điều kiện bắt đầu:** working tree đang có nhiều thay đổi NP-407/410 và trang cấu trúc đề chưa commit, đụng đúng các file plan này sửa (`exam-import.service.ts`, `exams.service.ts`, `exams.controller.ts`, hai `exams-console.tsx`). Commit xong phần đó rồi mới làm.
 

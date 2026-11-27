@@ -143,7 +143,9 @@ Các collection ở mục này có `status` (DRAFT / PUBLISHED) và `lang`. Admi
 
 ### `exams` — đề thi tự soạn (P4)
 - `title`, `description`, `examType`, `year`, `level`, `timeLimitMin` (1–240, trống = không giới hạn giờ), `questions[]` (ObjectId của `exercise_questions`, có thứ tự), `shuffle {questions, options}`, `status` (`DRAFT` / `PUBLISHED`), `createdBy`.
-- Đề theo phần (NP-406): `sections[]` (`{key, title?, timeLimitMin?, questions[]}`) — deadline cộng dồn, deadline tổng = deadline phần cuối; `generated {seed, blueprintVersion?, level?, forUser?}` (đề bộ sinh đề tạo, NP-408). Đề có `sections` thì `questions` = nối các `sections[].questions` (giữ để code cũ đọc được).
+- Đề theo phần (NP-406): `sections[]` (`{key, title?, timeLimitMin?, questions[]}`) — deadline cộng dồn, deadline tổng = deadline phần cuối; (`generated` đã bỏ — không còn sinh đề).
+- Đề theo nguồn (plan-exam-by-source, tất cả tuỳ chọn): `kind` (`full`/`section`/`practice`; vắng = đề soạn tay), `origin {key, setName, sitting, jobIds[]}` (index unique thưa trên `origin.key`), `book {key, title, unitNo, unitTitle, order}`, `rights` (`own`/`licensed`/`reference` — yếu nhất trong các câu; `reference` không công khai được), `sections[].timeLocked`, `warnings[]`. Đề có `origin` không sửa được danh sách câu.
+- `exam_import_jobs` thêm `kind`, `setName`; `exam_import_drafts` thêm `unitNo`, `questionIds[]`, `examKey`, `jobCreatedAt`. `exam_attempts` (giai đoạn 2): `mode` (`exam`/`practice`), `checked[]`. Đề có `sections` thì `questions` = nối các `sections[].questions` (giữ để code cũ đọc được).
 - Index: `{status: 1, level: 1, examType: 1}`. Câu hỏi tái dùng `exercise_questions`, không có collection câu hỏi riêng.
 
 ### `exam_attempts` — lượt làm bài (P4)

@@ -109,8 +109,8 @@ Plan chi tiết: [plans/plan-jlpt-question-bank.md](./plans/plan-jlpt-question-b
 | Ticket | Cụm task | Chặn bởi |
 |---|---|---|
 | NP-407 | Nhập PDF đề → bản nháp `exam_import_drafts` → admin duyệt/xuất bản, chống trùng chéo nguồn | NP-406 ✅ |
-| NP-408 | Khung đề theo level + `generateExam` có seed; người học chỉ bốc câu `own/licensed` | NP-406 ✅; Q-12 ⏸ (phần người học) |
-| NP-409 | UI làm đề theo phần (bài đọc, câu ★, điểm từng phần) + admin phủ ngân hàng/sinh đề thử | NP-407, NP-408 |
+| ~~NP-408~~ | ~~Khung đề theo level + `generateExam`~~ — **không làm** (27/11/2026): bỏ ngân hàng + sinh đề, xem [plan-exam-by-source.md](./plans/plan-exam-by-source.md) và ADR-exam-by-source | — |
+| NP-409 | UI làm đề theo phần (bài đọc, câu ★, điểm từng phần). Đã **bỏ** phần admin phủ ngân hàng / sinh đề thử | NP-407 |
 
 > NP-406 (GĐ1) xong 19/11 — xem §2.
 
