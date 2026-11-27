@@ -23,7 +23,7 @@ import type { AuthUser } from "../auth/auth.types.js";
 import { QUESTION_RIGHTS, type QuestionRights } from "../flashcards/schemas/exercise-question.schema.js";
 import { ExamImportService } from "./exam-import.service.js";
 
-const MAX_PDF_BYTES = 50 * 1024 * 1024;
+const MAX_PDF_BYTES = 100 * 1024 * 1024;
 
 interface UploadFile {
   originalname: string;

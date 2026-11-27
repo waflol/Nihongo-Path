@@ -101,22 +101,34 @@ export async function POST(request: Request) {
     if (!ID.test(id)) return NextResponse.json({ error: "id không hợp lệ" }, { status: 400 });
     return forward(`/drafts/${id}/${action}`, "POST", action === "discard" ? "{}" : await request.text());
   }
-  // Upload: forward the multipart body as bytes (a stream needs `duplex`).
+  // Upload: stream the multipart body straight through (up to 100 MB) instead of
+  // buffering it here — on the 4 GB VPS a second in-memory copy is real OOM risk.
   const session = await getSession();
   if (!session.authenticated || !session.accessToken) {
     return NextResponse.json({ error: "Không đăng nhập" }, { status: 401 });
   }
-  const bytes = await request.arrayBuffer();
-  const r = await fetch(`${API_BASE_URL}/exams/admin/import`, {
-    method: "POST",
-    headers: {
-      ...(await clientIpHeaders()),
-      Authorization: `Bearer ${session.accessToken}`,
-      "Content-Type": request.headers.get("content-type") ?? "",
-    },
-    body: bytes,
-    cache: "no-store",
-  });
+  const headers = {
+    ...(await clientIpHeaders()),
+    Authorization: `Bearer ${session.accessToken}`,
+    "Content-Type": request.headers.get("content-type") ?? "",
+  };
+  let r: Response;
+  try {
+    r = await fetch(`${API_BASE_URL}/exams/admin/import`, {
+      method: "POST",
+      headers,
+      body: request.body,
+      // Node's fetch requires this to send a ReadableStream body.
+      duplex: "half",
+      cache: "no-store",
+    } as RequestInit & { duplex: "half" });
+  } catch {
+    // The API closes the socket mid-stream when the file passes its 100 MB cap (or it is restarting).
+    return NextResponse.json(
+      { message: "Không gửi được file. PDF tối đa 100 MB — nếu file nhỏ hơn, thử lại sau ít phút." },
+      { status: 502 },
+    );
+  }
   const t = await r.text();
   let body: unknown = t;
   try {

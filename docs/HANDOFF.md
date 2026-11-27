@@ -93,7 +93,7 @@ File `Drill_&_Drill_N2-Moji_Goi.pdf` (167 trang scan) nhập ra 27 khối, 18 l�
 
 ## NP-407: bàn duyệt bản nháp đề (UI mới, 25/11/2026)
 
-Giới hạn PDF nhập đề: 50 MB (trước 30 MB), bằng nhập từ vựng.
+Giới hạn PDF nhập đề: **100 MB** (27/11/2026; trước 50 MB; nhập từ vựng vẫn 50 MB). Route UI `/api/exam-import` giờ **stream** body sang API (`duplex: "half"`) thay vì `arrayBuffer()`, Next không giữ thêm bản 100 MB; API vẫn giữ PDF trong RAM suốt job (multer memoryStorage). Đứt kết nối giữa chừng → 502 có thông báo. Chưa thử file lớn thật; RAM trống lúc sửa chỉ ~170 MB.
 
 Sửa rò bộ nhớ khi OCR PDF scan (file 43 MB, 167 trang từng bị earlyoom tắt API ở trang 94): trang được render từ tài liệu đang mở (`renderPage`), canvas thu về 1×1 sau khi xuất PNG, `ProsePdf.close()` / `loadingTask.destroy()`. Đo với OCR giả: 167 trang đỉnh 446 MB RSS. Chưa nhập lại file thật với AI. `parsePdf` (nhập từ vựng) vẫn chưa destroy tài liệu sau khi đọc.
 
