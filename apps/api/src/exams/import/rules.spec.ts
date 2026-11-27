@@ -160,3 +160,53 @@ describe("parseByRules — 読解 (passages + 55)… questions)", () => {
     expect(parseByRules({ rawText, mondai: "reading-integrated" })).toBeNull();
   });
 });
+
+describe("parseByRules — numbering styles an OCR model writes", () => {
+  const read = (lines: string[], mondai = "context") =>
+    parseByRules({ rawText: lines.join("\n"), mondai })?.questions.map((q) => [q.printedNo, q.prompt, q.options]);
+
+  it("boxed numbers `[1]` — the option row is not taken for a question", () => {
+    expect(
+      read(["[1] これからも様々な国との相互理解を深めていこうと思う。", "1 しょうご 2 しょうごう 3 そうご 4 そうごう", "[2] この料理は辛くて食べられない。", "1 からくて 2 くさくて", "3 にがくて 4 しぶくて"], "kanji-reading"),
+    ).toEqual([
+      [1, "これからも様々な国との相互理解を深めていこうと思う。", ["しょうご", "しょうごう", "そうご", "そうごう"]],
+      [2, "この料理は辛くて食べられない。", ["からくて", "くさくて", "にがくて", "しぶくて"]],
+    ]);
+  });
+
+  it("`(11).` numbers with `1. 従 2. 準` options", () => {
+    expect(read(["(11). 社長の代わりに ( ) 社長が会見を行った。", "1. 従 2. 準 3. 補 4. 副", "(12). 彼の発言は ( ) 責任だと批判された。", "1. 不 2. 無 3. 放 4. 否"], "word-formation")).toEqual([
+      [11, "社長の代わりに ( ) 社長が会見を行った。", ["従", "準", "補", "副"]],
+      [12, "彼の発言は ( ) 責任だと批判された。", ["不", "無", "放", "否"]],
+    ]);
+  });
+
+  it("`11.` numbers with bullet options, and options glued to their number (`1集`)", () => {
+    expect(read(["11. 初めて出た大会で( )決勝まで進むことができた。", "• 前", "• 副", "• 次", "• 準", "12.線路( )の道を行くのが一番早い。", "1付き", "2並び", "3沿い", "4横"], "word-formation")).toEqual([
+      [11, "初めて出た大会で( )決勝まで進むことができた。", ["前", "副", "次", "準"]],
+      [12, "線路( )の道を行くのが一番早い。", ["付き", "並び", "沿い", "横"]],
+    ]);
+  });
+
+  it("`33.` numbers with `1) も 2) が` options, also when the row wraps", () => {
+    expect(
+      read(["33. 小川「昨日の中継見た?」", "山田「ううん。夕飯(  )食べないで寝ちゃったんだ。」", "1) も 2) が 3) とは 4) にまで", "34. (広告で)", "経験者(  )、どなたにでも丁寧に指導します。", "1) を通して 2) を問わず", "3) にかけて 4) にもかかわらず"], "grammar-form"),
+    ).toEqual([
+      [33, "小川「昨日の中継見た?」\n山田「ううん。夕飯(  )食べないで寝ちゃったんだ。」", ["も", "が", "とは", "にまで"]],
+      [34, "(広告で)\n経験者(  )、どなたにでも丁寧に指導します。", ["を通して", "を問わず", "にかけて", "にもかかわらず"]],
+    ]);
+  });
+
+  it("skips a worked example that runs from (問題例) to the 解答用紙 line", () => {
+    const p = read(
+      ["(問題例)", "あそこで ____ ____ ____★____ ____ は山田さんです。", "1 テレビ 2 見ている 3 を 4 人", "(解答の仕方)", "1. 正しい文はこうです。", "2. ____★____ に入る番号を解答用紙にマークします。", "(解答用紙) (例) 1 ● 3 4", "45 A「先週の授業、どこまで進んだ?」", "B「練習問題を ____ ____ ____★____ ____ 終わったよ。」", "1 で 2 解いた 3 ところ 4 まで"],
+      "star-order",
+    );
+    expect(p).toEqual([[45, "A「先週の授業、どこまで進んだ?」\nB「練習問題を ____ ____ ____★____ ____ 終わったよ。」", ["で", "解いた", "ところ", "まで"]]]);
+  });
+
+  it("hands a misread block to the AI instead of a draft that looks fine", () => {
+    // An unknown number style: the option row would become the "prompt" of question 1.
+    expect(read(["{1} 花を見る。", "1 はな 2 は 3 ひ 4 み", "{2} 山に登る。", "1 やま 2 さん 3 か 4 き"], "kanji-reading")).toBeUndefined();
+  });
+});

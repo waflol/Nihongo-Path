@@ -101,6 +101,30 @@ export class ExamImportController {
     return this.imports.suggestAnswers(caller, id);
   }
 
+  @Post("drafts/:id/audio")
+  @ContentAdmin()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: "Listening recordings of a draft: the block's file, each question's clip, or the whole part's file" })
+  audio(@CurrentUser() caller: AuthUser, @Param("id") id: string, @Body() body: unknown) {
+    return this.imports.setDraftAudio(caller, id, body);
+  }
+
+  @Post("drafts/:id/picture")
+  @ContentAdmin()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: "A listening question's picture: cut a region of a page ({question, page, rect}) or clear it" })
+  picture(@CurrentUser() caller: AuthUser, @Param("id") id: string, @Body() body: unknown) {
+    return this.imports.setPicture(caller, id, body);
+  }
+
+  @Post("drafts/:id/pictures")
+  @ContentAdmin()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: "Cut a listening draft's pictures from its PDF (a PDF with a text layer)" })
+  pictures(@CurrentUser() caller: AuthUser, @Param("id") id: string) {
+    return this.imports.autoPictures(caller, id);
+  }
+
   @Post("drafts/:id/discard")
   @ContentAdmin()
   @HttpCode(HttpStatus.OK)

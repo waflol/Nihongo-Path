@@ -25,9 +25,15 @@ import {
   type ExamStimulusDocument,
 } from "./schemas/stimulus.schema.js";
 import { optionOrder as optionOrderFor, seededOrder, originalAt, groupedOrder, mixSeed } from "./shuffle.js";
-import { optionCountsOf, contentHashOf } from "./mondai.js";
+import { optionCountsOf, contentHashOf, isListeningMondai } from "./mondai.js";
 
 // ── Pure, DB-free core (unit-tested) ─────────────────────────────────
+
+/**
+ * A question whose options must stay in printed order: 聴解 options are heard as "1, 2, 3" or
+ * numbered on its picture, so a shuffled button 1 would no longer be the option 1 played.
+ */
+export const keepsOptionOrder = (q: Pick<BankQuestion, "mondai" | "image">): boolean => isListeningMondai(q.mondai) || !!q.image;
 
 /** A bank question as the exam engine sees it (lean row, no mongoose doc). */
 export interface BankQuestion {
@@ -49,6 +55,8 @@ export interface BankQuestion {
   points?: number;
   /** Listening clip (NP-410). */
   audio?: { assetId: string; startSec?: number; endSec?: number };
+  /** The picture printed with the question (an `ExamImageService` id). */
+  image?: string;
 }
 
 /** A shared reading passage, as the engine serves it (no answers). */
@@ -119,6 +127,8 @@ export interface SitQuestion {
   sectionKey?: string;
   /** Listening clip (NP-410): the UI plays `assetId` from `startSec` to `endSec`. */
   audio?: { assetId: string; startSec?: number; endSec?: number };
+  /** The picture printed with the question (options drawn as pictures, a 発話表現 scene). */
+  image?: string;
 }
 
 /** An exam part as the sit payload describes it (NP-406). */
@@ -334,6 +344,7 @@ export function buildSitPayload(
     groupOrder: q.groupOrder,
     sectionKey: attempt.questionSections?.[q._id],
     audio: q.audio,
+    image: q.image,
   }));
   const payload: SitPayload = {
     attemptId: String(attempt._id ?? ""),
@@ -619,12 +630,15 @@ export class ExamsService {
             .filter((id) => existing.has(String(id)))
             .map((id) => foundById.get(String(id)))
             .filter((q): q is BankQuestion => q !== undefined);
-          const secIds = shuffleQ
-            ? groupedOrder(mixSeed(seed, sec.key), secFound.map((q) => ({ id: q._id, group: q.stimulusId, groupOrder: q.groupOrder })))
-            : secFound.map((q) => q._id);
+          // 聴解 plays in the order of its recording: its questions are never shuffled.
+          const heard = secFound.length > 0 && secFound.every((q) => isListeningMondai(q.mondai));
+          const secIds =
+            shuffleQ && !heard
+              ? groupedOrder(mixSeed(seed, sec.key), secFound.map((q) => ({ id: q._id, group: q.stimulusId, groupOrder: q.groupOrder })))
+              : secFound.map((q) => q._id);
           for (const qid of secIds) {
             questionSections[qid] = sec.key;
-            optionOrder[qid] = optionOrderFor(seed, qid, foundById.get(qid)!.options.length, shuffleO);
+            optionOrder[qid] = optionOrderFor(seed, qid, foundById.get(qid)!.options.length, shuffleO && !keepsOptionOrder(foundById.get(qid)!));
             qids.push(qid);
           }
           if (sec.timeLimitMin) {
@@ -640,7 +654,7 @@ export class ExamsService {
         const served = exam.shuffle?.questions !== false ? seededOrder(seed, order.length).map((p) => order[p]) : order;
         qids.push(...served);
         for (const q of found) {
-          optionOrder[q._id] = optionOrderFor(seed, q._id, q.options.length, exam.shuffle?.options !== false);
+          optionOrder[q._id] = optionOrderFor(seed, q._id, q.options.length, exam.shuffle?.options !== false && !keepsOptionOrder(q));
         }
         deadlineMs = exam.timeLimitMin ? now + exam.timeLimitMin * 60_000 : null;
       }
@@ -1046,7 +1060,7 @@ export class ExamsService {
   private async loadBank(ids: Types.ObjectId[]): Promise<BankQuestion[]> {
     const rows = await this.bank
       .find({ _id: { $in: ids } })
-      .select("kind prompt sub options answer explain mondai section stimulus groupOrder points audio")
+      .select("kind prompt sub options answer explain mondai section stimulus groupOrder points audio image")
       .lean()
       .exec();
     return rows.map((r) => ({
@@ -1063,6 +1077,7 @@ export class ExamsService {
       groupOrder: r.groupOrder,
       points: r.points,
       audio: r.audio ?? undefined,
+      image: r.image || undefined,
     }));
   }
 

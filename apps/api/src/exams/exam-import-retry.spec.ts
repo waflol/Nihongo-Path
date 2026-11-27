@@ -67,3 +67,36 @@ describe("ExamImportService.readPages", () => {
     expect(h.saved).toEqual([1]);
   });
 });
+
+describe("ExamImportService — pages the AI refuses to copy", () => {
+  /** A PDF whose pages in `refused` are refused on every read. */
+  const refusingPdf = (numPages: number, refused: number[]): ProsePdf => ({
+    numPages,
+    totalPages: numPages,
+    close: async () => undefined,
+    pageText: async (n) => {
+      if (refused.includes(n)) throw new OcrFailedError(n, "I cannot transcribe this page verbatim (copyright)");
+      return `page ${n}`;
+    },
+  });
+
+  it("never stores a refused page, keeps reading past several in a row, and names them in the log", async () => {
+    const h = harness();
+    await expect(h.run(refusingPdf(8, [2, 3, 4, 5, 6]))).resolves.toBe(true);
+    expect(h.saved).toEqual([1, 7, 8]);
+    expect(h.logs.some((l) => /Trang 2\/8: AI từ chối chép/.test(l))).toBe(true);
+    expect(h.logs.at(-1)).toMatch(/5 trang AI không đọc được.*2, 3, 4, 5, 6 \(AI từ chối chép vì bản quyền: 2, 3, 4, 5, 6/);
+  });
+
+  it("turns an OCR refusal into an unread page for the reader, without waiting between rounds", async () => {
+    const svc = Object.create(ExamImportService.prototype) as Record<string, unknown>;
+    const ocrExamPageText = vi.fn().mockResolvedValue({ refused: "I cannot transcribe this page" });
+    svc.ai = { ocrExamPageText };
+    svc.retryDelaysMs = [60_000];
+    const ocr = (svc as unknown as { ocrPage(): (png: Buffer, n: number) => Promise<string | null> }).ocrPage();
+    const err = await ocr(Buffer.from(""), 3).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(OcrFailedError);
+    expect(err).toMatchObject({ page: 3, refused: "I cannot transcribe this page" });
+    expect(ocrExamPageText).toHaveBeenCalledTimes(1);
+  });
+});

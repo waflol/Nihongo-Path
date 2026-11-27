@@ -7,6 +7,7 @@ import { AiCallLogService } from "./ai-call-log.service.js";
 import type { AiLogPurpose } from "./ai-call-log.schema.js";
 import { AiServicesService, type FailureKind, type RuntimeAiService } from "./ai-services.service.js";
 import { AntigravityCliFailure, runAntigravityCli } from "./ai-antigravity-cli.js";
+import { isOcrRefusal, type OcrRefused } from "./ocr-refusal.js";
 
 /** One thing the model is asked to do for a card. */
 export type AiTask =
@@ -756,14 +757,17 @@ export class AiExampleService {
    * 問題 headings, circled option marks ①②③④, cloze blanks [1]…, ★, the
    * answer-key lines. Headers / watermarks / page numbers are kept too —
    * the import's `clean.ts` removes repeated noise by frequency afterwards.
-   * `null` when no vision service could read it.
+   * `null` when no vision service could read it; `{ refused }` when every
+   * provider that answered refused to transcribe the page (copyright filters):
+   * a refusal is never returned as the page text.
    */
-  async ocrExamPageText(png: Buffer, page?: number): Promise<string | null> {
+  async ocrExamPageText(png: Buffer, page?: number): Promise<string | OcrRefused | null> {
     const base = [
       "This image is one page of a Japanese JLPT exam paper.",
       "Transcribe the text verbatim, keeping the line structure. Preserve exactly:",
       "- the 問題 headings (問題Ⅰ, 問題①, 問題 1: …),",
       "- circled option marks ①②③④ and their option text, on one line each where printed that way,",
+      "- plain option numbers 1 2 3 4 as digits in front of each option (`1 しょうご 2 しょうごう`) — never as bullets (•, -, *), and without adding a `.` or `)` that is not printed,",
       "- cloze blank markers [1] [2] … and the ★ mark,",
       "- the 答案/解答 lines (number + circled mark, e.g. `1① 2④`),",
       "- bracketed question numbers (【31】) and answer entries (【31】正解2), exactly as printed,",
@@ -774,13 +778,23 @@ export class AiExampleService {
       "Output plain text only (<u> is the only tag allowed), one line per printed line, no JSON, no commentary.",
     ];
     let blank = false;
+    let refused: string | null = null;
+    // A refusal is the provider's policy, not one model's fluke: its other models (same provider and
+    // endpoint) would refuse the same page, so the page goes on to a service of another provider.
+    const refusedBy = new Set<string>();
     for (const svc of await this.services.available("ocr-exam")) {
-      if (this.isTranslator(svc)) continue;
+      const vendor = `${svc.provider.id}|${svc.provider.baseUrl}`;
+      if (this.isTranslator(svc) || refusedBy.has(vendor)) continue;
       try {
         await this.pace(svc);
         const text = await this.call(svc, base.join("\n"), "exam-import", page ? [`Trang ${page}`] : [], png, true);
         await this.services.reportOk(svc.id);
         const t = (text ?? "").trim();
+        if (isOcrRefusal(t)) {
+          refused = t;
+          refusedBy.add(vendor);
+          continue;
+        }
         if (t) return t;
         blank = true;
       } catch (err) {
@@ -789,7 +803,8 @@ export class AiExampleService {
       }
     }
     // "" = a service looked and saw nothing; null = nobody could read the page.
-    return blank ? "" : null;
+    if (blank) return "";
+    return refused !== null ? { refused } : null;
   }
   async synonymQuiz(
     items: { term: string; reading: string; meaning: string }[],

@@ -20,18 +20,34 @@ export const RULE_TYPES: ReadonlySet<MondaiType> = new Set<MondaiType>([
 
 /** `45 ）prompt` / `3)prompt` — NFKC leaves a space before the bracket in some PDFs. */
 const Q_BRACKET = /^(\d{1,3})\s*[)）]\s*(.*)$/;
+/**
+ * A question number in front of its prompt, in the styles OCR writes it: boxed `[12]` /
+ * `【12】`, `(12)` / `(12).`, or `12.` / `12)`. The first two can only be a question; a
+ * dotted or bracketed digit may also be an option (`1. 実 2. 真`, `1) も`), decided by the caller.
+ */
+const Q_MARK = /^(?:[[【](\d{1,3})[\]】]|\((\d{1,3})\)[.．]?|(\d{1,3})\s*[.．)）](?!\d))\s*(.*)$/;
 /** `12 prompt` — papers that print the number without a bracket. */
 const NUM_LINE = /^(\d{1,2})(?:\s+|(?=[「『（(]))(\S.*)$/;
-/** Page furniture that lands inside a block: part banners, scoring notes, page footers. */
-const FURNITURE = /^(?:[【\[].*[】\]]|\(\s*配点.*\)|\(\s*解答.*|ページ\s*\d+|N[1-5]|言語知識.*|\d{1,3})$/;
+/** An option the OCR printed as a bullet (`• 前`), losing its number. */
+const BULLET = /^[•●◦‣∙▪]\s*(\S.*)$/;
+/** Page furniture that lands inside a block: part banners, scoring notes, page footers. A bare `[12]` is a question number, not furniture. */
+const FURNITURE = /^(?:[【[](?!\d{1,3}[】\]]$).*[】\]]|\(\s*配点.*\)|\(\s*解答.*|ページ\s*\d+|N[1-5]|言語知識.*|\d{1,3})$/;
 const TRAILING_PAGE = /\s*ページ\s*\d+$/;
+/** The worked example of a 問題 (`(問題例)` … `(解答用紙) (例) 1 ● 3 4`) — not a question. */
+const EXAMPLE_START = /^\(?\s*(?:問題例|例題)\s*\)?$/;
+const EXAMPLE_END = /解答用紙/;
 
 /**
- * An option marker: `1 text`, `2.text`, `3 . text`, or `3.text` glued to the end of the
+ * An option marker: `1 text`, `2.text`, `3 . text`, `1) text`, or `3.text` glued to the end of the
  * previous option (`…さない3.いじめない`). A `.` followed by a digit (`3.5`) is a decimal.
  */
 const markerRe = () =>
-  /(?:(?<=^|\s)([1-4])(?:\s*[.．](?!\d)\s*|\s+)|(?<=[^\d.\s])([1-4])[.．](?!\d)\s*)/g;
+  /(?:(?<=^|\s)([1-4])(?:\s*[.．)）](?!\d)\s*|\s+)|(?<=[^\d.\s])([1-4])[.．](?!\d)\s*)/g;
+
+/** `しょうご 2 しょうごう 3 そうご 4` — option numbers inside a "prompt" mean the lines were misread. */
+function looksLikeOptions(text: string): boolean {
+  return (text.match(/(?:^|\s)[1-4](?=\s|[.．)）]|$)/g) ?? []).length >= 3;
+}
 
 /** How many of the option markers 1, 2, 3, 4 appear, IN ORDER, in `text`. */
 function markerCount(text: string): number {
@@ -88,26 +104,56 @@ export function parseByRules(block: { rawText: string; mondai: string | null }):
   if (readingKind) return parseReading(block.rawText, readingKind);
   if (!block.mondai || !RULE_TYPES.has(block.mondai as MondaiType)) return null;
 
-  // The example box (問題例 / 解答の仕方) is fenced by two rule lines of underscores.
+  // The example box (問題例 / 解答の仕方) is fenced by two rule lines of underscores, or
+  // (OCR text) runs from `(問題例)` to the `(解答用紙)` line.
   const lines: string[] = [];
   let inExample = false;
+  let inWorked = false;
   for (const raw of block.rawText.split("\n")) {
     const l = raw.trim();
     if (/^_{5,}$/.test(l)) {
       inExample = !inExample;
       continue;
     }
+    if (EXAMPLE_START.test(l)) inWorked = true;
+    if (inWorked) {
+      // The example's own steps are numbered 1, 2; the first real question (≥ 5) ends it too.
+      const no = /^[[【(]?\s*(\d{1,3})(?!\d)/.exec(l);
+      if (no && Number(no[1]) >= 5) inWorked = false;
+      else {
+        if (EXAMPLE_END.test(l)) inWorked = false;
+        continue;
+      }
+    }
     if (inExample || !l || FURNITURE.test(l)) continue;
     lines.push(l.replace(TRAILING_PAGE, ""));
   }
 
   const groups: Group[] = [];
-  for (const line of lines) {
+  for (let line of lines) {
     const cur = groups[groups.length - 1];
-    const br = line.match(Q_BRACKET);
-    if (br) {
-      groups.push({ bracketed: true, printed: Number(br[1]), prompt: br[2] ? [br[2]] : [], options: [], count: 0 });
-      continue;
+    if (cur && cur.count < 4 && cur.prompt.length > 0) {
+      // Options the OCR wrote as bullets (`• 前`) or glued to their number (`1集`): give the number back.
+      const bullet = line.match(BULLET);
+      if (bullet) line = `${cur.count + 1} ${bullet[1]}`;
+      const glued = line.match(/^([1-4])([^\s\d.．)）].*)$/);
+      if (glued && Number(glued[1]) === cur.count + 1) line = `${glued[1]} ${glued[2]}`;
+    }
+    const qm = line.match(Q_MARK);
+    if (qm) {
+      const no = Number(qm[1] ?? qm[2] ?? qm[3]);
+      const boxed = qm[3] === undefined;
+      // `1. 実 2. 真 …` on one line, or the next option number while a question waits for its options.
+      const option = !boxed && (markerCount(line) >= 2 || (!!cur && cur.prompt.length > 0 && cur.count < 4 && no === cur.count + 1));
+      if (!option) {
+        groups.push({ bracketed: true, printed: no, prompt: qm[4] ? [qm[4]] : [], options: [], count: 0 });
+        continue;
+      }
+      if (cur && cur.count < 4 && no === cur.count + 1) {
+        cur.options.push(line);
+        cur.count = markerCount(cur.options.join(" "));
+        continue;
+      }
     }
     // `1.有好 2.優好` (number + dot, no space) can only be an option line.
     const nl = line.match(NUM_LINE) ?? line.match(/^([1-4])[.．](?!\d)\s*(\S.*)$/);
@@ -138,6 +184,9 @@ export function parseByRules(block: { rawText: string; mondai: string | null }):
       if (g.bracketed) return null;
       continue;
     }
+    // An option row read as a prompt, or the next question swallowed by an option: the lines were
+    // misread (an unknown numbering style) — the AI gets the block rather than a draft that looks fine.
+    if (looksLikeOptions(prompt) || options.some((o) => /[[【(]\d{1,3}[\]】)][.．]?\s*\S{2}/.test(o))) return null;
     questions.push({ no: questions.length + 1, ...(g.printed ? { printedNo: g.printed } : {}), prompt, options });
   }
   return questions.length > 0 ? { stimuli: [], questions } : null;

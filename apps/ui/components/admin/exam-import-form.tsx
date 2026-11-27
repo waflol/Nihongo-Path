@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import { RecentImports } from "@/components/admin/exam-import-recent";
 import { EXAM_IMPORT_STARTED_EVENT } from "@/components/admin/exam-import-tracker";
 
@@ -13,14 +13,6 @@ const btnPrimary =
 const fileButton =
   "file:mr-3 file:rounded file:border-0 file:bg-[var(--layer)] file:px-3 file:py-0.5 file:text-xs file:font-medium file:text-[var(--foreground)]";
 const LEVELS = ["N5", "N4", "N3", "N2", "N1"];
-
-interface AudioAsset {
-  _id: string;
-  fileName: string;
-  size: number;
-  level?: string;
-  label?: string;
-}
 
 async function errorOf(res: Response): Promise<string> {
   const b = (await res.json().catch(() => null)) as { message?: string | string[]; error?: string } | null;
@@ -105,173 +97,7 @@ function PdfUpload() {
   );
 }
 
-/** Listening clips: upload, list, and attach a stretch of a clip to a question / passage. */
-function AudioLibrary() {
-  const [assets, setAssets] = useState<AudioAsset[]>([]);
-  const [files, setFiles] = useState<File[]>([]);
-  const [level, setLevel] = useState("N3");
-  const [label, setLabel] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
-  const [target, setTarget] = useState<"question" | "stimulus">("question");
-  const [targetId, setTargetId] = useState("");
-  const [assetId, setAssetId] = useState("");
-  const [start, setStart] = useState("");
-  const [end, setEnd] = useState("");
-
-  const load = useCallback(async () => {
-    const res = await fetch("/api/exam-audio", { cache: "no-store" }).catch(() => null);
-    const list = res?.ok ? ((await res.json().catch(() => [])) as AudioAsset[]) : [];
-    setAssets(Array.isArray(list) ? list : []);
-  }, []);
-  useEffect(() => {
-    const t = setTimeout(() => void load(), 0);
-    return () => clearTimeout(t);
-  }, [load]);
-
-  async function upload(e: React.FormEvent) {
-    e.preventDefault();
-    if (files.length === 0) return;
-    setBusy(true);
-    setMsg(null);
-    let ok = 0;
-    const errors: string[] = [];
-    for (const f of files) {
-      const fd = new FormData();
-      fd.set("file", f);
-      fd.set("level", level);
-      fd.set("label", label || f.name);
-      const res = await fetch("/api/exam-audio", { method: "POST", body: fd }).catch(() => null);
-      if (res?.ok) ok += 1;
-      else errors.push(`${f.name}: ${res ? await errorOf(res) : "mất kết nối"}`);
-    }
-    setBusy(false);
-    setFiles([]);
-    (e.target as HTMLFormElement).reset();
-    setMsg({ ok: errors.length === 0, text: `Đã tải ${ok}/${files.length} file.${errors.length ? ` Lỗi: ${errors.join(" | ")}` : ""}` });
-    void load();
-  }
-
-  async function attach(clear: boolean) {
-    setMsg(null);
-    const body = clear
-      ? { assetId: null }
-      : { assetId, ...(start !== "" ? { startSec: Number(start) } : {}), ...(end !== "" ? { endSec: Number(end) } : {}) };
-    const res = await fetch(`/api/exam-audio?target=${target}&id=${encodeURIComponent(targetId.trim())}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    }).catch(() => null);
-    setMsg(res?.ok ? { ok: true, text: clear ? "Đã gỡ âm thanh." : "Đã gắn âm thanh." } : { ok: false, text: res ? await errorOf(res) : "Mất kết nối" });
-  }
-
-  return (
-    <section className="rounded-2xl border border-[var(--border)] bg-[var(--background-1)] p-4 sm:p-5">
-      <h2 className="text-base font-semibold text-[var(--foreground)]">File nghe (聴解)</h2>
-      <p className="mt-1 text-sm text-[var(--muted-foreground)]">
-        Tải mp3 / m4a / ogg (≤ 40 MB). Một file có thể là cả bài nghe — mỗi câu gắn một đoạn <em>bắt đầu–kết thúc</em> (giây) của nó, hoặc mỗi câu một file riêng.
-      </p>
-      <form onSubmit={upload} className="mt-3 grid gap-3 sm:grid-cols-[1fr_8rem_1fr_auto] sm:items-end">
-        <label className="text-sm">
-          <span className="text-[var(--muted-foreground)]">File (chọn nhiều được)</span>
-          <input
-            type="file"
-            multiple
-            required
-            accept="audio/mpeg,audio/mp4,audio/ogg,.mp3,.m4a,.ogg"
-            onChange={(e) => setFiles([...(e.target.files ?? [])])}
-            className={`mt-1 ${inputClass} ${files.length > 0 ? "file:hidden" : fileButton}`}
-          />
-        </label>
-        <label className="text-sm">
-          <span className="text-[var(--muted-foreground)]">Cấp độ</span>
-          <select value={level} onChange={(e) => setLevel(e.target.value)} className={`mt-1 ${inputClass}`}>
-            {LEVELS.map((l) => (
-              <option key={l}>{l}</option>
-            ))}
-          </select>
-        </label>
-        <label className="text-sm">
-          <span className="text-[var(--muted-foreground)]">Nhãn (mặc định: tên file)</span>
-          <input value={label} onChange={(e) => setLabel(e.target.value)} className={`mt-1 ${inputClass}`} />
-        </label>
-        <button type="submit" disabled={busy || files.length === 0} className={btnPrimary}>
-          {busy ? "Đang tải…" : "Tải lên"}
-        </button>
-      </form>
-
-      {assets.length > 0 && (
-        <ul className="mt-4 max-h-56 divide-y divide-[var(--border)] overflow-y-auto rounded-lg border border-[var(--border)] text-sm">
-          {assets.map((a) => (
-            <li key={a._id} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2">
-              <span className="min-w-0 flex-1 truncate" title={a.fileName}>
-                {a.label || a.fileName} {a.level && <span className="text-[var(--muted-foreground)]">· {a.level}</span>}
-              </span>
-              <span className="text-xs text-[var(--muted-foreground)]">{(a.size / 1048576).toFixed(1)} MB</span>
-              <audio controls preload="none" src={`/api/exam-audio/${a._id}`} className="h-8 w-full sm:w-56" />
-            </li>
-          ))}
-        </ul>
-      )}
-
-      <div className="mt-5 border-t border-[var(--border)] pt-4">
-        <h3 className="text-sm font-semibold text-[var(--foreground)]">Gắn đoạn nghe vào câu</h3>
-        <div className="mt-2 grid gap-3 sm:grid-cols-[8rem_1fr_1fr_6rem_6rem]">
-          <label className="text-sm">
-            <span className="text-[var(--muted-foreground)]">Gắn vào</span>
-            <select value={target} onChange={(e) => setTarget(e.target.value as "question" | "stimulus")} className={`mt-1 ${inputClass}`}>
-              <option value="question">Câu hỏi</option>
-              <option value="stimulus">Cả nhóm (bài đọc/nghe)</option>
-            </select>
-          </label>
-          <label className="text-sm">
-            <span className="text-[var(--muted-foreground)]">ID {target === "question" ? "câu hỏi" : "nhóm"}</span>
-            <input value={targetId} onChange={(e) => setTargetId(e.target.value)} placeholder="ObjectId" className={`mt-1 ${inputClass}`} />
-          </label>
-          <label className="text-sm">
-            <span className="text-[var(--muted-foreground)]">File</span>
-            <select value={assetId} onChange={(e) => setAssetId(e.target.value)} className={`mt-1 ${inputClass}`}>
-              <option value="">—</option>
-              {assets.map((a) => (
-                <option key={a._id} value={a._id}>
-                  {a.label || a.fileName}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="text-sm">
-            <span className="text-[var(--muted-foreground)]">Từ (giây)</span>
-            <input value={start} onChange={(e) => setStart(e.target.value)} inputMode="decimal" className={`mt-1 ${inputClass}`} />
-          </label>
-          <label className="text-sm">
-            <span className="text-[var(--muted-foreground)]">Đến (giây)</span>
-            <input value={end} onChange={(e) => setEnd(e.target.value)} inputMode="decimal" className={`mt-1 ${inputClass}`} />
-          </label>
-        </div>
-        <div className="mt-3 flex flex-wrap gap-2">
-          <button type="button" disabled={!targetId.trim() || !assetId} onClick={() => void attach(false)} className={btnPrimary}>
-            Gắn
-          </button>
-          <button
-            type="button"
-            disabled={!targetId.trim()}
-            onClick={() => void attach(true)}
-            className="rounded-lg border border-[var(--border)] px-4 py-2 text-sm font-medium text-[var(--foreground)] hover:bg-[var(--layer-hover)] disabled:opacity-60"
-          >
-            Gỡ âm thanh
-          </button>
-        </div>
-      </div>
-      {msg && (
-        <p role="status" className={`mt-3 text-sm ${msg.ok ? "text-[var(--muted-foreground)]" : "text-[#b91c1c]"}`}>
-          {msg.text}
-        </p>
-      )}
-    </section>
-  );
-}
-
-/** Admin page body: import a PDF exam + manage listening clips (NP-407 / NP-410). */
+/** Admin page body: import a PDF exam (NP-407). Listening files are attached per block on the review screen. */
 export function ExamImportForm() {
   return (
     <div className="mx-auto w-full max-w-4xl space-y-6 px-4 py-8 sm:px-6">
@@ -284,9 +110,8 @@ export function ExamImportForm() {
       <PdfUpload />
       <RecentImports />
       <p className="text-sm text-[var(--muted-foreground)]">
-        File nghe: chỉ thêm sau khi đã duyệt và xuất bản xong bản nháp của đề (bước duyệt ở trên).
+        File nghe (聴解) gắn ở màn duyệt bản nháp: mở lần nhập, chọn khối nghe hiểu, dùng ô “File nghe” trên đầu khối.
       </p>
-      <AudioLibrary />
     </div>
   );
 }

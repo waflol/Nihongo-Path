@@ -6,6 +6,7 @@ import {
 } from "../../flashcards/schemas/exercise-question.schema.js";
 import { type MondaiType } from "../mondai.js";
 import {
+  type DraftAudio,
   type ParsedBlock,
 } from "../import/structure.js";
 
@@ -79,6 +80,14 @@ export class ExamImportDraft {
   /** The AI-parsed shape (stimuli + questions). */
   @Prop({ type: Object })
   parsed?: ParsedBlock;
+
+  /**
+   * 聴解: the block's recording — one file for this 問題, or for the whole listening part
+   * (the same asset on every listening block of the paper, maybe with this 問題's stretch).
+   * A question may have its own clip in `parsed.questions[i].audio`.
+   */
+  @Prop({ type: Object })
+  audio?: DraftAudio | null;
 
   /**
    * The human's answers, 1-based question position → option number (1..4).

@@ -4,12 +4,15 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { MONDAI_LABELS } from "@/components/learn/exam-sectioned";
 import { FormattedText, PassageText, stripFormat } from "../rich-text";
 import { type StarControls, starParts, StarSentence } from "../star-sentence";
+import { DraftAudioPanel } from "./exam-import-draft-audio";
 import { DraftEditor, type EditQuestion, type EditStimulus } from "./exam-import-draft-editor";
 import {
   deskButton,
   deskButtonPrimary,
   errorOf,
   fillAnswers,
+  isHeardOption,
+  isListening,
   isOpen,
   missingCount,
   questionsOf,
@@ -20,7 +23,8 @@ import {
   type ParsedQuestion,
   type ParsedStimulus,
 } from "./exam-import-draft-model";
-import { PagePreview } from "./exam-import-page-preview";
+import { type CropRequest, PagePreview } from "./exam-import-page-preview";
+import { imageSrc } from "@/components/learn/exam-types";
 
 const PARSED_BY = {
   rules: { label: "Đọc bằng quy tắc", title: "Đọc đúng theo bố cục in, không dùng AI" },
@@ -116,10 +120,15 @@ export function DraftBlock({
   const [aiNote, setAiNote] = useState<{ warn: boolean; lines: string[] } | null>(null);
   const rows = useRef<(HTMLLIElement | null)[]>([]);
   const cells = useRef<(HTMLButtonElement | null)[]>([]);
+  /** 聴解: the question whose picture is being cut out of the page (its position), and the outcome. */
+  const [cropFor, setCropFor] = useState<number | null>(null);
+  const [picturing, setPicturing] = useState(false);
+  const [pictureNote, setPictureNote] = useState<{ ok: boolean; text: string } | null>(null);
+  const listening = isListening(draft.mondai);
 
   const hasPages = draft.pageFrom != null;
-  // Editing always shows the source page beside the editor; otherwise it is a toggle.
-  const pageOpen = hasPages && (editing || showPage);
+  // Editing (or cutting a picture) always shows the source page; otherwise it is a toggle.
+  const pageOpen = hasPages && (editing || showPage || cropFor !== null);
   // Below xl the two stack; "expanded" gives the picture the whole area (the answer strip stays).
   const pageOnly = pageOpen && wide;
   const open = isOpen(draft);
@@ -151,6 +160,36 @@ export function DraftBlock({
     setAnswers(Object.assign([...answers], { [q.no - 1]: value }));
     checked(q.no);
   }
+
+  /** 聴解 pictures: cut one from the page, clear one, or let the server find them in the PDF. */
+  async function picture(param: "picture" | "pictures", body: object | null, done: (r: { found?: number }) => string) {
+    setPicturing(true);
+    setPictureNote(null);
+    const res = await fetch(`/api/exam-import?${param}=${draft._id}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body ?? {}),
+    }).catch(() => null);
+    setPicturing(false);
+    if (!res?.ok) {
+      setPictureNote({ ok: false, text: res ? await errorOf(res) : "Không kết nối được máy chủ" });
+      return;
+    }
+    setPictureNote({ ok: true, text: done(((await res.json().catch(() => null)) as { found?: number } | null) ?? {}) });
+    await onChanged();
+  }
+  const crop: CropRequest | null =
+    cropFor !== null && questions[cropFor]
+      ? {
+          label: questions[cropFor].prompt,
+          onCancel: () => setCropFor(null),
+          onCrop: (page, rect) => {
+            const i = cropFor;
+            setCropFor(null);
+            void picture("picture", { question: i, page, rect }, () => `Đã gắn hình cho ${questions[i].prompt}.`);
+          },
+        }
+      : null;
 
   /** The AI solves the block: it fills only empty answers (a printed key is never overwritten). */
   async function suggest() {
@@ -367,6 +406,7 @@ export function DraftBlock({
               to={draft.pageTo ?? draft.pageFrom!}
               expanded={wide}
               onToggleExpand={() => setWide(!wide)}
+              crop={crop}
             />
           </div>
         )}
@@ -405,6 +445,33 @@ export function DraftBlock({
               <pre className="max-h-72 overflow-auto whitespace-pre-wrap rounded-lg border border-dashed border-[var(--sheet-rule)] bg-[var(--sheet)] p-4 text-xs leading-6 text-[var(--sheet-ink)]">
                 {draft.rawText || "(khối không có text gốc)"}
               </pre>
+            )}
+            {open && !editing && listening && <DraftAudioPanel draft={draft} onChanged={onChanged} />}
+            {open && !editing && listening && questions.length > 0 && (
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-[var(--sheet-rule)] bg-[var(--sheet)] px-4 py-2.5 text-sm text-[var(--sheet-ink)]">
+                <span className="font-semibold">Hình</span>
+                <span className="min-w-0 flex-1 basis-56 text-xs text-[var(--muted-foreground)]">
+                  Câu có hình trong đề (phương án vẽ, tranh 発話表現): bấm “Cắt hình” dưới câu rồi kéo chọn vùng trên ảnh trang.
+                </span>
+                {hasPages && (
+                  <button
+                    type="button"
+                    className={deskButton}
+                    disabled={picturing}
+                    title="PDF có lớp chữ: mỗi hình nằm dưới nhãn N番 của nó"
+                    onClick={() =>
+                      void picture("pictures", null, (r) => (r.found ? `Đã lấy ${r.found} hình từ PDF.` : "Không tìm thấy hình riêng trong PDF (file scan?) — cắt hình bằng tay."))
+                    }
+                  >
+                    {picturing ? "Đang lấy…" : "Lấy hình từ PDF"}
+                  </button>
+                )}
+                {pictureNote && (
+                  <p role={pictureNote.ok ? "status" : "alert"} className={`basis-full text-xs ${pictureNote.ok ? "text-[var(--ok)]" : "text-[var(--bad)]"}`}>
+                    {pictureNote.text}
+                  </p>
+                )}
+              </div>
             )}
 
             {editing ? (
@@ -492,9 +559,11 @@ export function DraftBlock({
                                     >
                                       {oi + 1}
                                     </span>
-                                    <span className={`exam-ja min-w-0 text-base leading-7 ${picked ? "font-bold" : ""}`}>
-                                      <FormattedText text={o} />
-                                    </span>
+                                    {!(isListening(draft.mondai) && isHeardOption(o, oi)) && (
+                                      <span className={`exam-ja min-w-0 text-base leading-7 ${picked ? "font-bold" : ""}`}>
+                                        <FormattedText text={o} />
+                                      </span>
+                                    )}
                                   </button>
                                 );
                               })}
@@ -509,6 +578,39 @@ export function DraftBlock({
                                         <FormattedText text={q.prompt} />
                                       </p>
                                     </div>
+                                    {q.image && (
+                                      // eslint-disable-next-line @next/next/no-img-element -- a same-origin API picture, not a static asset
+                                      <img src={imageSrc(q.image)} alt={`Hình của ${q.prompt}`} className="mt-2 h-auto max-h-80 w-auto max-w-full bg-white sm:ml-10" />
+                                    )}
+                                    {listening && open && !editing && hasPages && (
+                                      <div className="mt-1.5 flex gap-2 text-xs sm:pl-10">
+                                        <button
+                                          type="button"
+                                          className="text-[var(--primary)] underline underline-offset-2 disabled:opacity-45"
+                                          disabled={picturing}
+                                          aria-pressed={cropFor === i}
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setCropFor(cropFor === i ? null : i);
+                                          }}
+                                        >
+                                          {cropFor === i ? "Đang cắt hình… (bấm để huỷ)" : q.image ? "Cắt lại hình" : "Cắt hình"}
+                                        </button>
+                                        {q.image && (
+                                          <button
+                                            type="button"
+                                            className="text-[var(--muted-foreground)] underline underline-offset-2 disabled:opacity-45"
+                                            disabled={picturing}
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              void picture("picture", { question: i, clear: true }, () => `Đã bỏ hình của ${q.prompt}.`);
+                                            }}
+                                          >
+                                            Bỏ hình
+                                          </button>
+                                        )}
+                                      </div>
+                                    )}
                                     {choices()}
                                   </>
                                 );

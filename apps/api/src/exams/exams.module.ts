@@ -13,6 +13,8 @@ import { buildAiModule } from "../ai/ai.module.js";
 import { ExamAudioController } from "./exam-audio.controller.js";
 import { ExamAudioService } from "./exam-audio.service.js";
 import { ExamAudioAsset, ExamAudioAssetSchema } from "./schemas/audio-asset.schema.js";
+import { ExamImageController } from "./exam-image.controller.js";
+import { ExamImageService } from "./exam-image.service.js";
 import { ExamImportController } from "./exam-import.controller.js";
 import { ExamImportService } from "./exam-import.service.js";
 import { ExamImportDraft, ExamImportDraftSchema } from "./schemas/import-draft.schema.js";
@@ -56,8 +58,8 @@ export function buildExamsModule(): DynamicModule {
         { name: User.name, schema: UserSchema },
       ]),
     ],
-    controllers: [ExamsController, ExamImportController, ExamAudioController],
-    providers: [ExamsService, StimuliService, ExamImportService, ExamAudioService],
+    controllers: [ExamsController, ExamImportController, ExamAudioController, ExamImageController],
+    providers: [ExamsService, StimuliService, ExamImportService, ExamAudioService, ExamImageService],
   };
 }
 

@@ -33,9 +33,19 @@ export const MONDAI_TYPES = [
   "reading-integrated",
   "reading-thematic",
   "info-retrieval",
+  // 聴解. `listening` = a listening 問題 whose form is unknown (older imports, other sources).
   "listening",
+  "listening-task", //        課題理解
+  "listening-point", //       ポイント理解
+  "listening-summary", //     概要理解
+  "listening-utterance", //   発話表現 (N3–N5, a picture per question)
+  "listening-quick", //       即時応答
+  "listening-integrated", //  統合理解 (N1, N2)
 ] as const;
 export type MondaiType = (typeof MONDAI_TYPES)[number];
+
+/** Any 聴解 type, including the untyped `listening`. */
+export const isListeningMondai = (m?: string | null): boolean => m === "listening" || !!m?.startsWith("listening-");
 
 /** Which part of the paper a type belongs to. */
 export const SECTION_OF: Record<MondaiType, SectionKey> = {
@@ -55,6 +65,12 @@ export const SECTION_OF: Record<MondaiType, SectionKey> = {
   "reading-thematic": "reading",
   "info-retrieval": "reading",
   listening: "listening",
+  "listening-task": "listening",
+  "listening-point": "listening",
+  "listening-summary": "listening",
+  "listening-utterance": "listening",
+  "listening-quick": "listening",
+  "listening-integrated": "listening",
 };
 
 /** Types whose questions attach to a shared `exam_stimuli` row (a passage). */
@@ -75,15 +91,22 @@ export const USES_STIMULUS: Record<MondaiType, boolean> = {
   "reading-thematic": true,
   "info-retrieval": true,
   listening: true,
+  "listening-task": true,
+  "listening-point": true,
+  "listening-summary": true,
+  "listening-utterance": true,
+  "listening-quick": true,
+  "listening-integrated": true,
 };
 
 /**
- * Allowed option counts for a type: 4 for every printed JLPT type; 3 or 4 for
- * listening (out of scope, schema reserves the space). Legacy / untyped
- * questions default to exactly 4.
+ * Allowed option counts for a type: 4 for every printed JLPT type and most
+ * listening ones; 3 for 即時応答 / 発話表現; 3 or 4 for an untyped listening
+ * 問題. Legacy / untyped questions default to exactly 4.
  */
 export function optionCountsOf(mondai?: string | null): number[] {
-  if (mondai === "listening" || mondai?.startsWith("listening")) return [3, 4];
+  if (mondai === "listening-quick" || mondai === "listening-utterance") return [3];
+  if (mondai === "listening") return [3, 4];
   return [4];
 }
 
@@ -107,7 +130,9 @@ export function normalizeInstruction(s: string): string {
     .replace(/０/g, "0").replace(/１/g, "1").replace(/２/g, "2")
     .replace(/３/g, "3").replace(/４/g, "4")
     .replace(/（/g, "(").replace(/）/g, ")")
-    .replace(/［/g, "[").replace(/］/g, "]");
+    .replace(/［/g, "[").replace(/］/g, "]")
+    // OCR / typed copies read 入 as 人: `( )に人れるのに`, `★ に人る` (人れる / 人る are not words).
+    .replace(/人(?=れる|る)/g, "入");
   return t.replace(/\s+/g, "");
 }
 
@@ -133,20 +158,35 @@ export function classifyInstruction(
   // Global, unambiguous markers that hold in ANY section: a 音声 instruction is
   // listening, and the cloze marker 「全体の内容を考えて」 is text-grammar even
   // when the 問題 sits under a vocab block (Migii model tests).
-  if (n.includes("音声")) return "listening";
+  if (n.includes("音声")) return classifyListening(n) ?? "listening";
   if (n.includes("全体の内容を考えて")) return "text-grammar";
 
   // No block hint: try the families in a fixed priority (reading → grammar → vocab).
   if (sec === undefined || sec === null) {
     return classifyReading(n, level) ?? classifyGrammar(n, level) ?? classifyVocab(n, level);
   }
-  if (sec === "listening") return "listening";
+  if (sec === "listening") return classifyListening(n) ?? "listening";
   const primary = sec === "vocab" ? classifyVocab : sec === "grammar" ? classifyGrammar : classifyReading;
   const hit = primary(n, level);
   if (hit) return hit;
   // The block hint didn't decide (the 問題 is really another family's form):
   // fall through to the cross-family markers rather than `null`.
   return classifyReading(n, level) ?? classifyGrammar(n, level) ?? classifyVocab(n, level);
+}
+
+/**
+ * The 聴解 form from its (normalised) instruction — the wording is the same at
+ * every level, kana-only at N4/N5. Checked most specific first: ポイント理解 also
+ * says 「それから話を聞いて」 like 課題理解, but only it gives reading time.
+ */
+export function classifyListening(n: string): MondaiType | null {
+  if (/返事|へんじ/.test(n)) return "listening-quick";
+  if (/やじるし|矢印|→|何と言いますか|なんといいますか/.test(n)) return "listening-utterance";
+  if (/長めの話|ながめのはなし/.test(n)) return "listening-integrated";
+  if (/全体として|ぜんたいとして|話の前に質問はありません|はなしのまえにしつもんはありません/.test(n)) return "listening-summary";
+  if (/読む時間があります|よむじかんがあります/.test(n)) return "listening-point";
+  if (/それから話を聞いて|それからはなしをきいて/.test(n)) return "listening-task";
+  return null;
 }
 
 function classifyVocab(n: string, level: string | undefined): MondaiType | null {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cleanAllPages, cleanPage, isJunkLine, learnNoise } from "./clean.js";
+import { cleanAllPages, cleanLine, cleanPage, isJunkLine, learnNoise, noiseFragments, stripNoiseFragments } from "./clean.js";
 
 /**
  * NP-407: page-text cleaning. Repeated noise (a source's watermark printed on
@@ -85,5 +85,35 @@ describe("running header with a page number", () => {
     const out = cleanAllPages(pages);
     expect(out.some((l) => l.includes("Tổng hợp"))).toBe(false);
     expect(out).toContain("問題1 本文です。");
+  });
+});
+
+describe("a sharer's watermark woven through the text layer", () => {
+  // Self-authored: a watermark split into Latin pieces, each on its own line on most pages and glued into some.
+  const page = (body: string[]) => ["Group", "ữ", body[0], "i Ng", body[1], "ạ", "Ana Lee", body[2], "Học Cùng Nhau"].join("\n");
+  const pages = [
+    page(["問題 1 ___の言葉の読み方として最もよいものを選びなさい。", "1) 毎朝、公園を散歩します。", "Học Cùng Nhau1 さんぽ 2 さんほ 3 ざんぽ 4 ざんほ"]),
+    page(["2) 雨が降っています。", "1 あめ i Ng2 あま 3 う 4 ゆ", "時間がありGroupます。"]),
+    page(["3) 山に登る。", "1 のぼる 2 のこる 3 のせる 4 のびる", "4) 川で泳ぐ。"]),
+  ];
+
+  it("drops Vietnamese-only lines and strips the pieces glued into exam lines", () => {
+    const noise = learnNoise(pages);
+    const frags = noiseFragments(noise);
+    expect(frags).toEqual(expect.arrayContaining(["Học Cùng Nhau", "Ana Lee", "Group", "i Ng"]));
+    expect(stripNoiseFragments("Học Cùng Nhau1 さんぽ 2 さんほ", frags)).toBe("1 さんぽ 2 さんほ");
+    expect(stripNoiseFragments("1 あめ i Ng2 あま 3 う 4 ゆ", frags)).toBe("1 あめ 2 あま 3 う 4 ゆ");
+    expect(stripNoiseFragments("時間がありGroupます。", frags)).toBe("時間があります。");
+    expect(stripNoiseFragments("1 栄養Group2 資源", frags)).toBe("1 栄養 2 資源");
+    expect(stripNoiseFragments("Eメール Groupware の設定", frags)).toBe("Eメール Groupware の設定"); // part of a word: kept
+    const all = cleanAllPages(pages).join("\n");
+    expect(all).not.toMatch(/Group|i Ng|ữ|ạ|Ana Lee|Học/);
+    expect(isJunkLine("Tài liệu được chia sẻ bởi nhóm học tiếng Nhật")).toBe(true);
+    expect(isJunkLine("Facebook: 日本語の勉強")).toBe(false);
+  });
+
+  it("reads 間題 as 問題 at the head of a line", () => {
+    expect(cleanLine("間題 3（ ）に入れるのに最もよいもの")).toBe("問題 3( )に入れるのに最もよいもの");
+    expect(cleanLine("時間題がある")).toBe("時間題がある");
   });
 });

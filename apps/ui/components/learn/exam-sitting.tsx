@@ -10,6 +10,7 @@ import {
 } from "react";
 import { FormattedText } from "../rich-text";
 import {
+  imageSrc,
   isExamResult,
   type ExamPayload,
   type ExamResult,
@@ -344,6 +345,10 @@ export function ExamSitting({ attemptId }: { attemptId: string }) {
             <FormattedText text={q.prompt} />
           </p>
           {q.sub && <p className="mt-1 text-sm text-[var(--muted-foreground)]">{q.sub}</p>}
+          {q.image && (
+            // eslint-disable-next-line @next/next/no-img-element -- a same-origin API picture, not a static asset
+            <img src={imageSrc(q.image)} alt="" className="mt-3 h-auto max-h-96 w-auto max-w-full rounded-lg bg-white" />
+          )}
 
           <div className="mt-5 grid gap-2">
             {q.options.map((opt, idx) => {
@@ -524,6 +529,10 @@ function ResultView({
                   {r.correct ? "✓" : "✕"}
                 </span>
               </div>
+              {r.image && (
+                // eslint-disable-next-line @next/next/no-img-element -- a same-origin API picture, not a static asset
+                <img src={imageSrc(r.image)} alt="" className="mt-3 h-auto max-h-80 w-auto max-w-full rounded-lg bg-white" />
+              )}
               <div className="mt-3 space-y-1.5">
                 {r.options.map((opt, idx) => {
                   const isCorrect = idx === r.correctIndex;

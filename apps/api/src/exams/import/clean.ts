@@ -12,6 +12,8 @@
  * never sees a half-clause.
  */
 
+const CJK = /[぀-ヿ一-鿿]/; // kana + hanzi
+
 /** NFKC-normalise one line (fullwidth → ASCII digits/parens, lookalike unification). */
 export function cleanLine(raw: string): string {
   return (raw ?? "")
@@ -19,14 +21,48 @@ export function cleanLine(raw: string): string {
     .replace(/０/g, "0").replace(/１/g, "1").replace(/２/g, "2")
     .replace(/３/g, "3").replace(/４/g, "4")
     .replace(/（/g, "(").replace(/）/g, ")")
+    // `間題 3` — a misread / mistyped 問題 (間題 is not a word).
+    .replace(/^間題(?=\s*\d)/, "問題")
     .trim();
 }
 
-/** A line is a URL / mailto / bare-domain junk line — always dropped. */
+/** Letters only Vietnamese uses: a line with them and no Japanese is a sharer's note, never exam text. */
+const VIETNAMESE = /[ăâđêôơưạảấầẩẫậắằẳẵặẹẻẽếềểễệỉịọỏốồổỗộớờởỡợụủứừửữựỳỵỷỹ]/i;
+
+/** A line is a URL / mailto / bare-domain junk line, or a Vietnamese note — always dropped. */
 export function isJunkLine(line: string): boolean {
   const s = line.trim();
   if (!s) return false;
-  return /https?:\/\//i.test(s) || /mailto:/i.test(s) || /^www\.\S+$/.test(s);
+  return (VIETNAMESE.test(s) && !CJK.test(s)) || isLinkLine(s);
+}
+
+const isLinkLine = (s: string): boolean => /https?:\/\//i.test(s) || /mailto:/i.test(s) || /^www\.\S+$/.test(s.trim());
+
+/**
+ * The Latin pieces of a watermark that the text layer also glues INTO exam lines
+ * (`…時間があGroupります`, `Tôi Yêu Ngo1 かど`): the noise lines with no Japanese.
+ * Longest first, so `Tôi Yêu Ngo` goes before a shorter piece inside it.
+ */
+export function noiseFragments(noise: Set<string>): string[] {
+  return [...noise].filter((l) => l.length <= 40 && /\p{L}/u.test(l) && !CJK.test(l)).sort((a, b) => b.length - a.length);
+}
+
+const LATIN = "A-Za-z\\u00C0-\\u024F\\u1E00-\\u1EFF";
+
+/** Remove the watermark pieces from inside a line — only where they are not part of a Latin word. */
+export function stripNoiseFragments(line: string, fragments: string[]): string {
+  let out = line;
+  for (const f of fragments) {
+    if (!out.includes(f)) continue;
+    const re = new RegExp(`(?<![${LATIN}])${f.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![${LATIN}])`, "g");
+    // Glued inside a Japanese clause: close the gap; between a word and a number (`栄養Group2 資源`): keep one space.
+    out = out.replace(re, (_m, at: number, s: string) => {
+      const before = s[at - 1] ?? " ";
+      const after = s[at + f.length] ?? " ";
+      return /\s/.test(before) || /\s/.test(after) || (CJK.test(before) && CJK.test(after)) ? "" : " ";
+    });
+  }
+  return out === line ? line : out.replace(/[ \t]{2,}/g, " ").trim();
 }
 
 /**
@@ -61,7 +97,8 @@ export function noiseKey(line: string): string {
 export function learnNoise(pages: string[], ratio = 0.3): Set<string> {
   const seen = new Map<string, number>();
   for (const page of pages) {
-    const unique = new Set(page.split(/\n/).map(cleanLine).filter((l) => l && !isJunkLine(l)).map(noiseKey));
+    // Vietnamese watermark lines are counted too: their pieces glued into exam lines are stripped by them.
+    const unique = new Set(page.split(/\n/).map(cleanLine).filter((l) => l && !isLinkLine(l)).map(noiseKey));
     for (const l of unique) seen.set(l, (seen.get(l) ?? 0) + 1);
   }
   const total = pages.length || 1;
@@ -70,18 +107,18 @@ export function learnNoise(pages: string[], ratio = 0.3): Set<string> {
   return noise;
 }
 
-const CJK = /[぀-ヿ一-鿿]/; // kana + hanzi
-
 /**
  * One visual line of a page, with the repeated-noise + junk lines removed.
  * A sentence broken mid-line (a CJK line ending and the next starting with a
  * CJK character, no trailing punctuation) is re-joined onto the previous one.
  */
-export function cleanPage(rawPage: string, noise: Set<string>): string[] {
+export function cleanPage(rawPage: string, noise: Set<string>, fragments: string[] = noiseFragments(noise)): string[] {
   const lines = rawPage
     .split(/\n/)
     .map(cleanLine)
-    .filter((l) => l && !noise.has(l) && !noise.has(noiseKey(l)) && !isJunkLine(l));
+    .filter((l) => l && !noise.has(l) && !noise.has(noiseKey(l)) && !isJunkLine(l))
+    .map((l) => stripNoiseFragments(l, fragments))
+    .filter(Boolean);
   const out: string[] = [];
   for (const l of lines) {
     const prev = out[out.length - 1];

@@ -4,6 +4,67 @@
 
 ---
 
+## NP-407: hình trong phần 聴解 + bỏ khung "File nghe" ở trang Nhập đề (27/11/2026, chưa commit)
+
+- **Trang Nhập đề** (`exam-import-form.tsx`): bỏ khung "File nghe (聴解)" (tải/gắn theo ObjectId) — file nghe gắn ở màn duyệt, trên từng khối nghe. Route `PUT /api/exam-audio` và API attach vẫn còn (không còn UI dùng).
+- **Hình của câu nghe** (phương án vẽ ở 課題理解/ポイント理解, tranh 発話表現): câu có `image` (id = sha256 PNG). `ExamImageService` (`EXAM_IMAGE_DIR`, mặc định `storage/exam-images`) cắt vùng từ ảnh trang (`pageImage`, @napi-rs/canvas) và lưu theo hash; `GET /exams/images/:id` (mọi người đã đăng nhập) + proxy UI `/api/exam-image/[id]`.
+- **Tự lấy hình** (`import/pictures.ts`): với PDF có lớp chữ, pdfjs cho vị trí từng ảnh + nhãn `N番` + tiêu đề `問題 N`; ảnh gán cho nhãn gần nhất phía trên (cùng cột trước), chỉ trong phần trang của khối; bỏ ảnh phủ ≥ 60% trang (file scan). Nhãn phải đứng đầu dòng / sau nhãn khác (không lấy `かばん`, `1 番の自転車`). Chạy khi nhập (best effort, PDF ≤ 40 MB) và qua nút "Lấy hình từ PDF". Đo: N3 7/2022 → 問題1 1番, 5番 + 4 tranh 発話表現; N2 12-2025 → 問題1 2番.
+- **Cắt tay** (file scan): dưới mỗi câu nghe có "Cắt hình"/"Bỏ hình" → ảnh trang mở ở chế độ kéo chọn vùng (`PagePreview` prop `crop`, Esc huỷ) → `POST drafts/:id/picture {question, page, rect}` / `{question, clear}`; `POST drafts/:id/pictures` = tự lấy. Có hình thì bỏ issue "N番: không đọc được phương án…" và (đủ hình) issue 発話表現 (`settlePictureIssues`).
+- Xuất bản mang `image` sang câu hỏi; sit payload/kết quả có `image`; UI làm bài + kết quả hiện hình trên các nút; phương án chỉ nghe xếp một hàng. **Sửa lỗi:** câu nghe hoặc có hình không còn bị đảo thứ tự phương án (`keepsOptionOrder`), phần thi toàn câu nghe không đảo thứ tự câu.
+- Test: `import/pictures.spec.ts`, `exam-image.service.spec.ts`, thêm vào `exam-import-listening.spec.ts`; vitest `src/exams src/import src/ai` 426 đạt; watcher tsc 0 lỗi; tsc riêng 7 file UI sạch; oxlint sạch; eslint chỉ còn lỗi cũ ở `exam-sitting.tsx` (setState trong effect, dòng 99/136/194 — có từ trước).
+- **Chưa kiểm:** chưa bấm thử trên trình duyệt (tự lấy hình, kéo chọn vùng, xem hình khi làm bài).
+
+---
+
+## Plan đề thi theo nguồn, bỏ ngân hàng câu hỏi (27/11/2026, đã duyệt)
+
+[plans/plan-exam-by-source.md](./plans/plan-exam-by-source.md): upload khai báo đề đầy đủ / theo phần / sách luyện tập, xuất bản tạo đề luôn. Chưa code. 3 quyết định ở §8 đã duyệt. Việc tiếp: commit phần đang dở → giai đoạn 0 (đếm dữ liệu, chỉ đọc) → giai đoạn 1.1. Không làm NP-408.
+
+---
+
+## Trang "Cấu trúc đề thi JLPT" N5–N1 (27/11/2026)
+
+> Commit riêng theo yêu cầu, nhưng **phụ thuộc phần 聴解 chưa commit**: các dạng `listening-*` trong `mondai.ts` và `import/listening.ts` (`LISTENING_LAYOUT`, spec import). Chỉ biên dịch / chạy test được khi phần nghe được commit theo.
+
+- **Dữ liệu (một nguồn):** `apps/api/src/exams/jlpt-structure.ts` → `JLPT_STRUCTURE` (N5…N1): phần thi (`language-reading` N1/N2, `language` + `grammar-reading` N3–N5, `listening`) với `titleJa/titleVi/timeMin`; mỗi phần các 大問 theo thứ tự in (`no` đánh lại từ 1 mỗi phần), `nameJa` (`MONDAI_NAME_JA`), `count` (小問数 目安), `options`, `section`; tổng phút/câu. Nguồn + ngày truy cập ghi trong comment đầu file.
+- **Số liệu:** giờ theo jlpt.jp `testsections.html` (N1 110+55, N2 105+50, N3 30+70+40, N4 25+55+35, N5 20+40+30); số câu theo bảng Guidebook Executive Summary (`guidebook_s_e.pdf`), 聴解 N1 theo thông báo đổi từ 12/2022 (5/6/5/11/3). jlpt.jp đang **bảo trì** lúc làm (cả web.archive.org bị chặn) → đọc qua bản sao của công cụ tìm kiếm; 用法, 長文, 統合理解, 主張理解 suy từ dòng tổng phụ của bảng — **cần đối chiếu lại** với `jlpt.jp/guideline/pdf/n1.pdf … n5.pdf` khi site mở.
+- **Lệch cần xem:** `import/listening.ts` `LISTENING_LAYOUT` để N2 即時応答 11 / 統合理解 3; bảng chính thức ghi **12 / 4** (thông báo 2022 chỉ đổi N1). Spec mới chỉ so **dạng** với `LISTENING_LAYOUT`, không so số câu.
+- **API:** `GET /exams/structure` (mọi người đã đăng nhập) trong `exams.controller.ts`.
+- **UI:** `/learn/exams/structure` (`app/learn/exams/structure/{page,gate}.tsx` — gate đọc API phía máy chủ; `components/learn/exam-structure.tsx`: tab N5…N1, tổng giờ/câu, mỗi phần một bảng 問題 / dạng (JP + nhãn Việt) / số câu / số phương án, nhóm 文字・語彙 / 文法 / 読解 trong phần gộp). `?level=N3` mở thẳng một cấp. Link từ `/learn/exams` ("Cấu trúc đề thi") và `/admin/exams` ("Cấu trúc đề N5–N1").
+- Test: `src/exams/jlpt-structure.spec.ts` (thứ tự khớp `OFFICIAL_MONDAI` + dạng nghe khớp `LISTENING_LAYOUT`, tổng phụ khớp bảng chính thức, giờ); watcher tsc 0 lỗi, route đã map; oxlint sạch (2 cảnh báo cũ ở `exams.controller.ts`). Chưa mở trang trên trình duyệt.
+
+---
+
+## NP-407: đề N3 `Đề thi JLPT N3 7_2022.pdf` sai cấu trúc — đã sửa (27/11/2026, chưa commit)
+
+Job `6b094fd9a0d5cd8d3789453c` (18 trang có lớp chữ, chia sẻ kèm watermark "Group / Yuuki Bùi / Tôi Yêu Ngoại ngữ" rải từng mảnh). Nguyên nhân:
+1. **問題2–5 của 文字・語彙 dồn vào 問題1 (34 câu):** NFKC biến `問題 2＿＿＿の…` thành `問題 2___…`, `_` là ký tự chữ nên `\b` trong `MONDAI_HEADING` không khớp; `間題 3`/`間題 5` (gõ/đọc nhầm) cũng không khớp.
+2. **Mỗi 問題 nghe thành 2 khối:** đề in tiêu đề `問題 1` riêng một dòng rồi `問題 1 では…` → một khối rỗng (bảng số câu tự sinh) + khối thật.
+3. **Watermark dính vào câu:** `Tôi Yêu Ngo1 かど`, `1 栄養 i Ng2 資源`, `読む時間があGroupります` → luật không đọc được, ポイント理解 bị nhận thành 課題理解; dòng "Tài liệu được sưu tầm…" lọt vào bài.
+4. **文章の文法 bị báo "AI bịa":** AI ghi ô trống `[19]` (prompt yêu cầu) còn lớp chữ in `19`.
+5. Tên đề `unknown`: `2022 年 7 月` có dấu cách; `JLPT・N2・12/2025` là header lặp (noise) nên bị bỏ trước khi đọc tên.
+
+Đã sửa: `MONDAI_HEADING` dùng `(?![0-9A-Za-z])`; `cleanLine` đổi `間題N` → `問題N`; tiêu đề `問題 N` trần + `問題 N …` cùng số → một khối; `clean.ts`: dòng tiếng Việt không có chữ Nhật là rác, `learnNoise` đếm cả dòng watermark tiếng Việt, `noiseFragments`/`stripNoiseFragments` gỡ mảnh watermark dính trong dòng (không gỡ khi là một phần của từ Latin; giữa hai chữ Nhật thì nối liền, trước số thì để một dấu cách); `presentInBlock` so số ô trống bỏ ngoặc (`[19]` = `19` = `(19)`); `normalizeInstruction` đọc `人れる/人る` thành `入れる/入る`; tên đề nhận `YYYY 年 M 月` có dấu cách và header `JLPT・Nx・M/YYYY` (kể cả khi là noise); `listening.ts` tách `1 番 2 番` cùng dòng, 発話表現 luôn cảnh báo cần hình.
+- Đo lại trên trang đã lưu: N3 **17 khối** (文字・語彙 7/6/11/5/5 câu đọc bằng luật, 文法 3, 読解 4, 聴解 6/6/3/4/9), tên đề `2022-07`, không còn mảnh watermark. Không lệch đề khác: De_Chinh_Thuc vẫn 63 khối/6 đề/63 có đáp án; N2 12-2025 vẫn 19 khối, giờ tên `2025-12`.
+- Test: thêm vào `clean.spec.ts`, `segment.spec.ts`, `listening.spec.ts`, `structure.spec.ts`; vitest `src/exams src/import src/ai` 402 đạt; watcher tsc 0 lỗi; oxlint sạch. Chưa chạy tsc riêng cho spec (RAM còn ~300 MB).
+- **Cần làm:** xoá lần nhập N3 cũ rồi nhập lại (bản nháp cũ đã tách sai, không tự sửa được).
+
+---
+
+## NP-407 / NP-410: nhập phần 聴解 (nghe hiểu) + file nghe theo câu / cả phần (27/11/2026, chưa commit)
+
+Trước: mọi khối nghe là `mondai: "listening"`, `structureBlock` bỏ qua → 0 câu (job `6b09400f0557200406493b91`, `17.N2 12-2025 _260410.pdf`: 5 khối nghe trống). Khoá đáp án của khối nghe còn bị khớp nhầm sang `問題N` của 文字・語彙 (cùng số).
+- **Dạng mondai mới** (`mondai.ts`): `listening-task` 課題理解, `listening-point` ポイント理解, `listening-summary` 概要理解, `listening-utterance` 発話表現, `listening-quick` 即時応答, `listening-integrated` 統合理解 (`listening` cũ = chưa rõ dạng). `classifyListening` theo lời dẫn (cả kana N4/N5); `optionCountsOf`: quick/utterance = 3. `STIMULUS_KINDS` thêm `listening`.
+- **`import/listening.ts`**: bảng 聴解 chính thức theo cấp (`LISTENING_LAYOUT`: dạng + số câu thường gặp); `listeningMondai` = lời dẫn trước, số 問題 sau (chỉ khi đang trong phần 聴解 — 問題 5 có 音声 của Migii không theo bảng). `parseListening` đọc bằng luật, không AI: mỗi `N番` một câu, phương án in sẵn nếu có, không in thì phương án `"1" "2" "3" ("4")`; `質問1/2` thành nhóm chung một bài `listening`; khối không in gì (概要理解/即時応答) tạo số câu theo khoá đáp án, không có thì theo bảng; nối lại lời dẫn bị xuống dòng; bỏ `メモ` và số trang. Issue: `N番` không đọc được phương án (thường là hình), thiếu `N番`, lệch số câu với khoá, 発話表現 cần hình.
+- `segment.ts`: khối trong phần 聴解 không đi qua `PartTracker`/bảng đề viết. `keyForBlock` (tách khỏi `runJob`): khối nghe lấy lần xuất hiện **sau** các tờ đề viết, không đủ thì không có khoá.
+- **Tự đọc lại** khi API khởi động (`rereadListening`): khối `listening` cũ đang mở, chưa có câu → phân dạng + đọc lại từ text đã lưu, xoá đáp án khớp nhầm. Đã chạy trên VPS: job trên giờ ra 課題理解 5 câu (2番 phương án là hình → `error`), ポイント理解 6, 概要理解 5, 即時応答 11, 統合理解 1番 + 2番 質問1/2.
+- **File nghe**: draft có `audio` (file của khối — một 問題 hoặc cả phần nghe), câu có `parsed.questions[i].audio` (file riêng hoặc đoạn `startSec/endSec` của file khối). `POST /exams/admin/import/drafts/:id/audio {audio?, questions?, wholePart?}` (`setDraftAudio`: chỉ khối nghe đang mở, kiểm `assetId` có trong `exam_audio_assets`, `wholePart` gán file cho các khối nghe khác của cùng đề chưa có file). UI proxy `?audio=`. Xuất bản: file khối → một `exam_stimuli` kind `listening` có `audio` đặt trên các câu của khối; câu có clip riêng → `audio` của câu; hash câu nghe theo file+đề+dạng+vị trí (chữ "1番"/"1 2 3" giống nhau ở mọi đề). Sửa tay giữ clip theo prompt.
+- UI: `exam-import-draft-audio.tsx` (trên tờ đề của khối nghe): tải/chọn file cho khối, ô "cả phần nghe", từng câu: file riêng hoặc đoạn từ–đến với nút ⏱ lấy thời điểm đang phát. Phương án chỉ nghe chỉ hiện số (duyệt + làm bài). Nhãn tiếng Việt cho 6 dạng trong `MONDAI_LABELS`.
+- Test: `import/listening.spec.ts`, `exam-import-listening.spec.ts`, thêm 1 test `segment.spec.ts`; vitest `src/exams src/ai src/import` 395 đạt; watcher tsc 0 lỗi; tsc riêng (3 spec API, 5 file UI) + oxlint + eslint sạch.
+- **Chưa kiểm:** chưa bấm thử trên trình duyệt (tải file, cắt đoạn, xuất bản, làm bài nghe); số câu mặc định của 概要理解/即時応答 theo bảng là ước lượng (N2: 5/11) — sửa trong "Chỉnh sửa" nếu đề khác; câu có phương án là hình chưa có cách gắn ảnh.
+
+---
+
 ## NP-407: "Nhập file đáp án" theo cấu trúc đề ở Duyệt bản nháp đề (27/11/2026)
 
 Nút "Nhập file đáp án" ở đầu trang duyệt mở một hộp thoại (`apps/ui/components/admin/exam-import-answer-file.tsx`). Trong đó có 4 bước:
@@ -51,30 +112,24 @@ Kiểm tra:
 - Test: `import/suggest.spec.ts` + `exam-import-suggest.spec.ts` (9 test); vitest `src/exams` 202 đạt; watcher tsc 0 lỗi (route đã map); tsc riêng 3 file UI + eslint UI sạch; oxlint chỉ cảnh báo cũ ở `route.ts:33`.
 - **Chưa kiểm:** chưa bấm thử trên trình duyệt (cần đăng nhập admin) và chưa đo độ đúng của AI khi giải; tsc riêng cho 2 spec API chưa chạy (RAM).
 
-
 ---
 
-## NP-407: nút "Gợi ý đáp án" ở Duyệt bản nháp đề (27/11/2026)
+## NP-407: nhập `De_Chinh_Thuc_N2.pdf` lỗi nhiều — đã sửa (27/11/2026, chưa commit)
 
-Đứng ngay trước "Chỉnh sửa" trên đầu mỗi khối đang mở có câu hỏi. AI giải cả khối; **chỉ điền câu còn trống** (đáp án in sẵn không bị thay); không lưu gì cho tới khi xuất bản.
-- API: `POST /exams/admin/import/drafts/:id/suggest` → `{ suggestions: {answer, why}[] }` (theo `no - 1`, `answer` 0 = không có). `ExamImportService.suggestAnswers`: chỉ khối `needs_review`/`error` có câu hỏi; `completeAny` thứ tự **task `grammar`**, purpose `exam-import`; không dịch vụ nào trả lời → 503, AI không cho đáp án nào → 422. Prompt/đọc kết quả trong `src/exams/import/suggest.ts` (giữ `<u>`, bỏ furigana; câu ★ giải thích đáp án = phương án ở ô ★). UI proxy: `POST /api/exam-import?suggest=<draftId>`.
-- UI (`exam-import-draft-block.tsx`, state nâng lên `exam-import-drafts.tsx` → `suggestById`, giữ dấu khi đổi khối): thông báo "AI gợi ý N câu còn trống…", câu AI chọn khác đáp án đã có, câu AI không trả lời; dưới mỗi câu dòng "AI gợi ý: k — lý do". Câu AI điền mà chưa đối chiếu: ô phiếu đáp án viền đứt màu cam, header đếm "N câu AI gợi ý chưa đối chiếu"; chọn lại đáp án hoặc bấm "Đã đối chiếu" thì hết dấu. Xuất bản (một khối hoặc cả đề) hỏi lại nếu còn câu AI chưa đối chiếu. Lưu chỉnh sửa thì bỏ gợi ý cũ (câu hỏi có thể đã đổi).
-- Test: `import/suggest.spec.ts` + `exam-import-suggest.spec.ts` (9 test); vitest `src/exams` 202 đạt; watcher tsc 0 lỗi (route đã map); tsc riêng 3 file UI + eslint UI sạch; oxlint chỉ cảnh báo cũ ở `route.ts:33`.
-- **Chưa kiểm:** chưa bấm thử trên trình duyệt (cần đăng nhập admin) và chưa đo độ đúng của AI khi giải; tsc riêng cho 2 spec API chưa chạy (RAM).
+File 115 trang scan, 6 đề (2010-07 … 2015-07), mỗi đề kèm trang đáp án riêng. Job `6b08e729c9600d28ac99dbb4` ra 147 khối, 94 lỗi. Nguyên nhân (đọc lại từ trang đã lưu trong DB, không gọi AI):
+1. **Trang đáp án thành khối rác (~80/94 lỗi):** đầu trang là `2010年7月新日本語能力試験N2 答案` rồi `問題N` / hàng số câu / hàng đáp án, sang trang sau không có tiêu đề. `ANSWER_MARK` chỉ nhận dòng đúng chữ `答案`, `SHEET_HEADING` chỉ biết dạng `問題 7 12x3(36d)` → mỗi `問題N` của đáp án mở một khối, không đề nào có đáp án.
+2. **21/115 trang bị AI từ chối** ("I cannot transcribe this page verbatim … copyright", HTTP 200, `gemini-4-neon-low`) và câu từ chối được **lưu làm nội dung trang**. Mất câu hỏi, mất cả tiêu đề đề 2012/2013/2014 → ngày trên trang đáp án của đề trước đặt nhầm tên cho đề sau.
+3. **Ngày trong bài đọc thành đề mới:** `2010年6月28日`, `…2011年11月18日付朝刊` → đề giả 2010-06, 2011-11…, và các dòng sau đó tới `問題` kế tiếp bị bỏ (mất câu 55–59).
+4. **Khối "ok" mà sai:** OCR ghi số câu dạng `[1]`, `(11).`, `11.` + `•`, `11.歴` + `1集`, `1) も`; luật đọc hàng phương án thành đề (khối 1: 2 câu rác thay vì 5), validate vẫn qua vì chữ có trong khối.
 
-
----
-
-## Trang "Cấu trúc đề thi JLPT" N5–N1 (27/11/2026)
-
-> Commit riêng theo yêu cầu, nhưng **phụ thuộc phần 聴解 chưa commit**: các dạng `listening-*` trong `mondai.ts` và `import/listening.ts` (`LISTENING_LAYOUT`, spec import). Chỉ biên dịch / chạy test được khi phần nghe được commit theo.
-
-- **Dữ liệu (một nguồn):** `apps/api/src/exams/jlpt-structure.ts` → `JLPT_STRUCTURE` (N5…N1): phần thi (`language-reading` N1/N2, `language` + `grammar-reading` N3–N5, `listening`) với `titleJa/titleVi/timeMin`; mỗi phần các 大問 theo thứ tự in (`no` đánh lại từ 1 mỗi phần), `nameJa` (`MONDAI_NAME_JA`), `count` (小問数 目安), `options`, `section`; tổng phút/câu. Nguồn + ngày truy cập ghi trong comment đầu file.
-- **Số liệu:** giờ theo jlpt.jp `testsections.html` (N1 110+55, N2 105+50, N3 30+70+40, N4 25+55+35, N5 20+40+30); số câu theo bảng Guidebook Executive Summary (`guidebook_s_e.pdf`), 聴解 N1 theo thông báo đổi từ 12/2022 (5/6/5/11/3). jlpt.jp đang **bảo trì** lúc làm (cả web.archive.org bị chặn) → đọc qua bản sao của công cụ tìm kiếm; 用法, 長文, 統合理解, 主張理解 suy từ dòng tổng phụ của bảng — **cần đối chiếu lại** với `jlpt.jp/guideline/pdf/n1.pdf … n5.pdf` khi site mở.
-- **Lệch cần xem:** `import/listening.ts` `LISTENING_LAYOUT` để N2 即時応答 11 / 統合理解 3; bảng chính thức ghi **12 / 4** (thông báo 2022 chỉ đổi N1). Spec mới chỉ so **dạng** với `LISTENING_LAYOUT`, không so số câu.
-- **API:** `GET /exams/structure` (mọi người đã đăng nhập) trong `exams.controller.ts`.
-- **UI:** `/learn/exams/structure` (`app/learn/exams/structure/{page,gate}.tsx` — gate đọc API phía máy chủ; `components/learn/exam-structure.tsx`: tab N5…N1, tổng giờ/câu, mỗi phần một bảng 問題 / dạng (JP + nhãn Việt) / số câu / số phương án, nhóm 文字・語彙 / 文法 / 読解 trong phần gộp). `?level=N3` mở thẳng một cấp. Link từ `/learn/exams` ("Cấu trúc đề thi") và `/admin/exams` ("Cấu trúc đề N5–N1").
-- Test: `src/exams/jlpt-structure.spec.ts` (thứ tự khớp `OFFICIAL_MONDAI` + dạng nghe khớp `LISTENING_LAYOUT`, tổng phụ khớp bảng chính thức, giờ); watcher tsc 0 lỗi, route đã map; oxlint sạch (2 cảnh báo cũ ở `exams.controller.ts`). Chưa mở trang trên trình duyệt.
+Đã sửa:
+- `segment.ts`: nhận trang đáp án dạng trần (`bareKeyGroups`, trang nối tiếp không tiêu đề), đáp án gắn vào đề **đứng trước** nó; đề mất tiêu đề lấy tên từ đáp án; ngày có `日` không còn là nhãn đề; bỏ chân trang có số trang (`noiseKey`); N2 `問題7` (cùng lời dẫn với `問題4`) theo số → `grammar-form`.
+- `rules.ts`: hiểu `[n]`/`【n】`/`(n)`/`(n).`/`n.`/`n)` + phương án `1)`, `•`, `1集`; bỏ khung `(問題例)`…`解答用紙`; prompt chứa số phương án hoặc phương án nuốt câu sau → trả `null` (sang AI).
+- AI: `src/ai/ocr-refusal.ts` nhận câu từ chối; `ocrExamPageText` bỏ qua và hỏi dịch vụ của **nhà cung cấp khác** (cùng `provider.id|baseUrl` không hỏi lại), cả hai từ chối → `{ refused }`. Import: trang bị từ chối không lưu, không tính vào "5 trang liên tiếp → dừng", log ghi rõ trang nào; prompt OCR yêu cầu giữ số phương án 1–4 (không gạch đầu dòng).
+- `structureBlock`: kết quả AI phải khớp số câu bảng đáp án (thử dịch vụ thứ 2 nếu lệch); khối sát trang chưa đọc được có issue `trang N: AI chưa đọc được…` (trừ khi số câu khớp đáp án). Job resume truyền `job.level` cho segment.
+- Đo lại trên chính các trang đã lưu: **147 → 63 khối, đúng 6 đề, 63/63 khối có đáp án điền sẵn, 34 khối câu đơn đọc bằng luật khớp số câu**; còn lại (đọc hiểu, khối dính trang bị từ chối) đi AI.
+- Test: vitest `src/exams src/ai src/import` 370 đạt (spec mới: `ocr-refusal.spec`, `exam-import-structure.spec`, thêm case trong `segment/rules/exam-import-retry/ai-complete-any`); watcher tsc 0 lỗi; tsc riêng các spec đổi đạt; oxlint không cảnh báo mới.
+- **Chưa làm/chưa kiểm:** chưa nhập lại PDF thật (cần user: xoá job `6b08e729…` rồi nhập lại; OCR ~50 phút). Chưa biết Claude (`custom`, thứ tự ocr-exam 5) có chép được 21 trang Gemini từ chối không. Kiểm tra độ đúng của AI với khối đọc hiểu chưa đo được nếu không gọi AI.
 
 ---
 

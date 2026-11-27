@@ -1,5 +1,7 @@
 # Plan — Ngân hàng câu hỏi JLPT theo level × mondai và sinh đề ngẫu nhiên
 
+> ⚠️ **27/11/2026:** đã quyết bỏ ngân hàng câu hỏi và sinh đề — [plan-exam-by-source.md](./plan-exam-by-source.md). Đừng bắt đầu NP-408 / phần ngân hàng của NP-409.
+
 > **Ngày lập:** 19/11/2026. **Người lập:** [CC]. **Người thực hiện:** agent khác (plan này tự đủ, không cần đọc lại hội thoại).
 > **Trạng thái:** chưa bắt đầu. **Phụ thuộc:** P4 hiện tại ([NP-401](../issues/NP-401.md)…[NP-404](../issues/NP-404.md)) — dùng lại engine làm bài, không viết lại.
 > **Gate pháp lý:** Q-12 (quyền dùng đề chính thức) đang ⏸ — xem §2.

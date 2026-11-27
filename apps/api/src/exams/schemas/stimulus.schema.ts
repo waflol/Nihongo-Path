@@ -7,7 +7,8 @@ import {
 } from "../../flashcards/schemas/exercise-question.schema.js";
 
 /** The shape of a shared reading text (NP-406 / plan §5.3). */
-export const STIMULUS_KINDS = ["passage", "cloze", "notice", "pair"] as const;
+/** `listening` = one talk / track that several 聴解 questions share (its text is not printed). */
+export const STIMULUS_KINDS = ["passage", "cloze", "notice", "pair", "listening"] as const;
 export type StimulusKind = (typeof STIMULUS_KINDS)[number];
 
 /**

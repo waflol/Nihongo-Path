@@ -14,6 +14,9 @@ import { getSession } from "@/lib/session";
  *   GET  /api/exam-import?page=<jobId>&n=<page> → the source page as a PNG
  *   POST /api/exam-import?update=<draftId> {stimuli, questions, answers} → hand edits
  *   POST /api/exam-import?suggest=<draftId> → AI-suggested answers (not stored)
+ *   POST /api/exam-import?audio=<draftId> {audio?, questions?, wholePart?} → 聴解 recordings
+ *   POST /api/exam-import?picture=<draftId> {question, page, rect} | {question, clear} → a question's picture
+ *   POST /api/exam-import?pictures=<draftId> → cut the block's pictures from its PDF
  *   GET  /api/exam-import?answerFile=<jobId> → answer-file template {fileName, csv}
  *   POST /api/exam-import?answerFile=<jobId> {text, save?, overwrite?} → load an answer file
  * The access token stays server-side (same pattern as /api/import).
@@ -108,11 +111,12 @@ export async function POST(request: Request) {
     if (!/^[a-f0-9]{24}$/i.test(answerFile)) return NextResponse.json({ error: "id không hợp lệ" }, { status: 400 });
     return forward(`/${answerFile}/answer-file`, "POST", await request.text());
   }
-  for (const action of ["publish", "discard", "update", "suggest"] as const) {
+  for (const action of ["publish", "discard", "update", "suggest", "audio", "picture", "pictures"] as const) {
     const id = sp.get(action);
     if (!id) continue;
     if (!ID.test(id)) return NextResponse.json({ error: "id không hợp lệ" }, { status: 400 });
-    return forward(`/drafts/${id}/${action}`, "POST", action === "discard" || action === "suggest" ? "{}" : await request.text());
+    const bodyless = action === "discard" || action === "suggest" || action === "pictures";
+    return forward(`/drafts/${id}/${action}`, "POST", bodyless ? "{}" : await request.text());
   }
   // Upload: stream the multipart body straight through (up to 100 MB) instead of
   // buffering it here — on the 4 GB VPS a second in-memory copy is real OOM risk.

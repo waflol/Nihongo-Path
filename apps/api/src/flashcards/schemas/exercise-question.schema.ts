@@ -135,6 +135,10 @@ export class ExerciseQuestion {
   @Prop({ type: Object })
   audio?: { assetId: string; startSec?: number; endSec?: number } | null;
 
+  /** The picture printed with the question (聴解 options drawn as pictures, a 発話表現 scene): an `ExamImageService` id. */
+  @Prop({ type: String })
+  image?: string;
+
   @Prop({ type: String, index: { unique: true, sparse: true } })
   contentHash?: string;
 

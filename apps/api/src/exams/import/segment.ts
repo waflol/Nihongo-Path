@@ -1,7 +1,8 @@
-import { classifyInstruction, SECTION_OF, type MondaiType, type SectionKey } from "../mondai.js";
+import { classifyInstruction, isListeningMondai, SECTION_OF, type MondaiType, type SectionKey } from "../mondai.js";
+import { listeningMondai } from "./listening.js";
 import { mondaiByNumber, mondaiNumberOf, PartTracker, sheetsOf } from "./mondai-table.js";
 import { type AnswerKeyBlock } from "./answer-key.js";
-import { cleanAnswerLine, cleanLine, isJunkLine, learnNoise } from "./clean.js";
+import { cleanAnswerLine, cleanLine, isJunkLine, learnNoise, noiseFragments, noiseKey, stripNoiseFragments } from "./clean.js";
 import { isDrillBook, segmentDrillBook } from "./drill.js";
 
 /**
@@ -62,9 +63,15 @@ export interface Segmented {
 // the heading class must match the NORMALISED forms.
 /** `＿＿＿の言葉の読み方として…` — the unnumbered opening 問題 of a collection paper. */
 const UNLABELLED_FIRST = /^[_＿]{2,}の言葉の読み方として/;
-const MONDAI_HEADING = /^問題\s*(?:\d{1,2}|I{1,3}|IV|V)\b/;
+// Not `\b`: NFKC turns `問題 2＿＿＿の言葉` into `問題 2___…`, and `_` is a word character.
+const MONDAI_HEADING = /^問題\s*(?:\d{1,2}|I{1,3}|IV|V)(?![0-9A-Za-z])/;
+/** `問題 1` alone — a title printed above that 問題's own instruction line (`問題 1 では…`). */
+const BARE_MONDAI = /^問題\s*(?:\d{1,2}|I{1,3}|IV|V)\s*[:：]?$/;
 const ANSWER_MARK = /^(?:答案|解答|正答)(?:と説明)?\s*$/;
-const SITTING_YEAR_MONTH = /(?<!\d)(\d{4})年\s*(\d{1,2})月/;
+// A date with a day (`2010年6月28日`, `…2011年11月18日付朝刊`) is a date in a passage, not a paper label.
+const SITTING_YEAR_MONTH = /(?<!\d)(\d{4})\s*年\s*(\d{1,2})\s*月(?!\s*\d{1,2}\s*日)/;
+/** `JLPT・N2・12/2025` — a sharer's running header naming the sitting as month/year. */
+const SITTING_MONTH_SLASH = /^JLPT\s*[・･]\s*N[1-5]\s*[・･]\s*(\d{1,2})\s*\/\s*(\d{4})$/;
 const SITTING_EXAMID = /^EXAM\s*ID\s*[:：]?\s*(\d+)/i;
 // The label may be glued to the first line of the page (`N2 - 4 1 ふかふか…`).
 const SITTING_NN_LABEL = /^(?:JLPT\s*)?(N[1-5])\s*[-－]\s*(\d{1,3})(?=\s|$)/;
@@ -72,6 +79,11 @@ const SITTING_NN_LABEL = /^(?:JLPT\s*)?(N[1-5])\s*[-－]\s*(\d{1,3})(?=\s|$)/;
 const SHEET_HEADER = /(N[1-5])\s*[-－]\s*(\d{1,3})\s*解答/;
 /** `問題 7 12x3(36d)` — a section of a per-paper answer sheet (count x points). */
 const SHEET_HEADING = /^問題\s*(\d{1,2})\s+(\d{1,3})\s*x\s*(\d{1,3})\s*\(\s*\d+\s*d?\s*\)/;
+/** `問題 11` alone on its line — a section of a paper's own answer pages, which print no count. */
+const SHEET_BARE_HEADING = /^問題\s*(\d{1,2})$/;
+/** `2010年7月新日本語能力試験N2 答案` — the header of a paper's own answer pages. */
+const KEY_HEADER = /(?:答案|解答|正答)\s*$/;
+const DIGIT_ROW = /^\d{1,3}(?:\s+\d{1,3})*$/;
 /** A bare in-paper page number (`N2 5`, `- 2 -`). */
 const PAGE_FOOTER = /^(?:N[1-5]\s+\d{1,3}|-\s*\d{1,3}\s*-)$/;
 const PART_LISTENING = /聴解/;
@@ -95,6 +107,8 @@ function sittingOf(line: string): string | null {
   // A year-month inside a long passage line is a date in the text, not a paper label.
   const s1 = line.length <= 30 ? line.match(SITTING_YEAR_MONTH) : null;
   if (s1) return `${s1[1]}-${s1[2].padStart(2, "0")}`;
+  const s0 = line.match(SITTING_MONTH_SLASH);
+  if (s0) return `${s0[2]}-${s0[1].padStart(2, "0")}`;
   const s2 = line.match(SITTING_EXAMID);
   if (s2) return `Migii ${s2[1]}`;
   const s3 = line.match(SITTING_NN_LABEL);
@@ -117,8 +131,32 @@ const READING_FAMILY = new Set<string>([
   "info-retrieval",
 ]);
 
+/** Question numbers run on by one (`60 61 62`): the top row of an answer group. */
+const isRun = (v: number[]) => v.every((x, i) => i === 0 || x === v[i - 1] + 1);
+
+/**
+ * How many answer groups a page holds in the bare layout: a `問題N` line, the
+ * row of its question numbers, then the row of answers (1–4), same length.
+ */
+export function bareKeyGroups(lines: string[]): number {
+  const ls = lines.map(cleanLine).filter(Boolean);
+  let n = 0;
+  for (let i = 0; i + 2 < ls.length; i += 1) {
+    if (!SHEET_BARE_HEADING.test(ls[i]) || !DIGIT_ROW.test(ls[i + 1]) || !DIGIT_ROW.test(ls[i + 2])) continue;
+    const nums = ls[i + 1].split(/\s+/).map(Number);
+    const ans = ls[i + 2].split(/\s+/).map(Number);
+    if (isRun(nums) && ans.length === nums.length && ans.every((a) => a >= 1 && a <= 4)) n += 1;
+  }
+  return n;
+}
+
+/**
+ * Both answer layouts: `問題 1 5x1(5d)` (count x points) and a bare `問題 1`
+ * (the count is the length of its question-number row).
+ */
 export function parseSheetKey(lines: string[]): AnswerKeyBlock[] {
   const out: AnswerKeyBlock[] = [];
+  const bare = new Set<AnswerKeyBlock>();
   let cur: AnswerKeyBlock | null = null;
   let nums: number[] | null = null;
   for (const raw of lines) {
@@ -132,12 +170,22 @@ export function parseSheetKey(lines: string[]): AnswerKeyBlock[] {
       nums = null;
       continue;
     }
-    if (!cur || !/^\d{1,3}(?:\s+\d{1,3})*$/.test(l)) continue;
+    const b = l.match(SHEET_BARE_HEADING);
+    if (b) {
+      cur = { heading: `問題${b[1]}`, questionCount: 0, pointsPerQuestion: 1, totalPoints: null, answers: [] };
+      bare.add(cur);
+      out.push(cur);
+      nums = null;
+      continue;
+    }
+    if (!cur || !DIGIT_ROW.test(l)) continue;
     const v = l.split(/\s+/).map(Number);
-    if (!nums) {
+    // A row of a different length that runs on by one is a new number row (a stray page number came first).
+    if (!nums || (v.length !== nums.length && isRun(v) && v.length > 1)) {
       nums = v;
     } else {
       for (let i = 0; i < nums.length; i += 1) cur.answers.push(v.length === nums.length && v[i] >= 1 && v[i] <= 4 ? v[i] : null);
+      if (bare.has(cur)) cur.questionCount += nums.length;
       nums = null;
     }
   }
@@ -162,31 +210,46 @@ interface RawLine {
 export function segmentBlocks(pages: string[], level?: string): Segmented {
   if (isDrillBook(pages)) return segmentDrillBook(pages, level);
   const noise = learnNoise(pages);
+  const fragments = noiseFragments(noise);
 
-  // Per-paper answer sheets: a page with `問題 N CxP(Td)` lines is a sheet page;
-  // its paper is named by the `N2-1 解答` header on that page or the last one before it.
+  // Answer pages, kept out of the blocks:
+  //  - "counted" sheets (`N2-1 解答` + `問題 N CxP(Td)`): named by the header on that page or the last one before it;
+  //  - "bare" keys printed right after their paper (`2010年7月…N2 答案` + `問題N` / numbers / answers),
+  //    running onto the next page without a header. Each closes the paper before it.
   const sheetLines: Record<string, string[]> = {};
-  const sheetPage = new Set<number>();
+  const sheetPage = new Map<number, "counted" | "bare">();
   let sheetSitting = "";
   pages.forEach((p, i) => {
     const lines = p.split(/\n/);
-    const isSheet = lines.some((l) => SHEET_HEADING.test(cleanLine(l)));
-    if (!isSheet) return;
-    for (const l of lines) {
-      const hd = cleanLine(l).match(SHEET_HEADER);
-      if (hd) sheetSitting = `${hd[1]}-${Number(hd[2])}`;
+    const clean = lines.map(cleanLine);
+    if (clean.some((l) => SHEET_HEADING.test(l))) {
+      for (const l of clean) {
+        const hd = l.match(SHEET_HEADER);
+        if (hd) sheetSitting = `${hd[1]}-${Number(hd[2])}`;
+      }
+      sheetPage.set(i + 1, "counted");
+      (sheetLines[sheetSitting || "unknown"] ??= []).push(...lines);
+      return;
     }
-    sheetPage.add(i + 1);
-    (sheetLines[sheetSitting || "unknown"] ??= []).push(...lines);
+    const groups = bareKeyGroups(clean);
+    if (groups >= 2 || (groups >= 1 && (keyHeaderLabel(clean) !== null || sheetPage.get(i) === "bare"))) {
+      sheetPage.set(i + 1, "bare");
+    }
   });
   const sheetKeys: Record<string, AnswerKeyBlock[]> = {};
   for (const [name, lines] of Object.entries(sheetLines)) sheetKeys[name] = parseSheetKey(lines);
 
   const rawLines: RawLine[] = [];
   pages.forEach((p, i) => {
-    if (sheetPage.has(i + 1)) return;
+    if (sheetPage.get(i + 1) === "counted") return;
     p.split(/\n/).forEach((raw) => rawLines.push({ raw, page: i + 1 }));
   });
+
+  // Papers in reading order: a bare key ends one, the next text opens another.
+  let paper = 0;
+  let afterKey = false;
+  const blockPaper: number[] = [];
+  const bareKeys = new Map<number, { label: string | null; lines: string[] }>();
 
   const blocks: Block[] = [];
   const answerLines: string[] = [];
@@ -217,23 +280,32 @@ export function segmentBlocks(pages: string[], level?: string): Segmented {
     let mondai = byText;
     let note: string | undefined;
     let section: SectionKey = current.part;
-    if (no !== null && sheetsOf(level) > 0) {
+    if (current.part === "listening" || isListeningMondai(byText)) {
+      // 聴解 restarts at 問題 1 and has its own layout (and the written sheets' tracker must not see it).
+      // Only inside a 聴解 part does the number follow that layout; a lone 音声 問題 (Migii) has its own numbering.
+      const heard = listeningMondai(current.instruction + " " + head, level, current.part === "listening" ? no : null);
+      mondai = heard.mondai;
+      note = heard.note;
+      section = "listening";
+    } else if (no !== null && sheetsOf(level) > 0) {
       const byNo = mondaiByNumber(level, tracker.next(no), no);
-      // N1/N2 print 語形成 and 文脈規定 with the SAME instruction (`( )に入れるのに最もよいもの`):
-      // only the number tells them apart.
+      // N1/N2 print 語形成, 文脈規定 and 文法形式の判断 with the SAME instruction
+      // (`( )に入れるのに最もよいもの`): only the number tells them apart.
       // From 問題 9 (N2) / 7 (N1) on, every passage block opens with a near-identical
       // 「次の文章を読んで…」: the instruction cannot tell 文章の文法 / 短文 / 中文 / 統合 / 主張 /
       // 情報検索 apart, but the printed NUMBER can — so the number wins inside that family.
       const sameFamily = sheetsOf(level) === 1 && !!byText && READING_FAMILY.has(byText) && READING_FAMILY.has(byNo ?? "");
-      if (byNo && (!byText || sameFamily || (byNo === "word-formation" && byText === "context"))) {
+      const sameBlank = byText === "context" && (byNo === "word-formation" || byNo === "grammar-form");
+      if (byNo && (!byText || sameFamily || sameBlank)) {
         mondai = byNo;
         section = SECTION_OF[byNo];
       } else if (byNo && byText && byNo !== byText) {
         note = `dạng theo lời dẫn (${byText}) khác dạng theo số 問題 ${no} của ${level} (${byNo}) — kiểm tra lại`;
       }
     }
+    blockPaper.push(paper);
     blocks.push({
-      sitting: sitting || "unknown",
+      sitting,
       sectionHint: section,
       instruction: current.instruction,
       rawText,
@@ -251,14 +323,39 @@ export function segmentBlocks(pages: string[], level?: string): Segmented {
       if (a && !isJunkLine(a)) answerLines.push(a);
       continue;
     }
+    if (sheetPage.get(page) === "bare") {
+      if (!afterKey) flush();
+      afterKey = true;
+      const k = bareKeys.get(paper) ?? { label: null, lines: [] };
+      k.label ??= keyHeaderLabel([cleanLine(raw)]);
+      k.lines.push(raw);
+      bareKeys.set(paper, k);
+      continue;
+    }
     let n = cleanLine(raw);
-    if (!n || noise.has(n) || isJunkLine(n) || PAGE_FOOTER.test(n)) continue;
+    if (!n || noise.has(n) || noise.has(noiseKey(n)) || isJunkLine(n) || PAGE_FOOTER.test(n)) {
+      // A running header is noise, but one that names the paper (`JLPT・N2・12/2025`) still names it.
+      if (n && !sitting && !afterKey && (noise.has(n) || noise.has(noiseKey(n)))) sitting = sittingOf(n) ?? "";
+      continue;
+    }
+    n = stripNoiseFragments(n, fragments);
+    if (!n) continue;
+
+    if (afterKey) {
+      // What follows a paper's key is the next paper, until its own header (if any) names it.
+      afterKey = false;
+      paper += 1;
+      sitting = "";
+      part = "vocab";
+      tracker.reset();
+    }
 
     const sittingLine = sittingOf(n);
     if (sittingLine) {
       if (sitting !== sittingLine) {
         flush(); // a new paper starts: close the previous block
         tracker.reset();
+        part = "vocab";
       }
       sitting = sittingLine;
       // Drop the label itself (it may share its line with the page's first text).
@@ -277,6 +374,11 @@ export function segmentBlocks(pages: string[], level?: string): Segmented {
     }
 
     if (MONDAI_HEADING.test(n)) {
+      // `問題 1` printed as a title above `問題 1 では…`: one block, not an empty one and then the real one.
+      if (current && current.body.length === 0 && BARE_MONDAI.test(current.instruction) && mondaiNumberOf(current.instruction) === mondaiNumberOf(n)) {
+        current.instruction = n;
+        continue;
+      }
       flush();
       current = { instruction: n, body: [], pageFrom: page, pageTo: page, part };
       continue;
@@ -301,5 +403,25 @@ export function segmentBlocks(pages: string[], level?: string): Segmented {
     if (current) current.pageTo = page;
   }
   flush();
+
+  // A bare key belongs to the paper before it: the paper's own label names the key, and a
+  // paper whose header was not read (a lost first page) takes the label the key prints.
+  for (const [pi, k] of bareKeys) {
+    const own = blocks.filter((_, bi) => blockPaper[bi] === pi);
+    const label = own.find((b) => b.sitting)?.sitting || k.label || `#${pi + 1}`;
+    for (const b of own) b.sitting ||= label;
+    sheetKeys[label] = parseSheetKey(k.lines);
+  }
+  for (const b of blocks) b.sitting ||= "unknown";
   return { blocks, answerKey: answerLines.join("\n"), sheetKeys };
+}
+
+/** The paper an answer-page header names (`2010年7月新日本語能力試験N2 答案` → `2010-07`), or `null`. */
+function keyHeaderLabel(lines: string[]): string | null {
+  for (const l of lines) {
+    if (l.length > 40 || !KEY_HEADER.test(l)) continue;
+    const s = sittingOf(l);
+    if (s) return s;
+  }
+  return null;
 }

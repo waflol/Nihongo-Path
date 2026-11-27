@@ -15,12 +15,25 @@ export interface ParsedQuestion {
   prompt: string;
   options: string[];
   stimulusKey?: string;
+  /** 聴解: this question's own clip (its own file, or a stretch of the block's). */
+  audio?: DraftAudio;
+  /** The picture printed with the question, cut from the page (an image id). */
+  image?: string;
+}
+/** A listening clip: an uploaded file and, optionally, the stretch of it to play (seconds). */
+export interface DraftAudio {
+  assetId: string;
+  startSec?: number;
+  endSec?: number;
 }
 export interface Draft {
   _id: string;
   blockIndex: number;
   sitting: string;
+  level?: string;
   mondai?: string | null;
+  /** 聴解: the block's recording (this 問題, or the paper's whole listening part). */
+  audio?: DraftAudio | null;
   section: string;
   instruction: string;
   rawText: string;
@@ -32,6 +45,11 @@ export interface Draft {
   status: "needs_review" | "error" | "published" | "discarded";
   parsedBy?: "rules" | "ai" | "manual";
 }
+
+export const isListening = (mondai?: string | null) => mondai === "listening" || !!mondai?.startsWith("listening-");
+
+/** An option that is only heard (即時応答, 概要理解…) is stored as its own number: show just the number. */
+export const isHeardOption = (text: string, i: number) => text.trim() === String(i + 1);
 
 /** What the reviewer sees: a draft still to review is either complete or missing answers. */
 export type BlockState = "ready" | "missing" | "error" | "published" | "discarded";

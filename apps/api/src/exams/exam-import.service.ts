@@ -15,6 +15,7 @@ import { Model } from "mongoose";
 import type { AuthUser } from "../auth/auth.types.js";
 import { AiExampleService } from "../ai/ai-example.service.js";
 import { AiServicesService } from "../ai/ai-services.service.js";
+import { isOcrRefused } from "../ai/ocr-refusal.js";
 import {
   ExerciseQuestion,
   type ExerciseQuestionDocument,
@@ -36,8 +37,13 @@ import {
   ExamImportJobPage,
   type ExamImportJobPageDocument,
 } from "./schemas/import-job.schema.js";
-import { contentHashOf, optionCountsOf, stripFormat } from "./mondai.js";
+import { contentHashOf, isListeningMondai, optionCountsOf, stripFormat } from "./mondai.js";
+import { ExamAudioAsset, type ExamAudioAssetDocument } from "./schemas/audio-asset.schema.js";
 import { blockMarker, keyMarker, splitCompactKey, type AnswerKeyBlock } from "./import/answer-key.js";
+import { listeningMondai, parseListening } from "./import/listening.js";
+import { picturesOfBlock, readLayouts } from "./import/pictures.js";
+import { ExamImageService } from "./exam-image.service.js";
+import { mondaiNumberOf, sheetsOf } from "./import/mondai-table.js";
 import { renderPdfPage } from "../import/parsers/pdf.js";
 import { AI_RETRY_DELAYS_MS, retryRounds } from "./import/retry.js";
 import { applyMarks, enrich, type Junk, type Mark } from "./import/marks.js";
@@ -46,7 +52,7 @@ import { markCloze, parseByRules } from "./import/rules.js";
 import { segmentBlocks, type Block } from "./import/segment.js";
 import { readSuggestions, suggestPrompt, type AnswerSuggestion } from "./import/suggest.js";
 import { answerTemplate, headingOf, matchAnswerFile, mergeAnswers, parseAnswerFile, type AnswerFileDraft } from "./import/answer-file.js";
-import { parseAiJson, structurePrompt, type ParsedBlock, validateParsed } from "./import/structure.js";
+import { parseAiJson, structurePrompt, type DraftAudio, type ParsedBlock, validateParsed } from "./import/structure.js";
 
 /** Put the page's furigana + underlines back on the structured block (after validation, which reads plain text). */
 function withMarks(
@@ -76,6 +82,65 @@ function withMarks(
   });
   return changed;
 }
+
+/** Fill a 聴解 draft from its printed lines: the whole instruction, the questions, what a person must check. */
+function readListening(
+  doc: { instruction: string; rawText: string; mondai?: string | null; parsed?: ParsedBlock; parsedBy?: string; issues: string[]; status: string },
+  level: string,
+  keyCount: number,
+): void {
+  const r = parseListening(doc, level, keyCount);
+  doc.instruction = r.instruction;
+  doc.parsed = r.parsed;
+  doc.parsedBy = "rules";
+  doc.issues = r.issues;
+  doc.status = r.issues.length > 0 ? "error" : "needs_review";
+}
+
+/**
+ * The printed answers of one block: its own key, else the paper's answer sheet (a collection PDF
+ * carries one per paper), else the PDF's key — matched by 問題 number.
+ */
+export function keyForBlock(
+  block: Pick<Block, "key" | "instruction" | "mondai">,
+  sheet: AnswerKeyBlock[] | undefined,
+  keyBlocks: AnswerKeyBlock[],
+  level: string | undefined,
+): AnswerKeyBlock | null {
+  if (block.key) return block.key;
+  const token = blockMarker(block.instruction);
+  if (isListeningMondai(block.mondai)) {
+    // 聴解 numbers restart at 問題 1: its key is the occurrence after every written sheet's,
+    // and a key without a listening part must not lend it the 文字・語彙 answers.
+    const same = (sheet ?? keyBlocks).filter((k) => keyMarker(k.heading) === token);
+    return same.length > Math.max(1, sheetsOf(level)) ? same[same.length - 1] : null;
+  }
+  if (sheet) return sheet.find((k) => keyMarker(k.heading) === token) ?? null;
+  const hit = keyBlocks.find((k) => keyMarker(k.heading) === token);
+  return hit ?? keyBlocks[0] ?? null;
+}
+
+/** Pictures are looked for only in a PDF this small (a scan has none to find, and is the big one). */
+const MAX_PICTURE_PDF_BYTES = 40 * 1024 * 1024;
+
+/**
+ * A question that now has its picture no longer needs the "options are pictures" check, and a
+ * 発話表現 block whose every question has one no longer needs the "pictures missing" one.
+ */
+export function settlePictureIssues(doc: { parsed?: ParsedBlock; issues: string[]; status: string }): void {
+  const qs = doc.parsed?.questions ?? [];
+  const pictured = new Set(qs.filter((q) => q.image).map((q) => `${q.printedNo}番`));
+  doc.issues = doc.issues.filter((i) => {
+    const m = /^(\d{1,2}番): không đọc được phương án/.exec(i);
+    if (m) return !pictured.has(m[1]);
+    if (i.startsWith("発話表現:")) return !(qs.length > 0 && qs.every((q) => q.image));
+    return true;
+  });
+  if (doc.status === "error" || doc.status === "needs_review") doc.status = doc.issues.length > 0 ? "error" : "needs_review";
+}
+
+/** Key of the passage a listening block's own recording is published as. */
+const BLOCK_TRACK = "__track";
 
 /** Unread pages in a row that mean the AI is down, not that one page is hard. */
 const MAX_UNREAD_IN_A_ROW = 5;
@@ -114,6 +179,8 @@ export class ExamImportService implements OnApplicationBootstrap {
     @InjectModel(ExamImportDraft.name) private readonly drafts: Model<ExamImportDraftDocument>,
     @InjectModel(ExamStimulus.name) private readonly stimuli: Model<ExamStimulusDocument>,
     @InjectModel(ExerciseQuestion.name) private readonly bank: Model<ExerciseQuestionDocument>,
+    @InjectModel(ExamAudioAsset.name) private readonly audioAssets: Model<ExamAudioAssetDocument>,
+    private readonly images: ExamImageService,
     private readonly ai: AiExampleService,
     private readonly services: AiServicesService,
   ) {}
@@ -124,6 +191,18 @@ export class ExamImportService implements OnApplicationBootstrap {
       .updateOne({ _id: id }, { $push: { log: { $each: [{ at: new Date(), level, msg: msg.slice(0, 400) }], $slice: -400 } } })
       .exec()
       .catch(() => undefined);
+  }
+
+  /**
+   * The page reader's OCR: waits out an AI outage between rounds; a page every provider
+   * refused to transcribe comes back as an unread page (`OcrFailedError.refused`), never as text.
+   */
+  private ocrPage(jobId?: string): (png: Buffer, n: number) => Promise<string | null> {
+    return async (png, n) => {
+      const r = await retryRounds(() => this.ai.ocrExamPageText(png, n), this.retryDelaysMs, jobId ? () => this.isCancelled(jobId) : undefined);
+      if (isOcrRefused(r)) throw new OcrFailedError(n, r.refused);
+      return r;
+    };
   }
 
   /** The admin pressed Cancel (status flipped by `cancel`). */
@@ -190,6 +269,29 @@ export class ExamImportService implements OnApplicationBootstrap {
     for (const j of stuck) {
       void this.runJob(String(j._id)).catch(() => undefined);
     }
+    void this.rereadListening().catch((err) => this.logger.warn(`listening drafts not re-read: ${(err as Error).message}`));
+  }
+
+  /**
+   * Imports from before 聴解 was read kept every listening block as an untyped `listening`
+   * draft with no questions. Read those again from their stored text (rules only, no AI):
+   * the 問題 type, its questions and options. Only open drafts nobody has edited.
+   */
+  async rereadListening(): Promise<number> {
+    const old = await this.drafts
+      .find({ mondai: "listening", status: { $in: ["needs_review", "error"] }, "parsed.questions.0": { $exists: false } })
+      .limit(500)
+      .exec();
+    for (const doc of old) {
+      const head = doc.rawText.split("\n").slice(0, 3).join(" ");
+      doc.mondai = listeningMondai(`${doc.instruction} ${head}`, doc.level, mondaiNumberOf(doc.instruction)).mondai as ExamImportDraft["mondai"];
+      // Their key, if any, was matched by 問題 number to the 文字・語彙 part — not theirs.
+      doc.answers = [];
+      readListening(doc, doc.level, 0);
+      await doc.save();
+    }
+    if (old.length > 0) this.logger.log(`exam-import: re-read ${old.length} listening draft(s)`);
+    return old.length;
   }
 
   /**
@@ -235,12 +337,12 @@ export class ExamImportService implements OnApplicationBootstrap {
    */
   private async readPages(id: string, pdf: ProsePdf): Promise<boolean> {
     const total = pdf.numPages;
-    const read = async (n: number): Promise<boolean> => {
+    const read = async (n: number): Promise<true | OcrFailedError> => {
       let text: string;
       try {
         text = await pdf.pageText(n);
       } catch (err) {
-        if (err instanceof OcrFailedError) return false;
+        if (err instanceof OcrFailedError) return err;
         throw err;
       }
       await this.log(id, text ? "info" : "warn", text ? `Trang ${n}/${total}: ${text.length} ký tự` : `Trang ${n}/${total}: trống`);
@@ -255,27 +357,40 @@ export class ExamImportService implements OnApplicationBootstrap {
     for (let n = 1; n <= total; n += 1) {
       if (await this.isCancelled(id)) return false;
       if (await this.pageExists(id, n)) continue; // already checkpointed
-      if (await read(n)) inARow = 0;
+      const r = await read(n);
+      if (r === true) inARow = 0;
       else {
         if (await this.isCancelled(id)) return false;
         failed.push(n);
-        inARow += 1;
-        await this.log(id, "warn", `Trang ${n}/${total}: AI chưa đọc được — sẽ thử lại sau`);
-        if (inARow >= MAX_UNREAD_IN_A_ROW) {
-          throw new Error(`AI đọc ảnh không phản hồi ở ${inARow} trang liên tiếp (đến trang ${n}) — kiểm tra dịch vụ AI rồi nhập lại`);
+        if (r.refused) {
+          // A page the AI will not copy (copyright filter) is not an outage: it does not stop the job.
+          await this.log(id, "warn", `Trang ${n}/${total}: AI từ chối chép trang này (${r.refused.slice(0, 160)}) — sẽ thử lại sau`);
+        } else {
+          inARow += 1;
+          await this.log(id, "warn", `Trang ${n}/${total}: AI chưa đọc được — sẽ thử lại sau`);
+          if (inARow >= MAX_UNREAD_IN_A_ROW) {
+            throw new Error(`AI đọc ảnh không phản hồi ở ${inARow} trang liên tiếp (đến trang ${n}) — kiểm tra dịch vụ AI rồi nhập lại`);
+          }
         }
       }
       await this.jobs.updateOne({ _id: id }, { $set: { pagesDone: n } }).exec().catch(() => undefined);
     }
 
     const lost: number[] = [];
+    const refused: number[] = [];
     for (const n of failed) {
       if (await this.isCancelled(id)) return false;
-      if (!(await read(n))) lost.push(n);
+      const r = await read(n);
+      if (r === true) continue;
+      lost.push(n);
+      if (r.refused) refused.push(n);
     }
     if (await this.isCancelled(id)) return false;
     if (lost.length > 0) {
-      await this.log(id, "error", `${lost.length} trang AI không đọc được, thiếu trong bản nháp: ${lost.join(", ")}`);
+      const why = refused.length > 0
+        ? ` (AI từ chối chép vì bản quyền: ${refused.join(", ")} — thêm/xếp trước một dịch vụ đọc ảnh của nhà cung cấp khác ở /admin/ai, hoặc nhập tay các khối đó)`
+        : "";
+      await this.log(id, "error", `${lost.length} trang AI không đọc được, thiếu trong bản nháp: ${lost.join(", ")}${why}`);
     }
     return true;
   }
@@ -300,9 +415,7 @@ export class ExamImportService implements OnApplicationBootstrap {
         return;
       }
       if (seed) {
-        const pdf = await openProsePdf(seed.buffer, (png, n) =>
-          retryRounds(() => this.ai.ocrExamPageText(png, n), this.retryDelaysMs, () => this.isCancelled(id)),
-        );
+        const pdf = await openProsePdf(seed.buffer, this.ocrPage(id));
         try {
           numPages = pdf.numPages;
           await this.jobs.updateOne({ _id: id }, { $set: { numPages } }).exec();
@@ -322,20 +435,14 @@ export class ExamImportService implements OnApplicationBootstrap {
       const pageTexts = new Map(pageRows.map((p) => [p.n, p.text]));
       const pagesArr: string[] = [];
       for (let n = 1; n <= (numPages || pageRows.length || 1); n += 1) pagesArr.push(pageTexts.get(n) ?? "");
-      const { blocks, answerKey, sheetKeys } = segmentBlocks(pagesArr, seed?.level);
+      // Pages no service could read: a block next to one may be missing questions or its passage.
+      const unread = pagesArr.flatMap((_, i) => (pageTexts.has(i + 1) ? [] : [i + 1]));
+      const { blocks, answerKey, sheetKeys } = segmentBlocks(pagesArr, seed?.level ?? job.level);
 
       // 3. Structure each block, write its draft. A block that fails
       //    validation is kept as `error` — it never fails the whole job.
       const keyBlocks = splitCompactKey(answerKey);
-      const keyFor = (block: Block): AnswerKeyBlock | null => {
-        if (block.key) return block.key;
-        const token = blockMarker(block.instruction);
-        // A collection PDF carries one answer sheet per paper: match by paper + 問題 number.
-        const sheet = sheetKeys[block.sitting];
-        if (sheet) return sheet.find((k) => keyMarker(k.heading) === token) ?? null;
-        const hit = keyBlocks.find((k) => keyMarker(k.heading) === token);
-        return hit ?? keyBlocks[0] ?? null;
-      };
+      const keyFor = (block: Block) => keyForBlock(block, sheetKeys[block.sitting], keyBlocks, seed?.level ?? job.level);
       let ok = 0;
       let bad = 0;
       await this.jobs.updateOne({ _id: id }, { $set: { blocksFound: blocks.length } }).exec();
@@ -362,6 +469,7 @@ export class ExamImportService implements OnApplicationBootstrap {
           pageRows
             .filter((p) => p.n >= (block.pageFrom ?? 0) && p.n <= (block.pageTo ?? block.pageFrom ?? 0))
             .flatMap((p) => (p.marks ?? []) as Mark[]),
+          unread,
         );
         if (draft.status === "error") bad += 1;
         else ok += 1;
@@ -411,6 +519,7 @@ export class ExamImportService implements OnApplicationBootstrap {
     block: { instruction: string; rawText: string; mondai: string | null; sectionHint: string; sitting: string; pageFrom?: number; pageTo?: number },
     keyBlock: AnswerKeyBlock | null,
     marks: Mark[] = [],
+    unread: number[] = [],
   ): Promise<{ status: string }> {
     const doc: ExamImportDraftDocument = await this.drafts.create({
       jobId,
@@ -432,13 +541,31 @@ export class ExamImportService implements OnApplicationBootstrap {
       blockIndex,
     } as unknown as Partial<ExamImportDraft>);
 
-    if (block.mondai === "listening" || block.mondai === null) {
-      // Listening has no text to structure; an unknown form is left for a
-      // human. Both are kept, not AI-processed.
-      if (block.mondai === null) doc.status = "error";
+    if (isListeningMondai(block.mondai)) {
+      // 聴解 prints only `N番` and some options: read by rules, never the AI.
+      readListening(doc, level, keyBlock?.questionCount ?? 0);
+      // Best effort: a picture that cannot be cut is left for the reviewer to cut by hand.
+      await this.addPictures(doc, jobId).catch((err) => this.logger.warn(`exam-import block ${blockIndex}: pictures not cut: ${(err as Error).message}`));
       await doc.save();
       return { status: doc.status };
     }
+    if (block.mondai === null) {
+      // An unknown form is left for a human (kept, not AI-processed).
+      doc.status = "error";
+      await doc.save();
+      return { status: doc.status };
+    }
+
+    // The printed key says how many questions the block has: a read with another count lost or invented some.
+    const printed = keyBlock?.questionCount ?? 0;
+    const countIssue = (p: ParsedBlock | null): string | null =>
+      p && printed > 0 && p.questions.length !== printed ? `số câu đọc được (${p.questions.length}) khác bảng đáp án (${printed})` : null;
+    // A page next to the block that no service could read: unless the key confirms the count, say so.
+    const gap = unread.filter((n) => n >= (block.pageFrom ?? 0) && n <= (block.pageTo ?? block.pageFrom ?? 0) + 1);
+    const gapIssue = (p: ParsedBlock | null): string[] =>
+      gap.length > 0 && !(p && printed > 0 && p.questions.length === printed)
+        ? [`trang ${gap.join(", ")}: AI chưa đọc được trang này — khối có thể thiếu câu hoặc bài đọc, đối chiếu ảnh trang PDF`]
+        : [];
 
     // 1. Rules first: the sentence-level forms read exactly, with no AI.
     const expected = optionCountsOf(block.mondai);
@@ -446,16 +573,14 @@ export class ExamImportService implements OnApplicationBootstrap {
     let ruleIssues: string[] = [];
     if (byRules) {
       ruleIssues = validateParsed(byRules, block.rawText, expected).map((i) => `${i.path}: ${i.message}`);
-      const printed = keyBlock?.questionCount ?? 0;
-      if (printed > 0 && byRules.questions.length !== printed) {
-        ruleIssues.push(`số câu đọc được (${byRules.questions.length}) khác bảng đáp án (${printed})`);
-      }
+      const c = countIssue(byRules);
+      if (c) ruleIssues.push(c);
       if (ruleIssues.length === 0) {
         doc.parsed = markCloze(byRules);
         withMarks(doc, marks);
         doc.parsedBy = "rules";
-        doc.issues = [];
-        doc.status = "needs_review";
+        doc.issues = gapIssue(byRules);
+        doc.status = doc.issues.length > 0 ? "error" : "needs_review";
         await doc.save();
         return { status: doc.status };
       }
@@ -469,7 +594,7 @@ export class ExamImportService implements OnApplicationBootstrap {
       async () => {
         const r = await this.ai.completeAny(prompt, { temperature: 0, purpose: "exam-import", task: "ocr-exam", words: [`Tách khối ${blockIndex + 1}`] }, (text) => {
           const value = parseAiJson(text);
-          return { value, ok: validateParsed(value, block.rawText, expected).length === 0 };
+          return { value, ok: validateParsed(value, block.rawText, expected).length === 0 && !countIssue(value) };
         });
         aiError = r.error ?? aiError;
         return r.answered ? r : null;
@@ -486,6 +611,8 @@ export class ExamImportService implements OnApplicationBootstrap {
     }
 
     let issues = validateParsed(parsed, block.rawText, expected).map((i) => `${i.path}: ${i.message}`);
+    const aiCount = issues.length === 0 ? countIssue(parsed) : null;
+    if (aiCount) issues.push(aiCount);
     if (parsed && issues.length === 0) {
       doc.parsedBy = "ai";
     } else if (byRules) {
@@ -504,8 +631,8 @@ export class ExamImportService implements OnApplicationBootstrap {
     });
     doc.parsed = parsed ?? undefined;
     withMarks(doc, marks);
-    doc.issues = issues;
-    doc.status = issues.length > 0 ? "error" : "needs_review";
+    doc.issues = [...issues, ...gapIssue(parsed)];
+    doc.status = doc.issues.length > 0 ? "error" : "needs_review";
     await doc.save();
     return { status: doc.status };
   }
@@ -570,9 +697,7 @@ export class ExamImportService implements OnApplicationBootstrap {
       }
       await this.log(jobId, "info", `Bổ sung furigana, gạch chân: ${changed}/${docs.length - scanned.length} bản nháp thay đổi`);
       if (scanned.length > 0) {
-        const ocr = await openProsePdf(buffer, (png, n) =>
-          retryRounds(() => this.ai.ocrExamPageText(png, n), this.retryDelaysMs),
-        );
+        const ocr = await openProsePdf(buffer, this.ocrPage());
         background = true;
         void this.markScans(jobId, ocr, scanned)
           .catch((err) => this.log(jobId, "error", `Bổ sung gạch chân bị dừng: ${(err as Error).message}`))
@@ -615,6 +740,11 @@ export class ExamImportService implements OnApplicationBootstrap {
             } catch (err) {
               if (!(err instanceof OcrFailedError)) throw err;
               page = [];
+              if (err.refused) {
+                await this.log(jobId, "warn", `Trang ${n}: AI từ chối chép trang này`);
+                read.set(n, page);
+                continue;
+              }
               unreadInARow += 1;
               await this.log(jobId, "warn", `Trang ${n}: AI chưa đọc được`);
               if (unreadInARow >= MAX_UNREAD_IN_A_ROW) {
@@ -683,12 +813,22 @@ export class ExamImportService implements OnApplicationBootstrap {
 
     const rights = doc.rights;
     const sourceRef = { file: doc.file || doc.jobId, sitting: doc.sitting, no: doc.mondai };
+    // A 聴解 question prints no words of its own (`1番`, options "1" "2" "3"), the same in every
+    // paper: it is told apart by the paper and its place in it, not by its text.
+    const listening = isListeningMondai(doc.mondai);
+    const where = `${sourceRef.file}|${doc.sitting}|${doc.mondai}`;
+    const blockAudio = listening && doc.audio?.assetId ? doc.audio : null;
+    const stimuliIn = [...(parsed.stimuli ?? [])];
+    // The block's recording plays once above its questions: a listening "passage" that carries it.
+    if (blockAudio) stimuliIn.push({ key: BLOCK_TRACK, kind: "listening", body: stripFormat(doc.instruction).trim() || "聴解" });
 
     // 1. The shared passages, idempotent by content hash.
     const stimIds = new Map<string, string>();
     let stimuliWritten = 0;
-    for (const st of parsed.stimuli ?? []) {
-      const hash = contentHashOf(st.body, st.bodyB ? [st.bodyB] : []);
+    for (const st of stimuliIn) {
+      const hash = listening
+        ? contentHashOf(st.body, [where, st.key, blockAudio?.assetId ?? ""])
+        : contentHashOf(st.body, st.bodyB ? [st.bodyB] : []);
       const existing = await this.stimuli.findOne({ contentHash: hash }).select("_id").lean().exec();
       if (existing) {
         stimIds.set(st.key, String(existing._id));
@@ -704,7 +844,8 @@ export class ExamImportService implements OnApplicationBootstrap {
           body: st.body,
           bodyB: st.bodyB || undefined,
           notes: st.notes || undefined,
-          questionCount: parsed.questions.filter((q) => q.stimulusKey === st.key).length,
+          questionCount: parsed.questions.filter((q) => (q.stimulusKey ?? (blockAudio ? BLOCK_TRACK : undefined)) === st.key).length,
+          ...(blockAudio ? { audio: blockAudio } : {}),
           rights,
           sourceRef,
           contentHash: hash,
@@ -722,7 +863,8 @@ export class ExamImportService implements OnApplicationBootstrap {
       const answerNo = answers[q.no - 1];
       const printedNo = printedFilled?.[q.no - 1] ?? q.printedNo;
       const answerText = q.options[answerNo - 1] ?? "";
-      const hash = contentHashOf(q.prompt, q.options);
+      const hash = listening ? contentHashOf(`${where}|${q.no}|${q.prompt}`, q.options) : contentHashOf(q.prompt, q.options);
+      const stimulusKey = q.stimulusKey ?? (blockAudio ? BLOCK_TRACK : undefined);
       const exists = await this.bank.findOne({ contentHash: hash }).select("_id").lean().exec();
       if (exists) continue;
       await this.bank
@@ -738,8 +880,10 @@ export class ExamImportService implements OnApplicationBootstrap {
           level: doc.level,
           mondai: doc.mondai ?? undefined,
           section: (doc.section as "vocab") ?? undefined,
-          stimulus: q.stimulusKey ? stimIds.get(q.stimulusKey) ?? null : null,
+          stimulus: stimulusKey ? stimIds.get(stimulusKey) ?? null : null,
           groupOrder: q.groupOrder,
+          ...(q.audio?.assetId ? { audio: q.audio } : {}),
+          ...(q.image ? { image: q.image } : {}),
           printedNo,
           points: 1,
           rights,
@@ -815,7 +959,10 @@ export class ExamImportService implements OnApplicationBootstrap {
     }
     const b = (body ?? {}) as { instruction?: unknown; stimuli?: unknown; questions?: unknown; answers?: unknown };
     const text = (v: unknown, max: number): string => (typeof v === "string" ? v.replace(/\r\n?/g, "\n").slice(0, max) : "");
-    const kinds = ["passage", "cloze", "notice", "pair"];
+    const kinds = ["passage", "cloze", "notice", "pair", "listening"];
+    // The editor does not carry the questions' clips: keep each with its question (same prompt — `2番` —, else same place).
+    const before = doc.parsed?.questions ?? [];
+    const earlier = (prompt: string, i: number) => before.find((q) => q.prompt === prompt) ?? before[i];
 
     const stimuli: ParsedBlock["stimuli"] = [];
     for (const raw of Array.isArray(b.stimuli) ? b.stimuli.slice(0, 20) : []) {
@@ -857,6 +1004,9 @@ export class ExamImportService implements OnApplicationBootstrap {
         q.groupOrder = (order.get(key) ?? 0) + 1;
         order.set(key, q.groupOrder);
       }
+      const was = earlier(prompt, questions.length);
+      if (was?.audio) q.audio = was.audio;
+      if (was?.image) q.image = was.image;
       questions.push(q);
     }
     if (questions.length === 0) throw new BadRequestException("Cần ít nhất một câu hỏi");
@@ -874,6 +1024,157 @@ export class ExamImportService implements OnApplicationBootstrap {
     doc.status = "needs_review";
     await doc.save();
     return doc.toObject() as unknown as Record<string, unknown>;
+  }
+
+  /**
+   * 聴解 recordings of an open listening draft. `audio` = the block's file (null clears it);
+   * `questions[i]` = question i's own clip — its own file, or a stretch of the block's
+   * (null clears it; a missing entry is left as it is). `wholePart`: the block's file is the
+   * whole listening part — give it to every other open listening block of the paper that has none.
+   */
+  async setDraftAudio(
+    caller: AuthUser,
+    draftId: string,
+    body: unknown,
+  ): Promise<{ draft: Record<string, unknown>; applied: number }> {
+    const doc = await this.drafts.findById(draftId).exec();
+    if (!doc) throw new NotFoundException("Import draft not found");
+    if (!isListeningMondai(doc.mondai)) throw new BadRequestException("Chỉ khối nghe hiểu mới gắn được file nghe");
+    if (doc.status !== "needs_review" && doc.status !== "error") {
+      throw new BadRequestException("Chỉ sửa được khối chưa xuất bản / chưa loại");
+    }
+    const b = (body ?? {}) as { audio?: unknown; questions?: unknown; wholePart?: unknown };
+    const ids = new Set<string>();
+    const clip = (v: unknown, at: string): DraftAudio | null => {
+      if (v === null) return null;
+      const o = (v ?? {}) as Record<string, unknown>;
+      const assetId = typeof o.assetId === "string" ? o.assetId : "";
+      if (!/^[a-f0-9]{24}$/i.test(assetId)) throw new BadRequestException(`${at}: thiếu file nghe`);
+      const out: DraftAudio = { assetId };
+      for (const k of ["startSec", "endSec"] as const) {
+        if (o[k] === undefined || o[k] === null || o[k] === "") continue;
+        const t = Number(o[k]);
+        if (!Number.isFinite(t) || t < 0 || t > 6 * 3600) throw new BadRequestException(`${at}: thời điểm không hợp lệ`);
+        out[k] = Math.round(t * 10) / 10;
+      }
+      if (out.startSec !== undefined && out.endSec !== undefined && out.endSec <= out.startSec) {
+        throw new BadRequestException(`${at}: thời điểm kết thúc phải sau thời điểm bắt đầu`);
+      }
+      ids.add(assetId);
+      return out;
+    };
+
+    const block = b.audio === undefined ? undefined : clip(b.audio, "File của khối");
+    const questions = doc.parsed?.questions ?? [];
+    const perQuestion = Array.isArray(b.questions) ? b.questions.slice(0, questions.length).map((v, i) => (v === undefined ? undefined : clip(v, `Câu ${questions[i].prompt}`))) : [];
+    if (ids.size > 0) {
+      const found = await this.audioAssets.countDocuments({ _id: { $in: [...ids] } }).exec();
+      if (found !== ids.size) throw new BadRequestException("Không tìm thấy file nghe — tải lên lại");
+    }
+
+    if (block !== undefined) doc.audio = block;
+    perQuestion.forEach((a, i) => {
+      if (a === undefined) return;
+      if (a) questions[i].audio = a;
+      else delete questions[i].audio;
+    });
+    if (perQuestion.length > 0) doc.markModified("parsed");
+    await doc.save();
+
+    let applied = 0;
+    if (b.wholePart === true && block) {
+      const r = await this.drafts
+        .updateMany(
+          {
+            _id: { $ne: doc._id },
+            jobId: doc.jobId,
+            sitting: doc.sitting,
+            section: "listening",
+            status: { $in: ["needs_review", "error"] },
+            $or: [{ audio: null }, { audio: { $exists: false } }],
+          },
+          { $set: { audio: { assetId: block.assetId } } },
+        )
+        .exec();
+      applied = r.modifiedCount;
+    }
+    return { draft: doc.toObject() as unknown as Record<string, unknown>, applied };
+  }
+
+  /**
+   * Cut the pictures of a listening draft's questions out of its pages. Only a PDF with a text
+   * layer has them as separate images (each under its `N番`); a scan finds none. A question
+   * that already has a picture keeps it. How many got one.
+   */
+  private async addPictures(doc: ExamImportDraftDocument, jobId: string): Promise<number> {
+    const questions = doc.parsed?.questions ?? [];
+    if (!isListeningMondai(doc.mondai) || questions.length === 0 || doc.pageFrom == null) return 0;
+    const path = join(this.dir, `${jobId}.pdf`);
+    const size = (await stat(path).catch(() => null))?.size ?? 0;
+    if (size === 0 || size > MAX_PICTURE_PDF_BYTES) return 0;
+    const pageTo = Math.max(doc.pageFrom, doc.pageTo ?? doc.pageFrom);
+    const pages = Array.from({ length: pageTo - doc.pageFrom + 1 }, (_, i) => doc.pageFrom! + i);
+    const crops = picturesOfBlock(await readLayouts(await readFile(path), pages), {
+      pageFrom: doc.pageFrom,
+      pageTo,
+      mondaiNo: mondaiNumberOf(doc.instruction),
+    });
+    let found = 0;
+    for (const q of questions) {
+      const c = q.printedNo != null ? crops.get(q.printedNo) : undefined;
+      if (!c || q.image) continue;
+      q.image = await this.images.save(await this.images.crop(await this.pageImage(jobId, c.page), c.rect));
+      found += 1;
+    }
+    if (found > 0) {
+      doc.markModified("parsed");
+      settlePictureIssues(doc);
+    }
+    return found;
+  }
+
+  /** An open listening draft, for its pictures. */
+  private async openListeningDraft(draftId: string): Promise<ExamImportDraftDocument> {
+    const doc = await this.drafts.findById(draftId).exec();
+    if (!doc) throw new NotFoundException("Import draft not found");
+    if (!isListeningMondai(doc.mondai)) throw new BadRequestException("Chỉ khối nghe hiểu mới gắn hình");
+    if (doc.status !== "needs_review" && doc.status !== "error") {
+      throw new BadRequestException("Chỉ sửa được khối chưa xuất bản / chưa loại");
+    }
+    return doc;
+  }
+
+  /** Cut an open listening draft's pictures from its PDF again (questions with one keep it). */
+  async autoPictures(caller: AuthUser, draftId: string): Promise<{ found: number; draft: Record<string, unknown> }> {
+    const doc = await this.openListeningDraft(draftId);
+    if (!(await stat(join(this.dir, `${doc.jobId}.pdf`)).catch(() => null))) {
+      throw new NotFoundException("Không còn file PDF của lần nhập này — nhập lại PDF, hoặc cắt hình bằng tay");
+    }
+    const found = await this.addPictures(doc, doc.jobId);
+    await doc.save();
+    return { found, draft: doc.toObject() as unknown as Record<string, unknown> };
+  }
+
+  /**
+   * One question's picture: `{question, page, rect}` cuts the region `rect` (fractions of the
+   * page, 0–1) out of that page of the PDF; `{question, clear: true}` removes it.
+   */
+  async setPicture(caller: AuthUser, draftId: string, body: unknown): Promise<{ draft: Record<string, unknown> }> {
+    const doc = await this.openListeningDraft(draftId);
+    const b = (body ?? {}) as { question?: unknown; page?: unknown; rect?: unknown; clear?: unknown };
+    const q = doc.parsed?.questions[Number(b.question)];
+    if (!Number.isInteger(Number(b.question)) || !q) throw new BadRequestException("Không có câu này trong khối");
+    if (b.clear === true) {
+      delete q.image;
+    } else {
+      const r = (b.rect ?? {}) as Record<string, unknown>;
+      const rect = { x: Number(r.x), y: Number(r.y), w: Number(r.w), h: Number(r.h) };
+      q.image = await this.images.save(await this.images.crop(await this.pageImage(doc.jobId, Number(b.page)), rect));
+    }
+    doc.markModified("parsed");
+    settlePictureIssues(doc);
+    await doc.save();
+    return { draft: doc.toObject() as unknown as Record<string, unknown> };
   }
 
   /**

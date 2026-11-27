@@ -15,11 +15,18 @@ import { normalizeInstruction } from "../mondai.js";
 
 export interface ParsedStimulus {
   key: string;
-  kind: "passage" | "cloze" | "notice" | "pair";
+  kind: "passage" | "cloze" | "notice" | "pair" | "listening";
   title?: string;
   body: string;
   bodyB?: string;
   notes?: string;
+}
+
+/** A listening clip: an uploaded `exam_audio_assets` file and, optionally, the stretch of it to play. */
+export interface DraftAudio {
+  assetId: string;
+  startSec?: number;
+  endSec?: number;
 }
 
 export interface ParsedQuestion {
@@ -33,6 +40,10 @@ export interface ParsedQuestion {
   stimulusKey?: string;
   /** Position in the passage / cloze blank number. */
   groupOrder?: number;
+  /** 聴解: this question's own clip (its own file, or a stretch of the block's file). */
+  audio?: DraftAudio;
+  /** The picture printed with the question, cut from the page (an `ExamImageService` id). */
+  image?: string;
 }
 
 export interface ParsedBlock {
@@ -80,10 +91,16 @@ export function structurePrompt(block: { instruction: string; rawText: string; m
  * when the model re-orders option text that only ever appeared per-line.
  */
 export function presentInBlock(rawText: string, s: string): boolean {
-  const n = normalizeInstruction(s);
+  const n = unboxed(normalizeInstruction(s));
   if (!n) return true; // empty strings are fine
-  return normalizeInstruction(rawText).includes(n);
+  return unboxed(normalizeInstruction(rawText)).includes(n);
 }
+
+/**
+ * A cloze blank is a boxed number on the paper; the text layer keeps `19`, `(19)` or `[19]`, and
+ * the AI is asked to write `[19]`. Compare the number alone.
+ */
+const unboxed = (s: string): string => s.replace(/[[(【](\d{1,3})[\])】]/g, "$1");
 
 export interface ValidationIssue {
   path: string;

@@ -46,3 +46,47 @@ describe("AiExampleService.completeAny", () => {
     await expect(serviceWith({}).ask()).resolves.toMatchObject({ answered: false });
   });
 });
+
+describe("AiExampleService.ocrExamPageText — a refusal is not a page", () => {
+  const refusal = "I cannot transcribe this page verbatim because it is from an official JLPT exam paper.";
+  function ocrWith(answers: { id: string; provider: string; text: string | Error }[]) {
+    const asked: string[] = [];
+    const svc = Object.create(AiExampleService.prototype) as Record<string, unknown>;
+    svc.services = {
+      available: async () => answers.map((a) => ({ id: a.id, provider: { id: a.provider, baseUrl: `https://${a.provider}` } })),
+      reportOk: vi.fn(),
+      reportFailure: vi.fn(),
+    };
+    svc.isTranslator = () => false;
+    svc.pace = async () => undefined;
+    svc.call = async (s: { id: string }) => {
+      asked.push(s.id);
+      const a = answers.find((x) => x.id === s.id)!.text;
+      if (a instanceof Error) throw a;
+      return a;
+    };
+    return { ocr: () => (svc as unknown as AiExampleService).ocrExamPageText(Buffer.from(""), 1), asked };
+  }
+
+  it("skips the refusing provider's other models and reads the page with another provider", async () => {
+    const h = ocrWith([
+      { id: "neon", provider: "antigravity", text: refusal },
+      { id: "argon", provider: "antigravity", text: "問題1 (never asked)" },
+      { id: "opus", provider: "custom", text: "問題1 これからも様々な国との相互理解を深めていこうと思う。" },
+    ]);
+    await expect(h.ocr()).resolves.toBe("問題1 これからも様々な国との相互理解を深めていこうと思う。");
+    expect(h.asked).toEqual(["neon", "opus"]);
+  });
+
+  it("reports the page as refused (not as text, not as an outage) when every provider refuses", async () => {
+    const h = ocrWith([
+      { id: "neon", provider: "antigravity", text: refusal },
+      { id: "flash", provider: "gemini", text: `Sorry, ${refusal}` },
+    ]);
+    await expect(h.ocr()).resolves.toEqual({ refused: `Sorry, ${refusal}` });
+  });
+
+  it("still says nobody answered when the services only failed", async () => {
+    await expect(ocrWith([{ id: "a", provider: "x", text: new Error("HTTP 503") }]).ocr()).resolves.toBeNull();
+  });
+});

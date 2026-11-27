@@ -153,3 +153,12 @@ describe("parseAiJson: null stimulusKey", () => {
     expect(validateParsed(parsed, "A a b c d").map((i) => i.path)).not.toContain("questions[0].stimulusKey");
   });
 });
+
+describe("presentInBlock — cloze blanks", () => {
+  it("accepts the [n] the AI is asked to write for a blank the text layer kept as a bare number", () => {
+    const raw = "日本に来る前に聞きました。\n19 のは工場です。\n見学に 22。";
+    expect(presentInBlock(raw, "[19] のは工場です。")).toBe(true);
+    expect(presentInBlock(raw, "見学に [22]。")).toBe(true);
+    expect(presentInBlock(raw, "見学に [23]。")).toBe(false);
+  });
+});

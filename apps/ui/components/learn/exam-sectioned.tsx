@@ -3,7 +3,7 @@
 import { useMemo, useState, type Dispatch, type SetStateAction } from "react";
 import { FormattedText, PassageText } from "../rich-text";
 import { type StarControls, starParts, StarSentence } from "../star-sentence";
-import { audioSrc, type ExamResult, type ExamSit, type SitQuestion, type Stimulus } from "./exam-types";
+import { audioSrc, imageSrc, type ExamResult, type ExamSit, type SitQuestion, type Stimulus } from "./exam-types";
 
 /**
  * JLPT sectional sitting (NP-409): tabs per part (文字・語彙 / 文法 / 読解 / 聴解),
@@ -37,7 +37,17 @@ export const MONDAI_LABELS: Record<string, string> = {
   "reading-thematic": "Đọc hiểu chủ đề",
   "info-retrieval": "Tìm thông tin",
   listening: "Nghe hiểu",
+  "listening-task": "Nghe hiểu chủ đề (課題理解)",
+  "listening-point": "Nghe hiểu điểm chính (ポイント理解)",
+  "listening-summary": "Nghe hiểu khái quát (概要理解)",
+  "listening-utterance": "Diễn đạt bằng lời (発話表現)",
+  "listening-quick": "Phản xạ nhanh (即時応答)",
+  "listening-integrated": "Nghe hiểu tổng hợp (統合理解)",
 };
+
+const isListening = (m?: string) => m === "listening" || !!m?.startsWith("listening-");
+/** An option that is only heard is stored as its own number: show just the number. */
+const isHeardOption = (text: string, i: number) => text.trim() === String(i + 1);
 
 const sectionTitle = (key: string, title?: string) => title ?? SECTION_TITLES[key] ?? key;
 const mondaiLabel = (m?: string) => (m ? (MONDAI_LABELS[m] ?? m) : "Câu hỏi");
@@ -115,8 +125,10 @@ function QuestionCard({
   onFlag: () => void;
 }) {
   const star = q.mondai === "star-order" ? starParts(q.prompt) : null;
+  // Options only heard (or numbered on the picture) are just their numbers: one row of buttons.
+  const heardOnly = isListening(q.mondai) && q.options.every((o, i) => isHeardOption(o, i));
   const choices = (controls?: StarControls) => (
-    <div role="radiogroup" aria-label={`Câu ${no}`} className="mt-3 grid gap-2">
+    <div role="radiogroup" aria-label={`Câu ${no}`} className={`mt-3 grid gap-2 ${heardOnly ? "grid-cols-3 sm:grid-cols-4" : ""}`}>
       {q.options.map((opt, idx) => {
         const on = picked === idx;
         return (
@@ -142,12 +154,16 @@ function QuestionCard({
             >
               {idx + 1}
             </span>
-            <span
-              className={"min-w-0 flex-1 break-words " + (controls ? "font-medium" : "")}
-              lang="ja"
-            >
-              <FormattedText text={opt} />
-            </span>
+            {isHeardOption(opt, idx) && isListening(q.mondai) ? (
+              <span className="min-w-0 flex-1" />
+            ) : (
+              <span
+                className={"min-w-0 flex-1 break-words " + (controls ? "font-medium" : "")}
+                lang="ja"
+              >
+                <FormattedText text={opt} />
+              </span>
+            )}
           </button>
         );
       })}
@@ -181,11 +197,15 @@ function QuestionCard({
       {q.sub && <p className="mt-1 text-sm text-[var(--muted-foreground)]">{q.sub}</p>}
       {q.audio ? (
         <audio controls preload="none" src={audioSrc(q.audio)} className="mt-3 w-full" />
-      ) : q.mondai === "listening" && !q.stimulusId ? (
+      ) : isListening(q.mondai) && !q.stimulusId ? (
         <p className="mt-3 rounded-lg bg-[var(--layer)] px-3 py-2 text-sm text-[var(--muted-foreground)]">
           Âm thanh của câu này chưa có.
         </p>
       ) : null}
+      {q.image && (
+        // eslint-disable-next-line @next/next/no-img-element -- a same-origin API picture, not a static asset
+        <img src={imageSrc(q.image)} alt={`Hình của câu ${no}`} className="mt-3 h-auto max-h-96 w-auto max-w-full rounded-lg bg-white" />
+      )}
       {star ? (
         <div className="mt-3 text-lg text-[var(--foreground)]">
           <StarSentence parts={star} options={q.options} picked={picked ?? null} onPick={onPick}>

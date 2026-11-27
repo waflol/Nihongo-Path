@@ -120,3 +120,144 @@ describe("collection PDF (many papers + per-paper answer sheets)", () => {
     expect(sheetKeys["N2-1"][0]).toMatchObject({ heading: "問題1", questionCount: 5, answers: [2, 4, 2, 3, 4] });
   });
 });
+
+describe("official collection with each paper's own answer pages (`…N2 答案`)", () => {
+  const paper1 = [
+    "2010年7月新日本語能力試験N2",
+    "問題1 ___の言葉の読み方として最もよいものを、1・2・3・4から一つ選びなさい。",
+    "[1] 花を見る。",
+    "1 はな 2 は 3 ひ 4 み",
+    "問題10 次の(1)から(5)の文章を読んで、後の問いに対する答えとして最もよいものを、1・2・3・4から一つ選びなさい。",
+    "(1)",
+    "2010年6月28日",
+    "社員各位　来月の会議についてお知らせします。",
+    "55 この文書で一番伝えたいことは何か。",
+    "1 会議 2 日程 3 場所 4 時間",
+  ].join("\n");
+  const key1 = ["2010年7月新日本語能力試験N2 答案", "文字・語彙", "問題1", "1 2 3 4 5", "3 1 2 4 2", "問題2", "6 7 8 9 10", "4 2 3 1 3"].join("\n");
+  const key1More = ["淘宝店铺：约翰杂货铺", "問題 10", "55 56 57 58 59", "2 3 4 2 1"].join("\n"); // runs on, no header
+  // The next paper's first page was not read (no header): it is named by the key that closes it.
+  const paper2 = [
+    "問題6 次の言葉の使い方として最もよいものを、1・2・3・4から一つ選びなさい。",
+    "28 深刻",
+    "1 あ 2 い 3 う 4 え",
+    "問題7 次の文の( )に入れるのに最もよいものを、1・2・3・4から一つ選びなさい。",
+    "33 このレストランは、客の予算( )コースを用意してくれる。",
+    "1 に比べて 2 に先立って 3 に応じて 4 に向けて",
+  ].join("\n");
+  const key2 = ["2011年7月新日本語能力試験N2答案", "問題6", "28 29 30 31 32", "4 2 3 2 1", "問題7", "33 34", "3 1"].join("\n");
+  const seg = segmentBlocks([paper1, key1, key1More, paper2, key2], "N2");
+
+  it("keeps the answer pages out of the blocks", () => {
+    expect(seg.blocks.map((b) => [b.sitting, b.instruction.slice(0, 5)])).toEqual([
+      ["2010-07", "問題1 _"],
+      ["2010-07", "問題10 "],
+      ["2011-07", "問題6 次"],
+      ["2011-07", "問題7 次"],
+    ]);
+  });
+
+  it("reads one key per paper, including the page that runs on without a header", () => {
+    expect(seg.sheetKeys["2010-07"].map((k) => [k.heading, k.questionCount, k.answers])).toEqual([
+      ["問題1", 5, [3, 1, 2, 4, 2]],
+      ["問題2", 5, [4, 2, 3, 1, 3]],
+      ["問題10", 5, [2, 3, 4, 2, 1]],
+    ]);
+    expect(seg.sheetKeys["2011-07"][0]).toMatchObject({ heading: "問題6", answers: [4, 2, 3, 2, 1] });
+  });
+
+  it("does not take a dated line in a passage for a new paper (and keeps the lines after it)", () => {
+    expect(Object.keys(seg.sheetKeys).sort()).toEqual(["2010-07", "2011-07"]);
+    expect(seg.blocks[1].rawText).toContain("2010年6月28日");
+    expect(seg.blocks[1].rawText).toContain("55 この文書で一番伝えたいことは何か。");
+  });
+
+  it("types the N2 問題7 blank by its number (same instruction as 問題4 文脈規定)", () => {
+    expect(seg.blocks[3].mondai).toBe("grammar-form");
+  });
+});
+
+describe("segmentBlocks — the 聴解 part of a paper", () => {
+  const written = ["JLPT・N2・12/2025", "問題 1 の言葉の読み方として最もよいものを、1・2・3・4から一つ選びなさい。", "1 雨が降る。", "1 あめ 2 あま 3 う 4 ゆ"].join("\n");
+  const listening = [
+    "JLPT・N2・12/2025",
+    "聴解",
+    "問題 1 では、まず質問を聞いてください。それから話を聞いて、問題用紙の 1 から 4 の中か",
+    "ら、最もよいものを一つ選んでください。",
+    "1番",
+    "1 本を返す",
+    "2 席を取る",
+    "3 傘を買う",
+    "4 駅へ行く",
+    "問題 4 では、問題用紙に何も印刷されていません。まず文を聞いてください。",
+    "それから、それに対する返事を聞いて、1 から 3 の中から、最もよいものを一つ選んでください。",
+    "ーメモー",
+  ].join("\n");
+  const { blocks } = segmentBlocks([written, listening], "N2");
+
+  it("types each listening 問題 by its own layout — not as the 文字・語彙 問題 of the same number", () => {
+    expect(blocks.map((b) => [b.sectionHint, b.mondai, b.note ?? ""])).toEqual([
+      ["vocab", "kanji-reading", ""],
+      ["listening", "listening-task", ""],
+      ["listening", "listening-quick", ""],
+    ]);
+  });
+});
+
+describe("segmentBlocks — a typed N3 paper with a sharer's watermark", () => {
+  const wm = ["Group", "ữ", "Ana Lee", "i Ng"];
+  const page = (lines: string[]) => [...wm.slice(0, 2), ...lines, ...wm.slice(2)].join("\n");
+  const pages = [
+    page([
+      "2022 年 7 月 N3 ANA LEE",
+      "文字・語彙",
+      "問題 1 ＿＿＿の言葉の読み方として最もよいものを、1・2・3・4 から一つ選びなさい。",
+      "1) 毎朝、公園を散歩します。",
+      "1 さんぽ 2 さんほ 3 ざんぽ 4 ざんほ",
+      "問題 2＿＿＿のことばを漢字で書くとき、最もよいものを、1・2・3・4 から一つえらびなさい。",
+      "2) かぜをひいた。",
+      "1 風邪 2 風引 3 風事 4 風地",
+    ]),
+    page([
+      "間題 3（ ）に人れるのに最もよいものを、1・2・3・4 から一つえらびなさい。",
+      "3) のどが（ ）ので、何か飲みたい。",
+      "Ana Lee1 かわいた 2 すいた 3 へった 4 やせた",
+      "聴解",
+      "問題 1",
+      "問題 1 では、まず質問を聞いてください。それから話を聞いて、問題用紙の 1 から 4 の中から、最もよいものを一つえらんでください。",
+      "1 番",
+      "1 本を返す",
+      "2 席を取る",
+      "3 傘を買う",
+      "4 駅へ行く",
+    ]),
+    page(["問題 4", "問題 4 では、えを見ながら質問を聞いてください。やじるし(→)の人は何と言いますか。", "1 番 2 番", "3 番 4 番"]),
+  ];
+  const { blocks } = segmentBlocks(pages, "N3");
+
+  it("opens every 問題, even glued to its ＿＿＿ or misread 間題, and names the paper", () => {
+    expect(blocks.map((b) => [b.sitting, b.mondai])).toEqual([
+      ["2022-07", "kanji-reading"],
+      ["2022-07", "orthography"],
+      ["2022-07", "context"],
+      ["2022-07", "listening-task"],
+      ["2022-07", "listening-utterance"],
+    ]);
+  });
+
+  it("keeps the watermark out of the blocks and makes one block of a title printed above its instruction", () => {
+    expect(blocks[2].rawText).toContain("1 かわいた 2 すいた");
+    for (const b of blocks) expect(b.instruction + b.rawText).not.toMatch(/Group|Ana Lee|i Ng|ữ/);
+    expect(blocks[3].instruction).toMatch(/^問題 1 では/);
+    expect(blocks[4].rawText).toBe("1 番 2 番\n3 番 4 番");
+  });
+
+  it("takes the paper's name from a running header", () => {
+    const header = (body: string) => ["JLPT・N2・12/2025", body].join("\n");
+    const r = segmentBlocks(
+      [header("問題 1 ＿＿＿の言葉の読み方として最もよいものを選びなさい。\n1) 雨が降る。\n1 あめ 2 あま 3 う 4 ゆ"), header("2) 山に登る。\n1 のぼる 2 のこる 3 のせる 4 のびる")],
+      "N2",
+    );
+    expect(r.blocks.map((b) => b.sitting)).toEqual(["2025-12"]);
+  });
+});

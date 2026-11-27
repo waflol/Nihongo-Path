@@ -33,10 +33,16 @@ export interface ProsePdf {
   close(): Promise<void>;
 }
 
-/** No service could read this page image: it is NOT a blank page and must be read again. */
+/**
+ * No service could read this page image: it is NOT a blank page and must be read again.
+ * `refused` = every provider that answered refused to transcribe it (the reason they gave).
+ */
 export class OcrFailedError extends Error {
-  constructor(readonly page: number) {
-    super(`OCR failed on page ${page}`);
+  constructor(
+    readonly page: number,
+    readonly refused?: string,
+  ) {
+    super(refused ? `OCR refused on page ${page}` : `OCR failed on page ${page}`);
   }
 }
 

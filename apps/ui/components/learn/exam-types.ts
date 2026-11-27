@@ -54,7 +54,12 @@ export interface SitQuestion {
   sectionKey?: string;
   /** Listening clip of this question (NP-410). */
   audio?: AudioRef;
+  /** The picture printed with the question (options drawn as pictures, a 発話表現 scene). */
+  image?: string;
 }
+
+/** URL of a question's picture. */
+export const imageSrc = (id: string): string => `/api/exam-image/${encodeURIComponent(id)}`;
 
 /** An exam part (文字・語彙 / 文法 / 読解 / 聴解) as the sit payload describes it. */
 export interface SitSection {
