@@ -376,7 +376,7 @@ chặn route, CRUD nội dung. Test case: `T-P2-01` … `T-P2-10`.
 | P4-JLPT-04 | CRUD admin `exam_stimuli` + `adminAuthorQuestion` nới theo `optionCountsOf` (NP-406) | P4-JLPT-03 | `stimuli.service.ts`, `exams.controller.ts` | Route `exams/admin/stimuli` guard admin; câu 3 phương án cho `listening` | vitest (19/11); chưa verify API/trình duyệt thật | `[x]` |
 | P4-JLPT-05 | Import PDF đề → draft có người duyệt (NP-407) | P4-JLPT-04 | `src/exams/import/*` | Draft nhóm đúng kỳ × mondai; ≥ 90% câu ngôn ngữ N3 7/2010 tách đúng; publish idempotent theo `contentHash` | vitest + đo RSS; đã code (`NP-407`), còn verify trình duyệt/DB thật và đối chiếu tiêu chí (25/11/2026) | `[~]` |
 | P4-JLPT-06 | ~~Bộ sinh đề theo blueprint (NP-408)~~ — bỏ 27/11/2026, thay bằng đề theo nguồn (plan-exam-by-source) | P4-JLPT-04 | `src/exams/{blueprints,generator}.ts` | Đề đúng blueprint; khoá Q-12: người học chỉ bốc `own\|licensed` | vitest (chưa bắt đầu) | `[ ]` |
-| P4-JLPT-07 | UI làm đề theo phần + admin phủ ngân hàng (NP-409) | P4-JLPT-05, P4-JLPT-06 | `apps/ui/...` | Bấm thử Chromium headless + mobile 375 px | Chromium headless + mobile 375 px; màn làm bài + kết quả đã code 22/11, chưa bấm thử; phần phủ ngân hàng / đề ngẫu nhiên đã bỏ (NP-408 không làm) | `[~]` |
+| P4-JLPT-07 | UI làm đề theo phần + admin phủ ngân hàng (NP-409) | P4-JLPT-05, P4-JLPT-06 | `apps/ui/...` | Bấm thử Chromium headless + mobile 375 px | Chromium headless + mobile 375 px; đã kiểm các màn chính trên Chrome Live 27/11; phần phủ ngân hàng / đề ngẫu nhiên đã bỏ (NP-408 không làm) | `[~]` |
 
 ---
 

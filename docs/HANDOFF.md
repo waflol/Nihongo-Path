@@ -37,9 +37,12 @@
 - Giai đoạn 1.3 xong (API): đề `reference` không công khai được, người học không thấy / không `start` được (admin sit được mọi đề để kiểm, kể cả nháp); đề nhập không sửa được danh sách câu, cấp độ, tổng giờ; `PATCH admin/exams/:id {sectionTimes:{<key>:phút}}` khoá giờ phần; `POST admin/exams/:id/questions` soạn câu trong đề soạn tay; `GET exams?kind=` trả `kind`, `parts`; `GET admin/exams` trả `kind`, `origin`, `rights`, `sections`, `warnings`. Phần "chưa chặn reference / sửa được danh sách câu" ở dòng 1.2 đã hết.
 - Đã chạy: vitest `src/exams src/import src/ai` 470 đạt (1 skip), watcher tsc 0 lỗi, tsc 2 spec 0 lỗi; thử tạo / soạn câu / sửa giờ phần / quyền với MongoDB thật trên database tạm (đã xoá collection).
 - Giai đoạn 1.4 xong (UI, 27/11): form nhập chọn loại + tên bộ đề; đổi tên kỳ (`exam-import-rename.tsx`); nút "Xuất bản đề" + cảnh báo; admin `exams-console` bỏ tab ngân hàng, thêm editor đề (`exam-admin-editor.tsx`); learn `exams-console` lọc đầy đủ / theo phần. Không còn chỗ nào gọi `admin/exam-questions`.
-- Đã chạy: vitest `src/exams` 293 đạt; tsc API + UI sạch; oxlint API 0 lỗi; eslint các file UI sửa sạch (còn 1 cảnh báo `window.location.href` ở learn `exams-console.tsx`). **Chưa bấm thử trình duyệt** (nhập → duyệt → xuất bản → làm bài, 375 px).
+- Đã chạy: vitest `src/exams` 293 đạt; tsc API + UI sạch; oxlint API 0 lỗi; eslint các file UI sửa sạch (còn 1 cảnh báo `window.location.href` ở learn `exams-console.tsx`).
+- Đã kiểm trên Chrome Live (`116.118.9.196:3001`, admin `admin@test.vn`, 27/11): `/learn/exams/structure` (bảng N5–N1), `/admin/exams/import` (3 nút loại đề + ô tên bộ đề, bỏ khung file nghe, 3 lần nhập gần đây), mở duyệt bản nháp `17.N2 12-2025`, `/admin/exams` (bỏ tab ngân hàng, có bộ lọc Tất cả/Đầy đủ/Theo phần/Soạn tay), `/learn/exams` (link Cấu trúc đề thi, tab Đề có sẵn/Đã làm/Thống kê). Chưa bấm xuất bản đề thật & chưa thử 375 px (do chưa có đề công khai).
 - Giai đoạn 1.5 xong (tài liệu): NP-408 đóng (không làm), NP-409 thu hẹp, checklist P4-JLPT-06/07, `database.md`, `docs/adr/ADR-exam-by-source.md`.
-- Việc tiếp: bấm thử trình duyệt giai đoạn 1, rồi giai đoạn 2 (sách luyện tập).
+- Đã bấm thử giao diện (Chrome headless, 375 + 1280 px, **API giả** qua trang tạm đã xoá): form nhập, đổi tên kỳ, xuất bản đề + cảnh báo, sửa giờ phần, mở đề soạn tay, lọc đề người học; không lỗi console, không tràn ngang. **Chưa thử** với đăng nhập admin + dữ liệu thật, chưa làm bài trên đề dựng ra.
+- **Lỗi thấy khi thử:** điện thoại (<640 px) ảnh trang mở mặc định (57c20bd) nên CSS `.exam-desk:has([data-page-open]) > header` ẩn thanh đầu → không thấy "Thoát", "Danh sách" (chỗ có "Xuất bản đề", đổi tên) cho tới khi bấm "Ẩn ảnh trang". Chưa sửa.
+- Việc tiếp: sửa lỗi trên, thử bằng dữ liệu thật, rồi giai đoạn 2 (sách luyện tập).
 
 ---
 
