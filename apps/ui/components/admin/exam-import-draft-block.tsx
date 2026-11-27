@@ -84,6 +84,8 @@ function Passage({ s }: { s: ParsedStimulus }) {
 export function DraftBlock({
   draft,
   jobId,
+  showPage,
+  setShowPage,
   answers,
   setAnswers,
   suggestions,
@@ -95,6 +97,8 @@ export function DraftBlock({
 }: {
   draft: Draft;
   jobId: string;
+  showPage: boolean;
+  setShowPage: (v: boolean) => void;
   answers: number[];
   setAnswers: (a: number[]) => void;
   suggestions: Suggestion[];
@@ -109,7 +113,6 @@ export function DraftBlock({
   const stimuli = draft.parsed?.stimuli ?? [];
   const [raw, setRaw] = useState(draft.status === "error");
   const [editing, setEditingState] = useState(false);
-  const [showPage, setShowPage] = useState(false);
   const [wide, setWide] = useState(false);
   const [cursor, setCursor] = useState(() => Math.max(0, questions.findIndex((q) => !(answers[q.no - 1] > 0))));
   const [saving, setSaving] = useState(false);

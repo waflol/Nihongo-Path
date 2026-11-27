@@ -56,6 +56,8 @@ export function ExamImportDrafts({ jobId }: { jobId: string }) {
   const [selected, setSelected] = useState<{ id: string; index: number }>({ id: "", index: 0 });
   /** Small screens show the block list as a drawer. */
   const [listOpen, setListOpen] = useState(false);
+  /** The source PDF page is shown by default; the reviewer's choice holds across blocks. */
+  const [showPage, setShowPage] = useState(true);
   const editing = useRef(false);
   const rail = useRef<HTMLElement>(null);
 
@@ -478,6 +480,8 @@ export function ExamImportDrafts({ jobId }: { jobId: string }) {
               key={current._id}
               draft={current}
               jobId={jobId}
+              showPage={showPage}
+              setShowPage={setShowPage}
               answers={answersById[current._id] ?? []}
               setAnswers={(a) => setAnswersById((m) => ({ ...m, [current._id]: a }))}
               suggestions={suggestById[current._id] ?? []}
