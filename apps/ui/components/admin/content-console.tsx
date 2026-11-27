@@ -1,9 +1,11 @@
 "use client";
 
 import { useConfirm } from "@/components/learn/use-confirm";
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useState, useSyncExternalStore, type FormEvent, type ReactNode } from "react";
 import Link from "next/link";
 import { GrammarEditor } from "@/components/admin/grammar-editor";
+import { TextbookSelect, textbookLabel, type TextbookOption } from "@/components/admin/textbook-select";
+import { JaMarkup } from "@/components/learn/furigana";
 
 /**
  * Admin content console (P2-UI-04). One tab per content type (textbooks,
@@ -34,7 +36,37 @@ const KINDS: { key: ContentKind; label: string; fields: string[] }[] = [
 const inputClass =
   "block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:border-[var(--primary-focus)] focus:outline-none focus:ring-1 focus:ring-[var(--primary-focus)]";
 
+const FURIGANA_KEY = "np.admin.showFurigana";
+const furiganaListeners = new Set<() => void>();
+// Kept in memory too, so the switch still works when storage is blocked.
+let furiganaMemory = true;
+
+function readFurigana(): boolean {
+  try {
+    const v = localStorage.getItem(FURIGANA_KEY);
+    return v === null ? furiganaMemory : v !== "0";
+  } catch {
+    return furiganaMemory;
+  }
+}
+
+function writeFurigana(on: boolean) {
+  furiganaMemory = on;
+  try {
+    localStorage.setItem(FURIGANA_KEY, on ? "1" : "0");
+  } catch {
+    /* storage blocked — the choice lasts for this visit only */
+  }
+  furiganaListeners.forEach((f) => f());
+}
+
+function subscribeFurigana(listener: () => void) {
+  furiganaListeners.add(listener);
+  return () => void furiganaListeners.delete(listener);
+}
+
 export function AdminContentConsole() {
+  const showFurigana = useSyncExternalStore(subscribeFurigana, readFurigana, () => true);
   const { confirm, dialog } = useConfirm();
   const [kind, setKind] = useState<ContentKind>("textbooks");
   const [items, setItems] = useState<Item[]>([]);
@@ -47,6 +79,26 @@ export function AdminContentConsole() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   // Bumped after create/delete to re-run the fetch effect.
   const [version, setVersion] = useState(0);
+
+  // Every textbook, for the unit form's picker and the units table. `null` = not loaded.
+  const [textbooks, setTextbooks] = useState<TextbookOption[] | null>(null);
+
+  useEffect(() => {
+    if (kind !== "units") return;
+    let cancelled = false;
+    (async () => {
+      const all = await fetchAllTextbooks();
+      if (cancelled) return;
+      if (all) setTextbooks(all);
+      else {
+        setTextbooks((t) => t ?? []);
+        setError("Không tải được danh sách giáo trình");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [kind]);
 
   const spec = KINDS.find((k) => k.key === kind)!;
   const loading = loadedFor !== kind;
@@ -232,30 +284,32 @@ export function AdminContentConsole() {
         <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
           {spec.fields
             .filter((f) => f !== "status")
-            .map((field) => (
+            .map((field) => field === "textbook" ? (
+              <div key={field} className="block text-sm">
+                <label htmlFor="unit-textbook" className="text-[var(--muted-foreground)]">
+                  {humanize(field)}
+                </label>
+                <TextbookSelect
+                  id="unit-textbook"
+                  value={form.textbookId ?? ""}
+                  options={textbooks}
+                  onChange={(id) => setForm((f) => ({ ...f, textbookId: id }))}
+                  className={`mt-1 ${inputClass}`}
+                />
+              </div>
+            ) : (
               <label key={field} className="block text-sm">
                 <span className="text-[var(--muted-foreground)] capitalize">
                   {humanize(field)}
                 </span>
-                {field === "textbook" ? (
-                  <input
-                    value={form.textbookId ?? ""}
-                    onChange={(e) =>
-                      setForm((f) => ({ ...f, textbookId: e.target.value }))
-                    }
-                    className={`mt-1 ${inputClass}`}
-                    placeholder="id giáo trình (hex 24 ký tự)"
-                  />
-                ) : (
-                  <input
-                    value={form[field] ?? ""}
-                    onChange={(e) =>
-                      setForm((f) => ({ ...f, [field]: e.target.value }))
-                    }
-                    className={`mt-1 ${inputClass}`}
-                    placeholder={placeholderFor(kind, field)}
-                  />
-                )}
+                <input
+                  value={form[field] ?? ""}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, [field]: e.target.value }))
+                  }
+                  className={`mt-1 ${inputClass}`}
+                  placeholder={placeholderFor(kind, field)}
+                />
               </label>
             ))}
           <label className="block text-sm">
@@ -297,8 +351,26 @@ export function AdminContentConsole() {
       </form>
       )}
 
+      {(kind === "grammar" || kind === "vocabulary") && (
+        <div className="mt-6 flex justify-end">
+          <button
+            type="button"
+            aria-pressed={showFurigana}
+            onClick={() => writeFurigana(!showFurigana)}
+            className={
+              "rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors " +
+              (showFurigana
+                ? "border-[var(--primary)] text-[var(--primary)]"
+                : "border-[var(--border)] text-[var(--muted-foreground)] hover:text-[var(--foreground)]")
+            }
+          >
+            Furigana: {showFurigana ? "Bật" : "Tắt"}
+          </button>
+        </div>
+      )}
+
       {/* List */}
-      <div className="mt-6 overflow-hidden rounded-2xl border border-[var(--border)]">
+      <div className="mt-3 overflow-hidden rounded-2xl border border-[var(--border)]">
         <div className="overflow-x-auto">
           <table className="min-w-full text-sm">
             <thead className="bg-[var(--background-1)] text-left text-[var(--muted-foreground)]">
@@ -337,7 +409,7 @@ export function AdminContentConsole() {
                 <tr key={item._id} className="hover:bg-[var(--layer-hover)]">
                   {spec.fields.map((f) => (
                     <td key={f} className="px-4 py-3 text-[var(--foreground)]">
-                      {cellValue(kind, f, item, form)}
+                      {cellValue(f, item, showFurigana, textbooks)}
                     </td>
                   ))}
                   <td className="px-4 py-3 text-right">
@@ -407,8 +479,9 @@ function pickEditable(
 ): Record<string, string> {
   const out: Record<string, string> = {};
   for (const f of spec.fields) {
-    if (f === "status" || f === "textbook") continue;
-    const v = f === "textbook" ? (item.textbook as string | undefined) : item[f];
+    if (f === "status") continue;
+    const v = item[f];
+    // The form edits the unit's textbook reference as `textbookId`.
     if (typeof v === "string") out[f === "textbook" ? "textbookId" : f] = v;
   }
   return out;
@@ -432,20 +505,38 @@ function cleanForm(
 }
 
 function cellValue(
-  kind: ContentKind,
   field: string,
   item: Item,
-  form: Record<string, string>,
-): string {
-  if (field === "textbook") {
-    // Units store the raw ObjectId — show a truncated reference (the form
-    // edits it as `textbookId`).
-    const ref =
-      form.__id === item._id
-        ? form.textbookId
-        : (item.textbook as string | undefined);
-    return ref ? `→ ${ref}` : "—";
-  }
+  showFurigana: boolean,
+  textbooks: TextbookOption[] | null,
+): ReactNode {
   const v = item[field];
-  return v == null ? "—" : String(v);
+  if (v == null) return "—";
+  if (field === "textbook") {
+    // Units store the textbook's id; fall back to it when the title is unknown.
+    const found = textbooks?.find((t) => t._id === v);
+    return found ? textbookLabel(found) : `→ ${String(v)}`;
+  }
+  // Japanese text may carry readings as `漢字[かんじ]`.
+  if (field === "label" || field === "term" || field === "meaning") {
+    return <JaMarkup text={String(v)} showReading={showFurigana} markClass="" />;
+  }
+  return String(v);
+}
+
+/** The admin list is paged (100 at most); `null` when a page cannot be read. */
+async function fetchAllTextbooks(): Promise<TextbookOption[] | null> {
+  const all: TextbookOption[] = [];
+  for (let page = 1; ; page++) {
+    const res = await fetch(`/api/admin/content/textbooks?limit=100&page=${page}`, {
+      cache: "no-store",
+    }).catch(() => null);
+    if (!res?.ok) return null;
+    const data = (await res.json().catch(() => null)) as
+      | { items?: TextbookOption[]; total?: number }
+      | null;
+    if (!data?.items) return null;
+    all.push(...data.items);
+    if (data.items.length === 0 || all.length >= (data.total ?? 0)) return all;
+  }
 }
