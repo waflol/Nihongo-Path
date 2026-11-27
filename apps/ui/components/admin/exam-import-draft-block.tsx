@@ -28,6 +28,23 @@ const PARSED_BY = {
   manual: { label: "Đã sửa tay", title: "Đã được chỉnh sửa tay" },
 };
 
+/**
+ * The AI's answer to one question (index `no - 1`; `answer` 0 = none). `filled` = the AI wrote it
+ * into an empty answer and the reviewer has not checked it yet. Never stored: publish carries answers.
+ */
+export interface Suggestion {
+  answer: number;
+  why: string;
+  filled: boolean;
+}
+
+const isUncheckedAi = (s: Suggestion | undefined, answer: number | undefined) => !!s?.filled && (answer ?? 0) === s.answer;
+
+/** How many of the block's answers are still the AI's unchecked suggestion. */
+export function uncheckedAi(d: Draft, answers: number[] | undefined, suggestions: Suggestion[] | undefined): number {
+  return questionsOf(d).filter((q) => isUncheckedAi(suggestions?.[q.no - 1], answers?.[q.no - 1])).length;
+}
+
 /** Options print side by side when short, as on the paper. */
 function optionColumns(options: string[]): string {
   const longest = Math.max(0, ...options.map((o) => stripFormat(o).length));
@@ -65,6 +82,8 @@ export function DraftBlock({
   jobId,
   answers,
   setAnswers,
+  suggestions,
+  setSuggestions,
   onChanged,
   onDone,
   onEditingChange,
@@ -74,6 +93,8 @@ export function DraftBlock({
   jobId: string;
   answers: number[];
   setAnswers: (a: number[]) => void;
+  suggestions: Suggestion[];
+  setSuggestions: (s: Suggestion[]) => void;
   onChanged: () => Promise<void>;
   /** The block was published or discarded. */
   onDone: (text: string) => void;
@@ -91,6 +112,8 @@ export function DraftBlock({
   const [saveError, setSaveError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [suggesting, setSuggesting] = useState(false);
+  const [aiNote, setAiNote] = useState<{ warn: boolean; lines: string[] } | null>(null);
   const rows = useRef<(HTMLLIElement | null)[]>([]);
   const cells = useRef<(HTMLButtonElement | null)[]>([]);
 
@@ -102,7 +125,8 @@ export function DraftBlock({
   const open = isOpen(draft);
   const missing = missingCount(draft, answers);
   const state = stateOf(draft, answers);
-  const canPublish = open && !editing && !busy && questions.length > 0 && missing === 0;
+  const canPublish = open && !editing && !busy && !suggesting && questions.length > 0 && missing === 0;
+  const unchecked = uncheckedAi(draft, answers, suggestions);
 
   const setEditing = (v: boolean) => {
     setEditingState(v);
@@ -115,10 +139,62 @@ export function DraftBlock({
     cells.current[i]?.scrollIntoView({ block: "nearest", inline: "nearest" });
   }, []);
 
+  /** The reviewer has looked at question `no`: its answer is theirs now, not the AI's. */
+  function checked(no: number) {
+    const s = suggestions[no - 1];
+    if (s?.filled) setSuggestions(Object.assign([...suggestions], { [no - 1]: { ...s, filled: false } }));
+  }
+
   function pick(i: number, value: number) {
     const q = questions[i];
-    if (!q || !open || busy) return;
+    if (!q || !open || busy || suggesting) return;
     setAnswers(Object.assign([...answers], { [q.no - 1]: value }));
+    checked(q.no);
+  }
+
+  /** The AI solves the block: it fills only empty answers (a printed key is never overwritten). */
+  async function suggest() {
+    setSuggesting(true);
+    setError(null);
+    setAiNote(null);
+    const res = await fetch(`/api/exam-import?suggest=${draft._id}`, { method: "POST" }).catch(() => null);
+    setSuggesting(false);
+    if (!res?.ok) {
+      setError(res ? await errorOf(res) : "Không kết nối được máy chủ");
+      return;
+    }
+    const got = ((await res.json().catch(() => null)) as { suggestions?: { answer?: number; why?: string }[] } | null)?.suggestions ?? [];
+    const next = [...answers];
+    const marks: Suggestion[] = Array.from({ length: Math.max(0, ...questions.map((q) => q.no)) }, () => ({ answer: 0, why: "", filled: false }));
+    let filled = 0;
+    const differ: string[] = [];
+    const none: string[] = [];
+    for (const q of questions) {
+      const s = got[q.no - 1];
+      const a = Number(s?.answer);
+      const label = String(q.printedNo ?? q.no);
+      if (!Number.isInteger(a) || a < 1 || a > q.options.length) {
+        none.push(label);
+        continue;
+      }
+      const had = answers[q.no - 1] ?? 0;
+      const fill = !(had > 0);
+      if (fill) {
+        next[q.no - 1] = a;
+        filled += 1;
+      } else if (had !== a) {
+        differ.push(`${label} (đang ${had}, AI ${a})`);
+      }
+      marks[q.no - 1] = { answer: a, why: typeof s?.why === "string" ? s.why : "", filled: fill };
+    }
+    setAnswers(next);
+    setSuggestions(marks);
+    const lines: string[] = [];
+    if (filled > 0) lines.push(`AI gợi ý ${filled} câu còn trống — đối chiếu lại trước khi xuất bản.`);
+    if (differ.length > 0) lines.push(`AI chọn khác đáp án đã có ở câu ${differ.join(", ")}.`);
+    if (none.length > 0) lines.push(`AI không đưa ra đáp án cho câu ${none.join(", ")}.`);
+    if (lines.length === 0) lines.push("AI chọn giống mọi đáp án đã có.");
+    setAiNote({ warn: differ.length > 0 || none.length > 0, lines });
   }
 
   async function save(instruction: string, newStimuli: EditStimulus[], newQuestions: EditQuestion[]) {
@@ -145,12 +221,16 @@ export function DraftBlock({
       return;
     }
     setAnswers(newQuestions.map((q) => q.answer));
+    // The questions may have changed: the AI's answers no longer line up.
+    setSuggestions([]);
+    setAiNote(null);
     setEditing(false);
     await onChanged();
   }
 
   async function act(kind: "publish" | "discard") {
     if (kind === "discard" && !window.confirm("Loại khối này? Bạn không nhập khối này vào ngân hàng câu hỏi.")) return;
+    if (kind === "publish" && unchecked > 0 && !window.confirm(`Còn ${unchecked} câu dùng đáp án AI gợi ý chưa đối chiếu. Vẫn xuất bản?`)) return;
     setBusy(true);
     setError(null);
     const res = await fetch(`/api/exam-import?${kind}=${draft._id}`, {
@@ -224,10 +304,29 @@ export function DraftBlock({
             <span>Đề {draft.sitting}</span>
             <span>{questions.length} câu</span>
             {draft.parsedBy && <span title={PARSED_BY[draft.parsedBy].title}>{PARSED_BY[draft.parsedBy].label}</span>}
+            {open && unchecked > 0 && <span className="font-semibold text-[var(--warn)]">{unchecked} câu AI gợi ý chưa đối chiếu</span>}
           </p>
         </div>
+        {open && !editing && questions.length > 0 && (
+          <button
+            type="button"
+            className={deskButton}
+            disabled={busy || suggesting}
+            onClick={() => void suggest()}
+            title="AI giải các câu của khối và điền vào câu còn trống — đáp án đã có không bị thay"
+          >
+            {suggesting ? (
+              "Đang gợi ý…"
+            ) : (
+              <>
+                <span className="sm:hidden">Gợi ý</span>
+                <span className="max-sm:hidden">Gợi ý đáp án</span>
+              </>
+            )}
+          </button>
+        )}
         {open && !editing && (
-          <button type="button" className={deskButton} disabled={busy} onClick={() => setEditing(true)}>
+          <button type="button" className={deskButton} disabled={busy || suggesting} onClick={() => setEditing(true)}>
             Chỉnh sửa
           </button>
         )}
@@ -281,6 +380,25 @@ export function DraftBlock({
                     <li key={n}>{i}</li>
                   ))}
                 </ul>
+              </div>
+            )}
+            {aiNote && !editing && (
+              <div
+                role="status"
+                className={`flex items-start gap-3 rounded-lg border px-4 py-3 text-sm ${
+                  aiNote.warn
+                    ? "border-[var(--warn)]/40 bg-[var(--warn)]/10 text-[var(--warn)]"
+                    : "border-[var(--primary)]/30 bg-[var(--primary)]/[0.07] text-[var(--sheet-ink)]"
+                }`}
+              >
+                <div className="min-w-0 flex-1 space-y-0.5">
+                  {aiNote.lines.map((l) => (
+                    <p key={l}>{l}</p>
+                  ))}
+                </div>
+                <button type="button" className="shrink-0 text-xs underline underline-offset-2" onClick={() => setAiNote(null)}>
+                  Ẩn
+                </button>
               </div>
             )}
             {raw && (
@@ -413,6 +531,35 @@ export function DraftBlock({
                                 </div>
                               );
                             })()}
+                            {(() => {
+                              const s = suggestions[q.no - 1];
+                              if (!s?.answer) return null;
+                              const a = answers[q.no - 1] ?? 0;
+                              const fresh = isUncheckedAi(s, a);
+                              return (
+                                <p
+                                  className={`mt-1.5 flex flex-wrap items-baseline gap-x-2 text-xs leading-5 sm:pl-10 ${
+                                    fresh || (a > 0 && a !== s.answer) ? "text-[var(--warn)]" : "text-[var(--muted-foreground)]"
+                                  }`}
+                                >
+                                  <span className="font-semibold">AI gợi ý: {s.answer}</span>
+                                  {s.why && <span className="min-w-0">— {s.why}</span>}
+                                  {fresh && open && (
+                                    <button
+                                      type="button"
+                                      className="font-semibold underline underline-offset-2"
+                                      disabled={busy}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        checked(q.no);
+                                      }}
+                                    >
+                                      Đã đối chiếu
+                                    </button>
+                                  )}
+                                </p>
+                              );
+                            })()}
                           </li>
                         ))}
                       </ol>
@@ -438,6 +585,7 @@ export function DraftBlock({
                 <div className="flex gap-1 overflow-x-auto p-0.5" aria-label="Phiếu đáp án">
                   {questions.map((q, i) => {
                     const a = answers[q.no - 1] ?? 0;
+                    const ai = isUncheckedAi(suggestions[q.no - 1], a);
                     return (
                       <button
                         key={q.no}
@@ -446,16 +594,29 @@ export function DraftBlock({
                           cells.current[i] = el;
                         }}
                         onClick={() => goTo(i)}
-                        aria-label={`Câu ${q.printedNo ?? q.no}: ${a ? `đáp án ${a}` : "chưa có đáp án"}`}
+                        aria-label={`Câu ${q.printedNo ?? q.no}: ${a ? `đáp án ${a}${ai ? " (AI gợi ý)" : ""}` : "chưa có đáp án"}`}
+                        title={ai ? "AI gợi ý — chưa đối chiếu" : undefined}
                         aria-current={open && cursor === i ? "true" : undefined}
-                        className={`w-9 shrink-0 overflow-hidden rounded-md border text-center tabular-nums ${
-                          open && cursor === i ? "border-[var(--primary)] ring-1 ring-[var(--primary)]" : "border-[var(--sheet-rule)]"
+                        className={`w-9 shrink-0 overflow-hidden rounded-md border text-center tabular-nums ${ai ? "border-dashed" : ""} ${
+                          open && cursor === i
+                            ? "border-[var(--primary)] ring-1 ring-[var(--primary)]"
+                            : ai
+                              ? "border-[var(--warn)]"
+                              : "border-[var(--sheet-rule)]"
                         }`}
                       >
                         <span className="block border-b border-[var(--sheet-rule)] text-[10px] leading-4 text-[var(--muted-foreground)]">
                           {q.printedNo ?? q.no}
                         </span>
-                        <span className={`block text-sm font-bold leading-6 ${a ? "bg-[var(--primary)] text-[var(--primary-foreground)]" : "text-[var(--muted-foreground)]"}`}>
+                        <span
+                          className={`block text-sm font-bold leading-6 ${
+                            ai
+                              ? "bg-[var(--warn)]/20 text-[var(--warn)]"
+                              : a
+                                ? "bg-[var(--primary)] text-[var(--primary-foreground)]"
+                                : "text-[var(--muted-foreground)]"
+                          }`}
+                        >
                           {a || "\u00a0"}
                         </span>
                       </button>
@@ -478,7 +639,7 @@ export function DraftBlock({
               </button>
               {open && (
                 <>
-                  <button type="button" className={deskButton} disabled={busy} onClick={() => void act("discard")}>
+                  <button type="button" className={deskButton} disabled={busy || suggesting} onClick={() => void act("discard")}>
                     Loại
                   </button>
                   <button type="button" className={deskButtonPrimary} disabled={!canPublish} onClick={() => void act("publish")}>

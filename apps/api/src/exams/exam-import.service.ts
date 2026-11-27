@@ -5,6 +5,8 @@ import {
   Logger,
   NotFoundException,
   OnApplicationBootstrap,
+  ServiceUnavailableException,
+  UnprocessableEntityException,
 } from "@nestjs/common";
 import { InjectModel } from "@nestjs/mongoose";
 import { mkdir, readFile, readdir, stat, unlink, writeFile } from "node:fs/promises";
@@ -42,6 +44,8 @@ import { applyMarks, enrich, type Junk, type Mark } from "./import/marks.js";
 import { OcrFailedError, openProsePdf, type ProsePdf } from "./import/prose.js";
 import { markCloze, parseByRules } from "./import/rules.js";
 import { segmentBlocks, type Block } from "./import/segment.js";
+import { readSuggestions, suggestPrompt, type AnswerSuggestion } from "./import/suggest.js";
+import { answerTemplate, headingOf, matchAnswerFile, mergeAnswers, parseAnswerFile, type AnswerFileDraft } from "./import/answer-file.js";
 import { parseAiJson, structurePrompt, type ParsedBlock, validateParsed } from "./import/structure.js";
 
 /** Put the page's furigana + underlines back on the structured block (after validation, which reads plain text). */
@@ -870,6 +874,107 @@ export class ExamImportService implements OnApplicationBootstrap {
     doc.status = "needs_review";
     await doc.save();
     return doc.toObject() as unknown as Record<string, unknown>;
+  }
+
+  /**
+   * The AI solves an open draft's questions, for the reviewer to check (nothing is stored).
+   * `suggestions[no - 1]` per question, `answer` 0 where the AI gave none.
+   */
+  async suggestAnswers(caller: AuthUser, draftId: string): Promise<{ suggestions: AnswerSuggestion[] }> {
+    const doc = await this.drafts.findById(draftId).select("status level mondai instruction parsed blockIndex").lean().exec();
+    if (!doc) throw new NotFoundException("Import draft not found");
+    if (doc.status !== "needs_review" && doc.status !== "error") {
+      throw new BadRequestException("Chỉ gợi ý được cho khối chưa xuất bản / chưa loại");
+    }
+    const questions = doc.parsed?.questions ?? [];
+    if (questions.length === 0) throw new BadRequestException("Khối chưa có câu hỏi — chỉnh sửa khối trước đã");
+    const prompt = suggestPrompt({
+      level: doc.level,
+      mondai: doc.mondai,
+      instruction: doc.instruction ?? "",
+      stimuli: doc.parsed?.stimuli ?? [],
+      questions,
+    });
+    const r = await this.ai.completeAny(
+      prompt,
+      { temperature: 0, purpose: "exam-import", task: "grammar", words: [`Gợi ý đáp án khối ${(doc.blockIndex ?? 0) + 1}`] },
+      (text) => readSuggestions(text, questions),
+    );
+    if (!r.answered) {
+      throw new ServiceUnavailableException(`Chưa có dịch vụ AI nào trả lời${r.error ? ` (${r.error.slice(0, 160)})` : ""} — thử lại sau`);
+    }
+    const suggestions = r.value ?? [];
+    if (!suggestions.some((s) => s.answer > 0)) throw new UnprocessableEntityException("AI không đưa ra được đáp án nào cho khối này");
+    return { suggestions };
+  }
+
+  /** The job's drafts as the answer file sees them (blocks, 問題 numbers, printed question numbers). */
+  private async answerFileDrafts(jobId: string) {
+    type Row = { _id: unknown; blockIndex: number; sitting: string; instruction?: string; status: string; answers?: number[]; parsed?: { questions: { no: number; printedNo?: number; options?: string[] }[] } };
+    const rows = (await this.drafts
+      .find({ jobId })
+      .select("blockIndex sitting instruction status answers parsed.questions.no parsed.questions.printedNo parsed.questions.options")
+      .lean()
+      .exec()) as unknown as Row[];
+    if (rows.length === 0) throw new NotFoundException("Lần nhập này chưa có bản nháp nào");
+    const printed = fillPrintedNos(rows);
+    const drafts: AnswerFileDraft[] = rows.map((r) => {
+      const id = String(r._id);
+      const nos = printed.get(id) ?? [];
+      return {
+        id,
+        blockIndex: r.blockIndex,
+        sitting: r.sitting,
+        heading: headingOf(r.instruction ?? ""),
+        open: r.status === "needs_review" || r.status === "error",
+        questions: (r.parsed?.questions ?? []).map((q, i) => ({ no: q.no, printedNo: nos[i] ?? q.no, options: q.options?.length ?? 4 })),
+      };
+    });
+    return { rows, drafts };
+  }
+
+  /** The answer-file template (CSV): one row per question of the job, with the answers stored so far. */
+  async answerFileTemplate(jobId: string): Promise<{ fileName: string; csv: string }> {
+    const { rows, drafts } = await this.answerFileDrafts(jobId);
+    const stored = new Map(rows.map((r) => [String(r._id), r.answers ?? []]));
+    const job = await this.jobs.findById(jobId).select("fileName").lean().exec().catch(() => null);
+    const base = String(job?.fileName ?? "de-thi").replace(/\.pdf$/i, "").replace(/[^\p{L}\p{N}._-]+/gu, "_").slice(0, 80);
+    return { fileName: `dap-an_${base}.csv`, csv: answerTemplate(drafts, (id) => stored.get(id) ?? []) };
+  }
+
+  /**
+   * Read an answer file (the template, or `[2010-07]` + `問題1: 3 1 4 2`) onto the job's open
+   * drafts. Without `save` it only matches (the desk previews against the reviewer's own picks);
+   * `save: true` stores the answers — one already set is replaced only with `overwrite`.
+   */
+  async importAnswerFile(
+    caller: AuthUser,
+    jobId: string,
+    body: { text?: unknown; save?: unknown; overwrite?: unknown },
+  ): Promise<{ matched: number; problems: string[]; given: { draftId: string; answers: number[] }[]; saved: number }> {
+    const text = typeof body?.text === "string" ? body.text : "";
+    if (!text.trim()) throw new BadRequestException("File đáp án trống");
+    if (text.length > 300_000) throw new BadRequestException("File đáp án quá lớn (tối đa ~300 KB)");
+    const { rows, drafts } = await this.answerFileDrafts(jobId);
+    const read = parseAnswerFile(text);
+    const m = matchAnswerFile(read.rows, drafts);
+    let saved = 0;
+    if (body.save === true) {
+      const stored = new Map(rows.map((r) => [String(r._id), r.answers ?? []]));
+      for (const [id, given] of m.given) {
+        const current = stored.get(id) ?? [];
+        const next = mergeAnswers(current, given, body.overwrite === true);
+        if (next.length === current.length && next.every((a, i) => a === current[i])) continue;
+        await this.drafts.updateOne({ _id: id, status: { $in: ["needs_review", "error"] } }, { $set: { answers: next } }).exec();
+        saved += 1;
+      }
+    }
+    return {
+      matched: m.matched,
+      problems: [...read.problems, ...m.problems].slice(0, 100),
+      given: [...m.given].map(([draftId, answers]) => ({ draftId, answers })),
+      saved,
+    };
   }
 
   async discard(caller: AuthUser, draftId: string): Promise<{ discarded: boolean }> {

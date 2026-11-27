@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { DraftBlock } from "./exam-import-draft-block";
+import { AnswerFileDialog, mergeGiven, type GivenAnswers } from "./exam-import-answer-file";
+import { DraftBlock, type Suggestion, uncheckedAi } from "./exam-import-draft-block";
 import {
   deskButton,
   errorOf,
@@ -36,6 +37,9 @@ export function ExamImportDrafts({ jobId }: { jobId: string }) {
   const [sittingFilter, setSittingFilter] = useState("");
   /** The reviewer's answers per draft, kept here so "publish the whole paper" sees every card's picks. */
   const [answersById, setAnswersById] = useState<Record<string, number[]>>({});
+  /** AI-suggested answers per draft, kept here so their marks survive switching blocks (never stored). */
+  const [suggestById, setSuggestById] = useState<Record<string, Suggestion[]>>({});
+  const [answerFileOpen, setAnswerFileOpen] = useState(false);
   const [bulk, setBulk] = useState<{ busy: boolean; ok: boolean; text: string } | null>(null);
   const [selected, setSelected] = useState<{ id: string; index: number }>({ id: "", index: 0 });
   /** Small screens show the block list as a drawer. */
@@ -133,7 +137,9 @@ export function ExamImportDrafts({ jobId }: { jobId: string }) {
   async function publishSitting(name: string) {
     const ready = readyOf(name);
     if (ready.length === 0) return;
-    if (!window.confirm(`Xuất bản ${ready.length} khối đã đủ đáp án của đề "${name}"?`)) return;
+    const withAi = ready.filter((d) => uncheckedAi(d, answersById[d._id], suggestById[d._id]) > 0).length;
+    const aiNote = withAi > 0 ? `\n${withAi} khối còn đáp án AI gợi ý chưa đối chiếu.` : "";
+    if (!window.confirm(`Xuất bản ${ready.length} khối đã đủ đáp án của đề "${name}"?${aiNote}`)) return;
     setBulk({ busy: true, ok: true, text: `Đang xuất bản 0/${ready.length}…` });
     let n = 0;
     for (const d of ready) {
@@ -156,6 +162,26 @@ export function ExamImportDrafts({ jobId }: { jobId: string }) {
     }
     setBulk({ busy: false, ok: true, text: `Đã xuất bản ${n} khối của đề "${name}".` });
     await load();
+  }
+
+  /** The answer file was stored on the drafts: put its answers on the desk the same way. */
+  function applyAnswerFile(given: GivenAnswers[], overwrite: boolean, saved: number) {
+    setAnswersById((m) => {
+      const next = { ...m };
+      for (const g of given) next[g.draftId] = mergeGiven(m[g.draftId] ?? [], g.answers, overwrite);
+      return next;
+    });
+    // An answer that now comes from the file is no longer an unchecked AI guess.
+    setSuggestById((m) => {
+      const next = { ...m };
+      for (const g of given) {
+        const sg = m[g.draftId];
+        if (sg) next[g.draftId] = sg.map((s, i) => (g.answers[i] > 0 ? { ...s, filled: false } : s));
+      }
+      return next;
+    });
+    setAnswerFileOpen(false);
+    setBulk({ busy: false, ok: true, text: `Đã nhập file đáp án: lưu đáp án vào ${saved} khối.` });
   }
 
   /** Re-read the kept PDF and add furigana / underlines to blocks nobody has formatted yet. */
@@ -233,6 +259,18 @@ export function ExamImportDrafts({ jobId }: { jobId: string }) {
           >
             <span className="max-sm:hidden">Bổ sung furigana</span>
             <span className="sm:hidden">Furigana</span>
+          </button>
+          <button
+            type="button"
+            className={deskButton}
+            disabled={bulk?.busy || !all.some(isOpen)}
+            title="Điền đáp án cả lần nhập từ một file theo cấu trúc đề (file mẫu CSV hoặc 問題1: 3 1 4 2)"
+            onClick={() => {
+              if (leaveEditor()) setAnswerFileOpen(true);
+            }}
+          >
+            <span className="max-sm:hidden">Nhập file đáp án</span>
+            <span className="sm:hidden">Đáp án</span>
           </button>
           <button type="button" className={deskButton} onClick={() => void load()}>
             Tải lại
@@ -369,6 +407,8 @@ export function ExamImportDrafts({ jobId }: { jobId: string }) {
               jobId={jobId}
               answers={answersById[current._id] ?? []}
               setAnswers={(a) => setAnswersById((m) => ({ ...m, [current._id]: a }))}
+              suggestions={suggestById[current._id] ?? []}
+              setSuggestions={(sg) => setSuggestById((m) => ({ ...m, [current._id]: sg }))}
               onChanged={load}
               onDone={(text) => setBulk({ busy: false, ok: true, text })}
               onEditingChange={(v) => {
@@ -383,6 +423,15 @@ export function ExamImportDrafts({ jobId }: { jobId: string }) {
           )}
         </main>
       </div>
+      {answerFileOpen && (
+        <AnswerFileDialog
+          jobId={jobId}
+          drafts={all}
+          answersById={answersById}
+          onApply={applyAnswerFile}
+          onClose={() => setAnswerFileOpen(false)}
+        />
+      )}
     </div>
   );
 }

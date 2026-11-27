@@ -4,6 +4,67 @@
 
 ---
 
+## NP-407: "Nhập file đáp án" theo cấu trúc đề ở Duyệt bản nháp đề (27/11/2026)
+
+Nút "Nhập file đáp án" ở đầu trang duyệt mở một hộp thoại (`apps/ui/components/admin/exam-import-answer-file.tsx`). Trong đó có 4 bước:
+1. Tải file mẫu.
+2. Chọn hoặc dán file.
+3. Xem trước so với đáp án đang có trên bàn duyệt.
+4. Lưu.
+
+Định dạng file nằm trong `src/exams/import/answer-file.ts`. Có hai dạng:
+- **File mẫu CSV.** Mỗi câu một dòng `de,khoi,dang,cau,dap_an`. File có BOM để Excel đọc được 問題. Phân cách bằng `,` `;` hoặc tab, nên file Excel lưu theo locale VN vẫn đọc được. Tiêu đề cột nhận cả có dấu lẫn không dấu.
+  - Dòng có `khoi` thì tìm khối theo `khoi` và bỏ qua `de` (Excel hay biến `2010-07` thành ngày).
+  - Dòng không có `khoi` thì tìm theo `de` + `dang` + `cau` (số câu in trên đề).
+  - Ô `dap_an` để trống thì bỏ qua.
+- **Dạng gọn.** Mỗi đề mở bằng một dòng `[2010-07]` (hoặc `Đề …`). Sau đó mỗi 問題 một dòng như `問題1: 3 1 4 2` hoặc `31422`. Dấu `-` nghĩa là câu chưa biết.
+  - Đáp án gán theo thứ tự câu của mọi khối cùng 問題 trong đề đó.
+  - Số đáp án lệch với số câu thì bỏ cả dòng, không xô lệch đáp án.
+  - Lần nhập chỉ có một đề thì không cần dòng tên đề.
+
+API:
+- `GET /exams/admin/import/:jobId/answer-file` trả `{fileName, csv}`, kèm đáp án đã lưu.
+- `POST /exams/admin/import/:jobId/answer-file` nhận `{text, save?, overwrite?}`. Không có `save` thì chỉ khớp và trả `{matched, problems, given}`. Có `save` thì ghi `answers` của các khối còn mở. Câu trống nhận đáp án từ file; câu đã có đáp án chỉ bị thay khi có `overwrite`. Khối đã xuất bản hoặc đã loại không bị đụng tới và được báo trong `problems`.
+- UI proxy: `?answerFile=<jobId>` cho cả GET và POST.
+
+Phần xem trước tính trên đáp án đang có trên bàn duyệt:
+- số câu sẽ điền;
+- số câu trùng;
+- các câu khác đáp án đang có, kèm ô tích "thay bằng đáp án trong file";
+- các dòng lỗi, kèm số dòng.
+
+Lưu xong thì đáp án được gộp vào bàn duyệt, và câu nào có đáp án từ file thì hết dấu "AI gợi ý chưa đối chiếu".
+
+Kiểm tra:
+- `import/answer-file.spec.ts` (9 test) và `exam-import-answer-file.spec.ts` (4 test). Vitest `src/exams` đạt 238 test.
+- Watcher tsc báo 0 lỗi và route đã được map. Kiểm kiểu riêng các file UI và eslint UI đều sạch, oxlint sạch.
+
+**Chưa kiểm:**
+- Chưa thử trên trình duyệt với file thật mở và lưu bằng Excel.
+- File CSV lưu kiểu "CSV" thường (ANSI/Shift-JIS) sẽ làm hỏng cột `dang`. Cột `khoi` vẫn đủ để tìm khối.
+
+## NP-407: nút "Gợi ý đáp án" ở Duyệt bản nháp đề (27/11/2026)
+
+Đứng ngay trước "Chỉnh sửa" trên đầu mỗi khối đang mở có câu hỏi. AI giải cả khối; **chỉ điền câu còn trống** (đáp án in sẵn không bị thay); không lưu gì cho tới khi xuất bản.
+- API: `POST /exams/admin/import/drafts/:id/suggest` → `{ suggestions: {answer, why}[] }` (theo `no - 1`, `answer` 0 = không có). `ExamImportService.suggestAnswers`: chỉ khối `needs_review`/`error` có câu hỏi; `completeAny` thứ tự **task `grammar`**, purpose `exam-import`; không dịch vụ nào trả lời → 503, AI không cho đáp án nào → 422. Prompt/đọc kết quả trong `src/exams/import/suggest.ts` (giữ `<u>`, bỏ furigana; câu ★ giải thích đáp án = phương án ở ô ★). UI proxy: `POST /api/exam-import?suggest=<draftId>`.
+- UI (`exam-import-draft-block.tsx`, state nâng lên `exam-import-drafts.tsx` → `suggestById`, giữ dấu khi đổi khối): thông báo "AI gợi ý N câu còn trống…", câu AI chọn khác đáp án đã có, câu AI không trả lời; dưới mỗi câu dòng "AI gợi ý: k — lý do". Câu AI điền mà chưa đối chiếu: ô phiếu đáp án viền đứt màu cam, header đếm "N câu AI gợi ý chưa đối chiếu"; chọn lại đáp án hoặc bấm "Đã đối chiếu" thì hết dấu. Xuất bản (một khối hoặc cả đề) hỏi lại nếu còn câu AI chưa đối chiếu. Lưu chỉnh sửa thì bỏ gợi ý cũ (câu hỏi có thể đã đổi).
+- Test: `import/suggest.spec.ts` + `exam-import-suggest.spec.ts` (9 test); vitest `src/exams` 202 đạt; watcher tsc 0 lỗi (route đã map); tsc riêng 3 file UI + eslint UI sạch; oxlint chỉ cảnh báo cũ ở `route.ts:33`.
+- **Chưa kiểm:** chưa bấm thử trên trình duyệt (cần đăng nhập admin) và chưa đo độ đúng của AI khi giải; tsc riêng cho 2 spec API chưa chạy (RAM).
+
+
+---
+
+## NP-407: nút "Gợi ý đáp án" ở Duyệt bản nháp đề (27/11/2026)
+
+Đứng ngay trước "Chỉnh sửa" trên đầu mỗi khối đang mở có câu hỏi. AI giải cả khối; **chỉ điền câu còn trống** (đáp án in sẵn không bị thay); không lưu gì cho tới khi xuất bản.
+- API: `POST /exams/admin/import/drafts/:id/suggest` → `{ suggestions: {answer, why}[] }` (theo `no - 1`, `answer` 0 = không có). `ExamImportService.suggestAnswers`: chỉ khối `needs_review`/`error` có câu hỏi; `completeAny` thứ tự **task `grammar`**, purpose `exam-import`; không dịch vụ nào trả lời → 503, AI không cho đáp án nào → 422. Prompt/đọc kết quả trong `src/exams/import/suggest.ts` (giữ `<u>`, bỏ furigana; câu ★ giải thích đáp án = phương án ở ô ★). UI proxy: `POST /api/exam-import?suggest=<draftId>`.
+- UI (`exam-import-draft-block.tsx`, state nâng lên `exam-import-drafts.tsx` → `suggestById`, giữ dấu khi đổi khối): thông báo "AI gợi ý N câu còn trống…", câu AI chọn khác đáp án đã có, câu AI không trả lời; dưới mỗi câu dòng "AI gợi ý: k — lý do". Câu AI điền mà chưa đối chiếu: ô phiếu đáp án viền đứt màu cam, header đếm "N câu AI gợi ý chưa đối chiếu"; chọn lại đáp án hoặc bấm "Đã đối chiếu" thì hết dấu. Xuất bản (một khối hoặc cả đề) hỏi lại nếu còn câu AI chưa đối chiếu. Lưu chỉnh sửa thì bỏ gợi ý cũ (câu hỏi có thể đã đổi).
+- Test: `import/suggest.spec.ts` + `exam-import-suggest.spec.ts` (9 test); vitest `src/exams` 202 đạt; watcher tsc 0 lỗi (route đã map); tsc riêng 3 file UI + eslint UI sạch; oxlint chỉ cảnh báo cũ ở `route.ts:33`.
+- **Chưa kiểm:** chưa bấm thử trên trình duyệt (cần đăng nhập admin) và chưa đo độ đúng của AI khi giải; tsc riêng cho 2 spec API chưa chạy (RAM).
+
+
+---
+
 ## Trang "Cấu trúc đề thi JLPT" N5–N1 (27/11/2026)
 
 > Commit riêng theo yêu cầu, nhưng **phụ thuộc phần 聴解 chưa commit**: các dạng `listening-*` trong `mondai.ts` và `import/listening.ts` (`LISTENING_LAYOUT`, spec import). Chỉ biên dịch / chạy test được khi phần nghe được commit theo.

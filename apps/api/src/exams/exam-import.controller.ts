@@ -93,6 +93,14 @@ export class ExamImportController {
     return this.imports.updateDraft(caller, id, body);
   }
 
+  @Post("drafts/:id/suggest")
+  @ContentAdmin()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: "AI-suggested answers for a draft's questions, for the reviewer to check (not stored)" })
+  suggest(@CurrentUser() caller: AuthUser, @Param("id") id: string) {
+    return this.imports.suggestAnswers(caller, id);
+  }
+
   @Post("drafts/:id/discard")
   @ContentAdmin()
   @HttpCode(HttpStatus.OK)
@@ -107,6 +115,25 @@ export class ExamImportController {
   @ApiOperation({ summary: "The source page (PNG) of an imported PDF, for side-by-side review" })
   async page(@Param("jobId") jobId: string, @Param("n") n: string): Promise<StreamableFile> {
     return new StreamableFile(await this.imports.pageImage(jobId, Number(n)));
+  }
+
+  @Get(":jobId/answer-file")
+  @ContentAdmin()
+  @ApiOperation({ summary: "Answer-file template (CSV in JSON): one row per question of the job's drafts" })
+  answerFileTemplate(@Param("jobId") jobId: string) {
+    return this.imports.answerFileTemplate(jobId);
+  }
+
+  @Post(":jobId/answer-file")
+  @ContentAdmin()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: "Read an answer file onto the job's open drafts; `save: true` stores the answers" })
+  answerFile(
+    @CurrentUser() caller: AuthUser,
+    @Param("jobId") jobId: string,
+    @Body() body: { text?: unknown; save?: unknown; overwrite?: unknown },
+  ) {
+    return this.imports.importAnswerFile(caller, jobId, body ?? {});
   }
 
   @Get(":jobId/log")

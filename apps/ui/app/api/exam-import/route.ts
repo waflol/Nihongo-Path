@@ -13,6 +13,9 @@ import { getSession } from "@/lib/session";
  *   POST /api/exam-import?publish=<draftId> {answers} / ?discard=<draftId>
  *   GET  /api/exam-import?page=<jobId>&n=<page> → the source page as a PNG
  *   POST /api/exam-import?update=<draftId> {stimuli, questions, answers} → hand edits
+ *   POST /api/exam-import?suggest=<draftId> → AI-suggested answers (not stored)
+ *   GET  /api/exam-import?answerFile=<jobId> → answer-file template {fileName, csv}
+ *   POST /api/exam-import?answerFile=<jobId> {text, save?, overwrite?} → load an answer file
  * The access token stays server-side (same pattern as /api/import).
  */
 const ID = /^[\w-]{8,40}$/;
@@ -62,6 +65,11 @@ export async function GET(request: Request) {
       headers: { "Content-Type": "image/png", "Cache-Control": "private, max-age=3600" },
     });
   }
+  const template = new URL(request.url).searchParams.get("answerFile");
+  if (template) {
+    if (!/^[a-f0-9]{24}$/i.test(template)) return NextResponse.json({ error: "id không hợp lệ" }, { status: 400 });
+    return forward(`/${template}/answer-file`, "GET");
+  }
   const log = new URL(request.url).searchParams.get("log");
   if (log) {
     if (!ID.test(log)) return NextResponse.json({ error: "id không hợp lệ" }, { status: 400 });
@@ -95,11 +103,16 @@ export async function POST(request: Request) {
     return forward(`/${marks}/marks`, "POST", "{}");
   }
   const sp = new URL(request.url).searchParams;
-  for (const action of ["publish", "discard", "update"] as const) {
+  const answerFile = sp.get("answerFile");
+  if (answerFile) {
+    if (!/^[a-f0-9]{24}$/i.test(answerFile)) return NextResponse.json({ error: "id không hợp lệ" }, { status: 400 });
+    return forward(`/${answerFile}/answer-file`, "POST", await request.text());
+  }
+  for (const action of ["publish", "discard", "update", "suggest"] as const) {
     const id = sp.get(action);
     if (!id) continue;
     if (!ID.test(id)) return NextResponse.json({ error: "id không hợp lệ" }, { status: 400 });
-    return forward(`/drafts/${id}/${action}`, "POST", action === "discard" ? "{}" : await request.text());
+    return forward(`/drafts/${id}/${action}`, "POST", action === "discard" || action === "suggest" ? "{}" : await request.text());
   }
   // Upload: stream the multipart body straight through (up to 100 MB) instead of
   // buffering it here — on the 4 GB VPS a second in-memory copy is real OOM risk.
