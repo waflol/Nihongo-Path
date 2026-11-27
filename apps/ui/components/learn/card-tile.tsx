@@ -3,7 +3,8 @@
 import type { ReactNode } from "react";
 import { isJlptLevel, LevelBadge } from "@/components/learn/level-select";
 import { hanViet } from "@/lib/han-viet";
-import { Furigana } from "@/components/learn/furigana";
+import { hasJaMarkup } from "@/lib/grammar-markup";
+import { Furigana, JaMarkup } from "@/components/learn/furigana";
 import { PosChips, displayFront } from "@/components/learn/reading-fields";
 
 export interface TileCard {
@@ -99,7 +100,11 @@ export function CardTile({
           <div className="flex flex-wrap items-end gap-x-3 gap-y-1">
             <div className="min-w-0">
               <p lang="ja" className="break-words text-2xl font-bold leading-tight text-[var(--foreground)]">
-                <Furigana front={displayFront(card.front, card.partOfSpeech)} reading={card.reading} />
+                {hasJaMarkup(card.front) ? (
+                  <JaMarkup text={card.front} />
+                ) : (
+                  <Furigana front={displayFront(card.front, card.partOfSpeech)} reading={card.reading} />
+                )}
               </p>
               {hv ? (
                 <p className="mt-0.5 text-[11px] font-semibold tracking-[0.14em] text-[var(--primary)]">
@@ -121,7 +126,7 @@ export function CardTile({
             <ul className="mt-3 space-y-1.5 rounded-xl bg-[var(--background-1)] px-3 py-2.5">
               {card.examples.map((ex, i) => (
                 <li key={i} className="text-sm leading-snug">
-                  <span lang="ja" className="text-[var(--foreground)]">{ex.sentence}</span>
+                  <span lang="ja" className="leading-7 text-[var(--foreground)]"><JaMarkup text={ex.sentence} /></span>
                   {ex.source === "ai" || ex.source === "ai-translated" ? (
                     <span
                       title={ex.source === "ai" ? "Câu do AI tạo" : "Câu thật (Tatoeba), bản dịch do AI"}

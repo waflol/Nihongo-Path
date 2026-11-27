@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { furiganaParts, squeezeJa, type KanjiReadings } from "@/lib/furigana";
+import { parseJaMarkup } from "@/lib/grammar-markup";
 
 const cache: KanjiReadings = {};
 const asked = new Set<string>();
@@ -57,6 +58,48 @@ export function Furigana({ front, reading }: { front: string; reading?: string }
           <span key={i}>{p.text}</span>
         ),
       )}
+    </>
+  );
+}
+
+/**
+ * Imported grammar text (`漢字[かんじ]`, `{pattern}`) drawn like the vocabulary
+ * furigana. Hiding the reading keeps its space, so nothing moves.
+ */
+export function JaMarkup({
+  text,
+  showReading = true,
+  markClass = "font-bold text-[var(--primary)]",
+  rtClass = "text-[var(--muted-foreground)]",
+}: {
+  text: string;
+  showReading?: boolean;
+  /** Style of the taught pattern; "" leaves it unmarked. */
+  markClass?: string;
+  rtClass?: string;
+}) {
+  return (
+    <>
+      {parseJaMarkup(text).map((p, i) => {
+        const body = p.rt ? (
+          <ruby style={{ rubyAlign: "center", rubyPosition: "over", letterSpacing: 0 }}>
+            {p.text}
+            <rt
+              data-rt={p.rt}
+              aria-hidden="true"
+              className={`select-none text-[0.5em] font-medium tracking-normal before:content-[attr(data-rt)] ${rtClass} ${showReading ? "" : "invisible"}`}
+              style={{ rubyAlign: "center", letterSpacing: 0 }}
+            />
+          </ruby>
+        ) : (
+          p.text
+        );
+        return (
+          <span key={i} className={p.mark ? markClass : undefined}>
+            {body}
+          </span>
+        );
+      })}
     </>
   );
 }

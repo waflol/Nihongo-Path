@@ -9,9 +9,12 @@ import { seededShuffle } from "./quiz-utils";
 import { PosChips, displayFront } from "@/components/learn/reading-fields";
 import { ConfirmDialog } from "@/components/learn/confirm-dialog";
 import { CardFeedbackDialog } from "@/components/learn/card-feedback-dialog";
-import { SentenceFurigana } from "@/components/learn/furigana";
+import { JaMarkup, SentenceFurigana } from "@/components/learn/furigana";
+import { GrammarBack, GrammarFront, type GrammarCardDetail } from "@/components/learn/grammar-card-faces";
+import { hasJaMarkup, jaMarkupSpeech } from "@/lib/grammar-markup";
 import { StudyComplete } from "@/components/learn/study-complete";
 import { hanViet } from "@/lib/han-viet";
+import { KanjiBack, KanjiFront, kanjiSpeechText } from "@/components/learn/kanji-card-faces";
 import { useHanVietPref } from "@/lib/use-han-viet-pref";
 import {
   advanceSrs,
@@ -67,6 +70,10 @@ interface QueueItem {
   note?: string;
   hanViet?: string;
   examples?: { sentence: string; translation?: string }[];
+  /** "KANJI" and "GRAMMAR" cards have their own faces. */
+  kind?: string;
+  /** Usage and examples of the grammar point behind a "GRAMMAR" card. */
+  grammarDetail?: GrammarCardDetail;
   bucket: "new" | "due";
   label?: "hard" | "mastered" | "normal";
   dueDay?: string;
@@ -90,13 +97,32 @@ interface Queue {
 }
 
 interface DeckRef {
+  family?: string;
   _id: string;
   title: string;
   shared: boolean;
+  systemKey?: string;
+}
+
+/** "kanji:N5" → 0 … "kanji:N1" → 4; personal decks after them. */
+function systemRank(systemKey?: string): number {
+  const level = Number(systemKey?.split(":N")[1]);
+  return level ? 5 - level : 5;
 }
 
 /** Cross-deck review: every card already learned, whichever deck it is in. */
 const ALL_DECKS: DeckRef = { _id: "all", title: "Tất cả thẻ đã học", shared: false };
+
+/** Kanji by family (`?family=` a component, or "all") instead of a level deck. */
+const familyDeck = (family: string): DeckRef => ({
+  _id: "families",
+  title: family === "all" ? "Gia đình Kanji · A–Z Hán Việt" : `Gia đình ${family}`,
+  shared: false,
+  family,
+});
+
+/** The cross-deck and family queues are not decks: there is nothing to reset. */
+const isRealDeck = (d: DeckRef | null) => !!d && d._id !== ALL_DECKS._id && d._id !== "families";
 
 interface BatchResult {
   cardId: string;
@@ -148,6 +174,7 @@ export function StudySession({ mode, kind, grammarFilter }: { mode: "learn" | "r
 function StudySessionInner({ mode, kind, grammarFilter }: { mode: "learn" | "review"; kind?: "GRAMMAR" | "KANJI"; grammarFilter?: { level?: string; themeId?: string; contextId?: string; textbookId?: string; unitId?: string } }) {
   const searchParams = useSearchParams();
   const deckParam = searchParams.get("deck");
+  const familyParam = kind === "KANJI" ? searchParams.get("family") : null;
   // `learn` (/learn/study): new words in deck order, up to the daily amount.
   // `review` (/learn/review): only the words due by the SRS schedule.
 
@@ -318,7 +345,8 @@ function StudySessionInner({ mode, kind, grammarFilter }: { mode: "learn" | "rev
   const loadQueue = useCallback(
     async (target: DeckRef) => {
       const kindQuery = kind ? `&kind=${kind}` : "";
-      const qRes = await fetch(`/api/srs/queue/${target._id}?limit=100&mode=${mode}${kindQuery}${grammarQuery}`, {
+      const familyQuery = target.family ? `&family=${encodeURIComponent(target.family)}` : "";
+      const qRes = await fetch(`/api/srs/queue/${target._id}?limit=100&mode=${mode}${kindQuery}${grammarQuery}${familyQuery}`, {
         cache: "no-store",
       }).catch(() => null);
       if (!qRes || !qRes.ok) {
@@ -345,8 +373,9 @@ function StudySessionInner({ mode, kind, grammarFilter }: { mode: "learn" | "rev
     async function load() {
       // The queue's deck is already known for the review hub (all decks) and for a
       // `?deck=` link, so fetch it alongside the deck list instead of after it.
-      const guess: DeckRef | null =
-        deckParam || mode === "review"
+      const guess: DeckRef | null = familyParam
+        ? familyDeck(familyParam)
+        : deckParam || mode === "review"
           ? deckParam
             ? { _id: deckParam, title: "", shared: false }
             : ALL_DECKS
@@ -374,12 +403,15 @@ function StudySessionInner({ mode, kind, grammarFilter }: { mode: "learn" | "rev
       const list = (Array.isArray(rawList) ? rawList : []).filter(
         (d) => deckPillar(d) === targetPillar,
       );
+      // Default grammar / kanji decks run N5 → N1, ahead of personal ones, so learning starts at N5.
+      if (targetPillar !== "vocab") list.sort((a, b) => systemRank(a.systemKey) - systemRank(b.systemKey));
       if (cancelled) return;
       setDecks(list);
 
       // Learning needs one deck (default: the first); reviewing may span all of them.
-      const target =
-        mode === "learn"
+      const target = familyParam
+        ? familyDeck(familyParam)
+        : mode === "learn"
           ? (list.find((d) => d._id === deckParam) ?? list[0])
           : deckParam
             ? (list.find((d) => d._id === deckParam) ?? ALL_DECKS)
@@ -405,7 +437,7 @@ function StudySessionInner({ mode, kind, grammarFilter }: { mode: "learn" | "rev
     return () => {
       cancelled = true;
     };
-  }, [deckParam, mode, loadQueue]);
+  }, [deckParam, familyParam, mode, loadQueue]);
 
   /** Flush the buffered reviews in one batched request. */
   const flushingRef = useRef(false);
@@ -687,7 +719,7 @@ function StudySessionInner({ mode, kind, grammarFilter }: { mode: "learn" | "rev
       />
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border)] pb-4 max-sm:flex-nowrap max-sm:pb-2">
         <h1 className="shrink-0 text-lg sm:text-2xl font-semibold tracking-tight text-[var(--foreground)]">
-          {kind === "GRAMMAR" ? "Học ngữ pháp" : mode === "learn" ? "Học từ mới" : "Ôn tập SRS"}
+          {kind === "GRAMMAR" ? "Học ngữ pháp" : mode !== "learn" ? "Ôn tập SRS" : kind === "KANJI" ? "Học Kanji mới" : "Học từ mới"}
         </h1>
         <div className="flex min-w-0 max-w-full items-center gap-3 max-sm:flex-1 max-sm:justify-end">
           {/* Always rendered (just hidden when idle) so the header height —
@@ -714,12 +746,15 @@ function StudySessionInner({ mode, kind, grammarFilter }: { mode: "learn" | "rev
                   const next =
                     e.target.value === ALL_DECKS._id
                       ? ALL_DECKS
-                      : decks.find((d) => d._id === e.target.value);
+                      : e.target.value === "families"
+                        ? familyDeck(familyParam ?? "all")
+                        : decks.find((d) => d._id === e.target.value);
                   if (next) void switchDeck(next);
                 }}
                 className="ml-1 min-w-0 max-w-full flex-1 truncate rounded-lg border border-[var(--border)] bg-[var(--background)] px-2 py-1 text-sm text-[var(--foreground)]"
               >
                 {mode === "review" && <option value={ALL_DECKS._id}>{ALL_DECKS.title}</option>}
+                {kind === "KANJI" && <option value="families">{familyDeck(familyParam ?? "all").title}</option>}
                 {decks.map((d) => (
                   <option key={d._id} value={d._id}>
                     {d.title}
@@ -756,7 +791,7 @@ function StudySessionInner({ mode, kind, grammarFilter }: { mode: "learn" | "rev
             setIndex(Math.max(0, sessionList.length - 1));
             setFlipped(false);
           }}
-          onReset={deck?._id === ALL_DECKS._id ? undefined : () => setConfirmReset(true)}
+          onReset={isRealDeck(deck) ? () => setConfirmReset(true) : undefined}
           onRestart={restartWeak}
           restartLabel={weakCards.length === 0 ? "Đặt lại" : "Học lại phiên này"}
         />
@@ -898,16 +933,18 @@ function StudySessionInner({ mode, kind, grammarFilter }: { mode: "learn" | "rev
                   <path d="M11 5 6 9H2v6h4l5 4V5ZM15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13" />
                 </svg>
               </button>
-              <button
-                type="button"
-                onClick={toggleReading}
-                aria-pressed={showReading}
-                title="Bật/tắt cách đọc hiragana trên mặt thuật ngữ"
-                aria-label="Hiragana"
-                className={toolbarBtn(showReading)}
-              >
-                <span aria-hidden="true" className="text-base leading-none">あ</span>
-              </button>
+              {kind !== "KANJI" && (
+                <button
+                  type="button"
+                  onClick={toggleReading}
+                  aria-pressed={showReading}
+                  title="Bật/tắt cách đọc hiragana trên thẻ"
+                  aria-label="Hiragana"
+                  className={toolbarBtn(showReading)}
+                >
+                  <span aria-hidden="true" className="text-base leading-none">あ</span>
+                </button>
+              )}
               <button
                 type="button"
                 onClick={toggleExamples}
@@ -920,16 +957,18 @@ function StudySessionInner({ mode, kind, grammarFilter }: { mode: "learn" | "rev
                   <path d="M4 6h16M4 12h16M4 18h10" />
                 </svg>
               </button>
-              <button
-                type="button"
-                onClick={toggleHanViet}
-                aria-pressed={showHanViet}
-                title="Hiện/ẩn âm Hán Việt dưới chữ kanji"
-                aria-label="Hán Việt"
-                className={toolbarBtn(showHanViet)}
-              >
-                <span aria-hidden="true" className="text-base leading-none">漢</span>
-              </button>
+              {kind !== "KANJI" && kind !== "GRAMMAR" && (
+                <button
+                  type="button"
+                  onClick={toggleHanViet}
+                  aria-pressed={showHanViet}
+                  title="Hiện/ẩn âm Hán Việt dưới chữ kanji"
+                  aria-label="Hán Việt"
+                  className={toolbarBtn(showHanViet)}
+                >
+                  <span aria-hidden="true" className="text-base leading-none">漢</span>
+                </button>
+              )}
             </div>
             <p className="mt-3 h-4 truncate text-center text-xs text-[var(--muted-foreground)]" title={current.relearn ? "Học lại — thẻ vừa quên, quay lại sau ~10 phút" : undefined}>
               {current.relearn
@@ -951,6 +990,8 @@ function StudySessionInner({ mode, kind, grammarFilter }: { mode: "learn" | "rev
                 next card's answer) and plays the short entrance. */}
             <LearnCard
               key={`${current.id}-${current.relearn ? "r" : "n"}`}
+              kind={current.kind}
+              grammarDetail={current.grammarDetail}
               front={displayFront(current.front, current.partOfSpeech)}
               back={current.back}
               reading={current.reading}
@@ -1157,6 +1198,8 @@ function SpeakerIcon() {
  * flip shortcut and never flip the card when clicked.
  */
 function LearnCard({
+  kind,
+  grammarDetail,
   front,
   back,
   reading: cardReading,
@@ -1176,6 +1219,8 @@ function LearnCard({
   onFlip,
   onReport,
 }: {
+  kind?: string;
+  grammarDetail?: GrammarCardDetail;
   front: string;
   back: string;
   reading?: string;
@@ -1205,14 +1250,18 @@ function LearnCard({
   const parsed = splitReading(front);
   const term = parsed.term;
   const reading = cardReading || parsed.reading;
+  const isKanji = kind === "KANJI";
+  const isGrammar = kind === "GRAMMAR";
+  const spoken = isKanji ? kanjiSpeechText(cardReading, front) : isGrammar ? jaMarkupSpeech(front) : reading || term;
+  const shownExamples = grammarDetail?.examples.length ? grammarDetail.examples : examples;
 
   // Auto-pronounce the term (then the example sentences, if shown) every time the card is flipped over (not when it
   // flips back). Refs keep the effect keyed on `flipped` only.
   const autoSpeakRef = useRef<() => void>(() => {});
   autoSpeakRef.current = () =>
     speak(`auto-${Date.now()}`, [
-      reading || term,
-      ...(showExamples && examples ? examples.map((ex) => ex.sentence) : []),
+      spoken,
+      ...(showExamples && shownExamples ? shownExamples.map((ex) => jaMarkupSpeech(ex.sentence)) : []),
     ]);
   useEffect(() => {
     if (flipped && autoSpeak) autoSpeakRef.current();
@@ -1247,6 +1296,55 @@ function LearnCard({
       {hint("text-white/70", "Nhấn Space / bấm vào thẻ để lật")}
     </div>
   );
+  const exampleList = showExamples && shownExamples && shownExamples.length > 0 && (
+              <div className="mt-4 w-full max-w-md space-y-1.5 text-left">
+                {shownExamples.map((ex, i) => (
+                  <div
+                    key={i}
+                    className="flex items-start gap-2 rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">
+                        Ví dụ{shownExamples.length > 1 ? ` ${i + 1}` : ""}
+                      </p>
+                      <p lang="ja" className="mt-0.5 break-words text-base leading-8 text-[var(--foreground)]">
+                        {hasJaMarkup(ex.sentence) ? (
+                          <JaMarkup text={ex.sentence} showReading={showReading} />
+                        ) : showReading ? (
+                          <SentenceFurigana text={ex.sentence} />
+                        ) : (
+                          ex.sentence
+                        )}
+                      </p>
+                      {ex.translation && (
+                        <p className="mt-0.5 break-words text-sm text-[var(--muted-foreground)]">
+                          {ex.translation}
+                        </p>
+                      )}
+                    </div>
+                    {supported && (
+                      <button
+                        type="button"
+                        data-speak
+                        tabIndex={flipped ? 0 : -1}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          speak(`example-${i}`, jaMarkupSpeech(ex.sentence));
+                        }}
+                        aria-label={`Phát âm câu ví dụ ${i + 1}`}
+                        title="Phát âm câu ví dụ"
+                        className={
+                          "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--background-1)] text-[var(--primary)] transition hover:bg-[var(--layer-hover)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--primary-focus)] " +
+                          (speakingId === `example-${i}` ? "animate-pulse" : "")
+                        }
+                      >
+                        <SpeakerIcon />
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            );
   const meaningContent = (
     <div className="flex min-h-full flex-col items-center justify-center">
       {image && (
@@ -1271,59 +1369,29 @@ function LearnCard({
           Đồng nghĩa: {note}
         </p>
       )}
-      {showExamples && examples && examples.length > 0 && (
-              <div className="mt-4 w-full max-w-md space-y-1.5 text-left">
-                {examples.map((ex, i) => (
-                  <div
-                    key={i}
-                    className="flex items-start gap-2 rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">
-                        Ví dụ{examples.length > 1 ? ` ${i + 1}` : ""}
-                      </p>
-                      <p lang="ja" className="mt-0.5 break-words text-base leading-8 text-[var(--foreground)]">
-                        {showReading ? <SentenceFurigana text={ex.sentence} /> : ex.sentence}
-                      </p>
-                      {ex.translation && (
-                        <p className="mt-0.5 break-words text-sm text-[var(--muted-foreground)]">
-                          {ex.translation}
-                        </p>
-                      )}
-                    </div>
-                    {supported && (
-                      <button
-                        type="button"
-                        data-speak
-                        tabIndex={flipped ? 0 : -1}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          speak(`example-${i}`, ex.sentence);
-                        }}
-                        aria-label={`Phát âm câu ví dụ ${i + 1}`}
-                        title="Phát âm câu ví dụ"
-                        className={
-                          "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--background-1)] text-[var(--primary)] transition hover:bg-[var(--layer-hover)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--primary-focus)] " +
-                          (speakingId === `example-${i}` ? "animate-pulse" : "")
-                        }
-                      >
-                        <SpeakerIcon />
-                      </button>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
+      {exampleList}
       {hint("text-[var(--muted-foreground)]", "Nhấn Space / bấm vào thẻ để lật")}
     </div>
   );
   const termPlate = {
     tone: "border-transparent bg-gradient-to-br from-[var(--primary-500)] via-[var(--primary-600)] to-[var(--primary-800)] dark:from-[var(--primary-700)] dark:via-[var(--primary-800)] dark:to-[var(--primary-950)]",
-    content: termContent,
+    content: isKanji ? (
+      <KanjiFront char={front} />
+    ) : isGrammar ? (
+      <GrammarFront pattern={front} showReading={showReading} />
+    ) : (
+      termContent
+    ),
   };
   const meaningPlate = {
     tone: "border-[color-mix(in_srgb,var(--primary)_22%,var(--border))] bg-gradient-to-b from-[var(--background)] to-[color-mix(in_srgb,var(--primary-100)_45%,var(--background))] dark:to-[color-mix(in_srgb,var(--primary-900)_35%,var(--background))]",
-    content: meaningContent,
+    content: isKanji ? (
+      <KanjiBack hanViet={hanVietText || hanViet(term)} reading={cardReading} />
+    ) : isGrammar ? (
+      <GrammarBack meaning={back} detail={grammarDetail} showReading={showReading} examples={exampleList} />
+    ) : (
+      meaningContent
+    ),
   };
   const plates =
     startSide === "front" ? [termPlate, meaningPlate] : [meaningPlate, termPlate];
@@ -1335,7 +1403,13 @@ function LearnCard({
       onClick={onFlip}
       aria-pressed={flipped}
       aria-label={flipped ? "Hiện mặt câu hỏi" : "Hiện mặt đáp án"}
-      className="animate-card-in relative block h-[clamp(13rem,calc(100svh-27.125rem),20rem)] w-full cursor-pointer rounded-2xl text-center focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--primary-focus)] sm:h-72"
+      className={
+        "animate-card-in relative block w-full cursor-pointer rounded-2xl text-center focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--primary-focus)] " +
+        // Grammar answers are long: give them a taller card (the face scrolls beyond that).
+        (isGrammar
+          ? "h-[clamp(16rem,calc(100svh-24rem),28rem)]"
+          : "h-[clamp(13rem,calc(100svh-27.125rem),20rem)] sm:h-72")
+      }
       style={{ perspective: "1400px" }}
     >
       <div
@@ -1386,7 +1460,7 @@ function LearnCard({
           data-speak
           onClick={(e) => {
             e.stopPropagation();
-            speak("term", reading || front);
+            speak("term", isKanji || isGrammar ? spoken : reading || front);
           }}
           aria-label="Phát âm thanh"
           title="Phát âm (tiếng Nhật)"

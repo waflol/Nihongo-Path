@@ -1,5 +1,6 @@
 "use client";
 
+import { JaMarkup } from "@/components/learn/furigana";
 import { deckPillar } from "./pillar-nav";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -821,7 +822,7 @@ export function ExercisesConsole({ variant = "exercises" }: { variant?: "exercis
                     )}
                     {answerCard?.examples?.[0] && !question.explain?.includes(answerCard.examples[0].sentence) && (
                       <p className="mt-2 text-sm text-[var(--muted-foreground)]">
-                        Ví dụ: {answerCard.examples[0].sentence}
+                        Ví dụ: <JaMarkup text={answerCard.examples[0].sentence} />
                         {answerCard.examples[0].translation ? ` — ${answerCard.examples[0].translation}` : ""}
                       </p>
                     )}

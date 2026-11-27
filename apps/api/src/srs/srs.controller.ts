@@ -64,6 +64,12 @@ class QueueQuery {
   @IsIn(["vocab", "grammar", "kanji"])
   pillar?: "vocab" | "grammar" | "kanji";
 
+  /** Kanji by family instead of by level: a component, or "all" (use with `queue/families`). */
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  family?: string;
+
   @IsOptional()
   @IsString()
   level?: string;
@@ -225,7 +231,7 @@ export class SrsController {
       contextId: query.contextId,
       textbookId: query.textbookId,
       unitId: query.unitId,
-    }, query.pillar);
+    }, query.pillar, query.family);
   }
 
   @Post("reviews")

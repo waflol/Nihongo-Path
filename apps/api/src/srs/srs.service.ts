@@ -13,7 +13,8 @@ import {
   type FlashcardDocument,
   type Pillar,
 } from "../flashcards/schemas/card.schema.js";
-import type { GrammarPointDocument } from "../content/schemas/grammar-point.schema.js";
+import type { GrammarPoint, GrammarPointDocument } from "../content/schemas/grammar-point.schema.js";
+import { familyStudyOrder } from "../content/kanji-families.js";
 import { grammarTextbookFilter } from "../content/grammar-filter.js";
 import type {
   FlashcardDeckDocument,
@@ -38,6 +39,36 @@ import { SrsReviewLog, type SrsReviewLogDocument } from "./schemas/review-log.sc
 import { orderReviews, resolveReviewedAt } from "./srs.review-log.js";
 import { randomUUID } from "node:crypto";
 
+/** What a grammar flashcard shows on its answer face, read live from the grammar point. */
+export interface GrammarCardDetail {
+  forms: string[];
+  coreExplanation?: string;
+  explanations: string[];
+  notes: string[];
+  examples: { sentence: string; translation?: string }[];
+}
+
+type GrammarSourceFields = Pick<
+  GrammarPoint,
+  "structure" | "usage" | "forms" | "coreExplanation" | "explanations" | "notes" | "senses" | "examples"
+>;
+
+export function grammarCardDetail(g: Partial<GrammarSourceFields>): GrammarCardDetail {
+  const senses = g.senses ?? [];
+  const senseExamples = senses.flatMap((s) => s.examples ?? []);
+  const text = (list: (string | undefined | null)[]) => list.filter((t): t is string => !!t);
+  return {
+    forms: text([g.structure, ...(g.forms ?? [])]),
+    coreExplanation: g.coreExplanation || undefined,
+    explanations: text([g.usage, ...(g.explanations ?? []), ...senses.map((s) => s.explanation)]),
+    notes: text(g.notes ?? []),
+    examples: (senseExamples.length ? senseExamples : (g.examples ?? [])).map((e) => ({
+      sentence: e.sentence,
+      translation: e.translation,
+    })),
+  };
+}
+
 /** A card in the review queue, with a computed bucket + SRS snapshot. */
 export interface CardQueueItem {
   id: string;
@@ -55,6 +86,8 @@ export interface CardQueueItem {
   hanViet?: string;
   examples?: { sentence: string; translation?: string }[];
   kind: Flashcard["kind"];
+  /** Usage and examples of the published grammar point behind a GRAMMAR card. */
+  grammarDetail?: GrammarCardDetail;
   /** `new` = never reviewed; `due` = progress past due (label refines it). */
   bucket: "new" | "due";
   /** For due cards: `hard` | `mastered` | `normal` (from the SRS state). */
@@ -213,6 +246,23 @@ export class SrsService {
     return doc;
   }
 
+  /** One system kanji card per character, in the order given. */
+  private async familyCards(chars: string[]): Promise<FlashcardDocument[]> {
+    const decks = await this.deck
+      .find({ systemKey: /^kanji:/, shared: true, status: "PUBLISHED" }, { _id: 1 })
+      .lean()
+      .exec();
+    const rows = (await this.card
+      .find({ deck: { $in: decks.map((d) => d._id) }, kind: "KANJI", front: { $in: chars } })
+      .select("_id front")
+      .sort({ _id: 1 })
+      .lean()
+      .exec()) as unknown as FlashcardDocument[];
+    const byChar = new Map<string, FlashcardDocument>();
+    for (const c of rows) if (!byChar.has(c.front)) byChar.set(c.front, c);
+    return chars.flatMap((ch) => byChar.get(ch) ?? []);
+  }
+
   /**
    * Build the caller's review queue for a deck (P3-SRS-04). Buckets:
    * - `newCards` — deck cards with no progress for this user.
@@ -230,19 +280,24 @@ export class SrsService {
     kind?: Flashcard["kind"],
     grammarFilter?: { level?: string; themeId?: string; contextId?: string; textbookId?: string; unitId?: string },
     pillar?: Pillar,
+    family?: string,
   ): Promise<StudyQueue> {
     // `all` = the review hub: every card the caller has already learned, from
     // any deck they can read — no new cards, no deck distinction.
     const reviewAll = deckId === "all";
+    // `families` = the system kanji cards of one family (or all), in family order.
+    const byFamily = deckId === "families";
+    const familyChars = byFamily ? familyStudyOrder(family ?? "all") : [];
+    if (byFamily && familyChars.length === 0) throw new NotFoundException("Family not found");
     // learn = a deck's new words only; review (SRS) = due words only, for "all" or one deck.
     const learn = mode === "learn" && !reviewAll;
     // Independent lookups run together (each is a separate DB round trip).
     const [deckDoc, timezone] = await Promise.all([
-      reviewAll ? undefined : this.resolveAccessibleDeck(caller, deckId),
+      reviewAll || byFamily ? undefined : this.resolveAccessibleDeck(caller, deckId),
       this.resolveTimezone(caller, tz),
     ]);
     const effectivePillar: Pillar =
-      pillar ?? (kind ? cardKindToPillar(kind) : (deckDoc?.pillar as Pillar | undefined) ?? "vocab");
+      (byFamily ? "kanji" : pillar) ?? (kind ? cardKindToPillar(kind) : (deckDoc?.pillar as Pillar | undefined) ?? "vocab");
     const newPerDay = await this.newCardsPerDay(caller, effectivePillar);
     const today = localDayKey(Date.now(), timezone);
     const userId = new Types.ObjectId(caller.sub);
@@ -295,12 +350,14 @@ export class SrsService {
       const keep = new Set([...best.values()].map((c) => String(c._id)));
       cards = cards.filter((c) => keep.has(String(c._id)));
     } else {
-      cards = (await this.card
-        .find({ deck: new Types.ObjectId(deckId), ...cardFilter })
-        .select("_id")
-        .sort({ order: 1, _id: 1 })
-        .lean()
-        .exec()) as unknown as FlashcardDocument[];
+      cards = byFamily
+        ? await this.familyCards(familyChars)
+        : ((await this.card
+            .find({ deck: new Types.ObjectId(deckId), ...cardFilter })
+            .select("_id")
+            .sort({ order: 1, _id: 1 })
+            .lean()
+            .exec()) as unknown as FlashcardDocument[]);
       // The caller's progress for exactly these cards — one lookup.
       progressDocs = (await this.progress
         .find({ user: userId, card: { $in: cards.map((c) => c._id) } })
@@ -382,6 +439,17 @@ export class SrsService {
         : []
       ).map((c) => [String(c._id), c]),
     );
+    const pointIds = [...full.values()].flatMap((c) => (c.kind === "GRAMMAR" && c.grammar ? [c.grammar] : []));
+    const points = new Map(
+      (pointIds.length
+        ? await this.grammar
+            .find({ _id: { $in: pointIds }, status: "PUBLISHED" })
+            .select("structure usage forms coreExplanation explanations notes senses examples")
+            .lean()
+            .exec()
+        : []
+      ).map((g) => [String(g._id), grammarCardDetail(g)]),
+    );
     const hydrate = (list: Stub[]): CardQueueItem[] =>
       list.flatMap((w) => {
         const c = full.get(w.id);
@@ -402,6 +470,7 @@ export class SrsService {
               ? c.examples.map((e) => ({ sentence: e.sentence, translation: e.translation }))
               : undefined,
             kind: c.kind,
+            grammarDetail: c.grammar ? points.get(String(c.grammar)) : undefined,
             ...w.extra,
           },
         ];

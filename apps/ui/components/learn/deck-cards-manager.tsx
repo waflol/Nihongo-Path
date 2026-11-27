@@ -1,5 +1,8 @@
 "use client";
 
+import { hasJaMarkup, stripJaMarkup } from "@/lib/grammar-markup";
+import { JaMarkup } from "@/components/learn/furigana";
+import { deckPillar, PILLAR_NOUN } from "@/components/learn/pillar-nav";
 import { useConfirm } from "@/components/learn/use-confirm";
 import Link from "next/link";
 import { logHref } from "@/components/learn/log-tabs";
@@ -33,6 +36,9 @@ interface Deck {
   category?: string;
   shared: boolean;
   cardCount: number;
+  pillar?: string;
+  /** Set on the default grammar / kanji decks, which are synced from the catalogue. */
+  systemKey?: string;
 }
 
 interface PageCard {
@@ -82,6 +88,12 @@ const btn =
   "inline-flex h-9 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border border-[var(--border)] px-3 text-xs font-semibold text-[var(--foreground)] hover:bg-[var(--layer-hover)] disabled:opacity-60";
 const primaryBtn =
   "inline-flex h-9 items-center justify-center rounded-lg bg-[var(--primary)] px-4 text-xs font-semibold text-[var(--primary-foreground)] hover:bg-[var(--primary-hover)] disabled:cursor-not-allowed disabled:opacity-60";
+
+/** What differs on the deck page of a grammar / kanji deck. */
+const CONTENT_PILLARS = {
+  grammar: { name: "Ngữ pháp", search: "Tìm theo mẫu hoặc nghĩa…" },
+  kanji: { name: "Kanji", search: "Tìm theo chữ, Hán Việt, on/kun…" },
+};
 
 const emptyForm = {
   front: "",
@@ -134,7 +146,7 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
   const [adding, setAdding] = useState(false);
   const [formKey, setFormKey] = useState(0);
   const [form, setForm] = useState(emptyForm);
-  const [showHanViet, toggleHanViet] = useHanVietPref();
+  const [hanVietPref, toggleHanViet] = useHanVietPref();
   const [view, setView] = useState<"cards" | "table">("cards");
   useEffect(() => {
     try {
@@ -154,7 +166,13 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
   const [infoBusy, setInfoBusy] = useState(false);
   const [categories, setCategories] = useState<string[]>([]);
 
-  const canWrite = mode === "admin" || (deck !== null && !deck.shared);
+  const pillar = deck ? deckPillar(deck) : "vocab";
+  // Grammar / kanji decks have none of the vocabulary tools (checks, AI, word classes).
+  const content = pillar === "vocab" ? null : CONTENT_PILLARS[pillar];
+  // Hand edits to a default deck would be overwritten by the next sync, so it is read-only.
+  const isSystem = Boolean(deck?.systemKey);
+  const canWrite = !isSystem && (mode === "admin" || (deck !== null && !deck.shared));
+  const showHanViet = pillar === "kanji" || (pillar === "vocab" && hanVietPref);
   const [rechecking, setRechecking] = useState<ReviewField | "readingBack" | null>(null);
   const [recheckMsg, setRecheckMsg] = useState<string | null>(null);
   // Off: cards unchanged since their last check are skipped (fast). On: judge every card again.
@@ -686,8 +704,8 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
   return (
     <div className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6">
       {dialog}
-      <Link href={backHref} className="text-sm text-[var(--primary)] hover:underline">
-        ← Về danh sách bộ thẻ
+      <Link href={content && mode === "learn" ? `/learn/${pillar}` : backHref} className="text-sm text-[var(--primary)] hover:underline">
+        ← {content && mode === "learn" ? content.name : "Về danh sách bộ thẻ"}
       </Link>
 
       <div className="mt-3 flex flex-wrap items-start justify-between gap-3">
@@ -705,11 +723,12 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
           </h1>
           {deck?.summary && <p className="mt-1 text-sm text-[var(--muted-foreground)]">{deck.summary}</p>}
           <p className="mt-1 text-sm text-[var(--muted-foreground)]">
-            {deck ? `${deck.cardCount} thẻ` : ""}
-            {data && data.missingExamples > 0 ? ` · ${data.missingExamples} thẻ chưa có ví dụ` : ""}
+            {deck ? `${deck.cardCount} ${content ? PILLAR_NOUN[pillar] : "thẻ"}` : ""}
+            {isSystem && content ? ` · tự đồng bộ từ danh mục ${content.name}` : ""}
+            {!content && data && data.missingExamples > 0 ? ` · ${data.missingExamples} thẻ chưa có ví dụ` : ""}
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className={"flex flex-wrap items-center gap-2" + (content ? " w-full" : "")}>
           <div role="group" aria-label="Chế độ xem" className="inline-flex overflow-hidden rounded-lg border border-[var(--border)] text-xs font-semibold">
             {(["cards", "table"] as const).map((v) => (
               <button
@@ -728,9 +747,20 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
               </button>
             ))}
           </div>
-          <HanVietToggle on={showHanViet} onToggle={toggleHanViet} />
-          {mode === "learn" && (
-            <Link href={`/learn/study?deck=${deckId}`} className={btn} title="Học bộ thẻ này">
+          {content ? (
+            <input
+              type="search"
+              value={qInput}
+              onChange={(e) => setQInput(e.target.value)}
+              placeholder={content.search}
+              aria-label="Tìm trong bộ thẻ"
+              className={`${inputClass} h-9 min-w-48 flex-1`}
+            />
+          ) : (
+            deck && <HanVietToggle on={showHanViet} onToggle={toggleHanViet} />
+          )}
+          {mode === "learn" && deck && (
+            <Link href={`/learn/${content ? `${pillar}/study` : "study"}?deck=${deckId}`} className={btn} title="Học bộ thẻ này">
               <Icon name="play" /> Học
             </Link>
           )}
@@ -894,10 +924,13 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
         </form>
       )}
 
-      {mode === "admin" && data && <AiUnusedExamples deckId={deckId} missing={data.missingExamples} />}
+      {mode === "admin" && !content && data && <AiUnusedExamples deckId={deckId} missing={data.missingExamples} />}
 
       {/* Filters */}
+      {deck && (!content || (!isSystem && (data?.tags.length ?? 0) > 0)) && (
       <div className="mt-5 space-y-3 rounded-2xl border border-[var(--border)] bg-[var(--background-1)] p-4">
+        {!content && (
+        <>
         <input
           type="search"
           value={qInput}
@@ -1036,6 +1069,8 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
             </button>
           </div>
         )}
+        </>
+        )}
         {data && data.tags.length > 0 && (
           <div className="flex max-h-28 flex-wrap items-center gap-1.5 overflow-y-auto">
             <span className="mr-1 text-xs font-medium text-[var(--muted-foreground)]">Tag:</span>
@@ -1061,6 +1096,7 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
           </div>
         )}
       </div>
+      )}
 
       {/* Selection / bulk tagging */}
       {canWrite && items.length > 0 && (
@@ -1154,12 +1190,12 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
                   )}
                   <th className="w-10 px-3 py-2 font-medium">#</th>
                   <th className="px-3 py-2 font-medium">Mặt trước</th>
-                  <th className="px-3 py-2 font-medium">Cách đọc</th>
+                  {pillar !== "grammar" && <th className="px-3 py-2 font-medium">Cách đọc</th>}
                   {showHanViet && <th className="px-3 py-2 font-medium">Hán Việt</th>}
                   <th className="px-3 py-2 font-medium">Mặt sau</th>
-                  <th className="px-3 py-2 font-medium">Loại từ</th>
-                  <th className="px-3 py-2 font-medium">Ví dụ</th>
-                  <th className="px-3 py-2 font-medium">Tags</th>
+                  {!content && <th className="px-3 py-2 font-medium">Loại từ</th>}
+                  {pillar !== "kanji" && <th className="px-3 py-2 font-medium">Ví dụ</th>}
+                  {!isSystem && <th className="px-3 py-2 font-medium">Tags</th>}
                   {canWrite && <th className="w-28 px-3 py-2" />}
                 </tr>
               </thead>
@@ -1207,23 +1243,26 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
                       {/* Same STT as the card view: the card's own position in the source list, else its place in the list. */}
                       <td className="px-3 py-2 text-xs text-[var(--muted-foreground)]">{card.order && card.order > 0 ? card.order : (page - 1) * PAGE_SIZE + i + 1}</td>
                       <td className="px-3 py-2 text-base font-semibold text-[var(--foreground)]">
-                        {displayFront(card.front, card.partOfSpeech)}
+                        {hasJaMarkup(card.front) ? <JaMarkup text={card.front} /> : displayFront(card.front, card.partOfSpeech)}
                         {note && <span className="ml-2 align-middle text-xs text-[#b45309] dark:text-[#fbbf24]" title="Có cảnh báo cần xem xét">⚠</span>}
                       </td>
-                      <td className="px-3 py-2 text-[var(--foreground)]">{card.reading ?? ""}</td>
+                      {pillar !== "grammar" && <td className="px-3 py-2 text-[var(--foreground)]">{card.reading ?? ""}</td>}
                       {showHanViet && <td className="px-3 py-2 text-[var(--foreground)]">{card.hanViet ?? ""}</td>}
                       <td className="px-3 py-2 text-[var(--foreground)]">{card.back}</td>
-                      <td className="px-3 py-2 text-xs text-[var(--muted-foreground)]">{posText(card.partOfSpeech, card.partsOfSpeech)}</td>
+                      {!content && <td className="px-3 py-2 text-xs text-[var(--muted-foreground)]">{posText(card.partOfSpeech, card.partsOfSpeech)}</td>}
+                      {pillar !== "kanji" && (
                       <td className="max-w-64 px-3 py-2 text-xs text-[var(--muted-foreground)]">
                         {card.examples && card.examples.length > 0 ? (
-                          <span title={card.examples.map((e) => e.sentence).join("\n")} className="line-clamp-2">
-                            {card.examples[0].sentence}
+                          <span title={card.examples.map((e) => stripJaMarkup(e.sentence)).join("\n")} className="line-clamp-2">
+                            {stripJaMarkup(card.examples[0].sentence)}
                             {card.examples.length > 1 ? ` (+${card.examples.length - 1})` : ""}
                           </span>
                         ) : (
                           <span className="text-[#b45309]">—</span>
                         )}
                       </td>
+                      )}
+                      {!isSystem && (
                       <td className="px-3 py-2">
                         <div className="flex flex-wrap gap-1">
                           {(card.tags ?? []).map((t) => (
@@ -1238,6 +1277,7 @@ export function DeckCardsManager({ mode, deckId }: { mode: "admin" | "learn"; de
                           ))}
                         </div>
                       </td>
+                      )}
                       {canWrite && (
                         <td className="px-3 py-2">
                           <div className="flex items-center justify-end gap-1.5">

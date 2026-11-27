@@ -66,7 +66,8 @@ export function ReviewChart({
   }, [range, pillar]);
 
   const series = stats?.series ?? [];
-  const max = Math.max(1, ...series.map((b) => Math.max(b.reviews, b.newCards)));
+  // At least 2, so the middle axis label never repeats the top one.
+  const max = Math.max(2, ...series.map((b) => Math.max(b.reviews, b.newCards)));
   const dense = series.length > 14;
   const noun = PILLAR_NOUN[pillar ?? "vocab"];
 

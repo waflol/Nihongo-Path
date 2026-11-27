@@ -26,3 +26,11 @@ export function parseJaMarkup(source: string): JaSegment[] {
   push(source.slice(last));
   return out;
 }
+
+export const hasJaMarkup = (source: string) => /[{}]|\[[ぁ-ヿ]+\]/.test(source);
+
+/** The text as written, without readings or pattern braces. */
+export const stripJaMarkup = (source: string) => parseJaMarkup(source).map((p) => p.text).join("");
+
+/** What to pronounce: annotated words by their reading. */
+export const jaMarkupSpeech = (source: string) => parseJaMarkup(source).map((p) => p.rt ?? p.text).join("");
