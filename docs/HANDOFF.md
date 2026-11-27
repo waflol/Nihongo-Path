@@ -4,6 +4,15 @@
 
 ---
 
+## Đồ thị tiến độ theo từng phần Từ vựng · Ngữ pháp · Kanji (27/11/2026)
+
+- `/learn/{vocab,grammar,kanji}` có khối đồ thị riêng ở đầu trang (`components/learn/pillar-progress.tsx`: `ProgressPanel compact` + `ReviewChart`, prop `pillar`); `/learn` vẫn là số gộp. Nhãn "từ / mẫu / chữ" lấy từ `PILLAR_NOUN`; ô giới hạn mới/ngày lưu `newCardsPerDayByPillar[pillar]`.
+- Sửa lỗi: `GET /srs/stats` nhận `pillar` nhưng `masteryStats` bỏ qua. Giờ lọc thẻ, tiến độ, phiên học, heatmap và hạn mức theo mảng. Phiên học tính theo bộ thẻ: bộ trộn nhiều loại thẻ sẽ được đếm ở cả hai mảng.
+- `SettingsDto.newCardsPerDayByPillar` giờ kiểm tra 1–500.
+- Test: `srs.stats-pillar.spec.ts`.
+
+---
+
 ## Plan Khu Luyện thi JLPT hợp nhất (27/11/2026, đã lưu plan, chưa code)
 
 - Đã chốt và lưu [plans/plan-exam-hub.md](./plans/plan-exam-hub.md) (liên kết chéo `plan-exam-by-source.md`, `ADR-exam-by-source.md`, `plan-three-pillars.md`):
