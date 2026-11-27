@@ -1,6 +1,6 @@
 # Plan — Đề thi theo nguồn: đề đầy đủ, đề theo phần, sách luyện tập (bỏ ngân hàng câu hỏi)
 
-> **Ngày lập:** 27/11/2026. **Trạng thái:** chủ dự án đã duyệt 27/11/2026 (gồm 3 đề xuất ở §8), chưa code.
+> **Ngày lập:** 27/11/2026. **Trạng thái:** chủ dự án đã duyệt 27/11/2026 (gồm 3 đề xuất ở §8). Xong giai đoạn 0 và 1.1; tiếp theo 1.2.
 > **Thay thế:** các phần ngân hàng / sinh đề của [plan-jlpt-question-bank.md](./plan-jlpt-question-bank.md) (NP-408, và phần "phủ ngân hàng / sinh đề thử" của NP-409). Phần schema, import (NP-406/407) và màn làm bài vẫn dùng.
 > **Điều kiện bắt đầu:** working tree đang có nhiều thay đổi NP-407/410 và trang cấu trúc đề chưa commit, đụng đúng các file plan này sửa (`exam-import.service.ts`, `exams.service.ts`, `exams.controller.ts`, hai `exams-console.tsx`). Commit xong phần đó rồi mới làm.
 
@@ -29,7 +29,7 @@ Ngoài phạm vi: lời giải ở cuối sách; sách có bố cục khác `dri
 
 **D1 — Loại file khai báo lúc upload.** Form nhập thêm `kind` (`full` | `section` | `practice`) và `setName` (tên bộ đề / tên sách, mặc định là tên file). Với `practice`: bố cục drill → `segmentDrillBook`; bố cục khác → tách theo 問題 như đề, mỗi khối là một bài. Với hai loại đề: không dùng bộ tách drill. `isDrillBook` chỉ còn là cảnh báo khi loại khai báo có vẻ sai.
 
-**D2 — `kind` của đề đề được tính từ nội dung.** `full` khi đề có đủ mọi phần thi của cấp độ theo `JLPT_STRUCTURE` (`jlpt-structure.ts`), ngược lại `section`. Loại admin chọn chỉ quyết định cảnh báo (vd chọn "đầy đủ" mà thiếu 聴解). Thiếu vài câu trong một phần không đổi `kind`, chỉ cảnh báo.
+**D2 — `kind` của đề đề được tính từ nội dung.** `full` khi đề có đủ mọi phần thi của cấp độ theo `JLPT_STRUCTURE` (`jlpt-structure.ts`), ngược lại `section`. Phần gộp của N1/N2 chỉ tính là đủ khi có cả 文字・語彙, 文法 và 読解. Loại admin chọn chỉ quyết định cảnh báo (vd chọn "đầy đủ" mà thiếu 聴解). Thiếu vài câu trong một phần không đổi `kind`, chỉ cảnh báo.
 
 **D3 — Khoá đề.** `origin.key = level | setName (chuẩn hoá) | sitting`. Cùng khoá → cùng đề, nên file 文字・語彙 và file 聴解 cùng `setName` + kỳ gộp làm một. Hai sách khác nhau đều có `N3-1` không đụng nhau vì khác `setName`. `sitting = "unknown"` → bắt admin đặt tên trước khi xuất bản. Với `practice`: `level | setName | mondai | unitNo` (số `第N回` lặp lại theo từng dạng).
 
@@ -78,6 +78,8 @@ checked?: string[]                         // qid đã chốt (practice)
 
 - Không có draft đã xuất bản → bỏ qua chuyển đổi.
 - Có → hỏi chủ dự án: (a) xoá và nhập lại, hoặc (b) script điền `questionIds` bằng cách tính lại `contentHash` rồi tạo đề. Không tự xoá dữ liệu.
+
+**Kết quả 27/11/2026:** 0 draft `published` (518 `needs_review`, 142 `error`), 0 đề, 0 bài đọc → **không cần chuyển đổi**. Còn 44 câu `imp:` (trong 175 câu) không đề nào trỏ tới; để nguyên. Có 3 lượt làm cũ dù không còn đề.
 
 ## 6. Giai đoạn 1 — Đề đầy đủ và đề theo phần
 

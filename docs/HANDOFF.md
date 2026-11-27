@@ -18,7 +18,11 @@
 
 ## Plan đề thi theo nguồn, bỏ ngân hàng câu hỏi (27/11/2026, đã duyệt)
 
-[plans/plan-exam-by-source.md](./plans/plan-exam-by-source.md): upload khai báo đề đầy đủ / theo phần / sách luyện tập, xuất bản tạo đề luôn. Chưa code. 3 quyết định ở §8 đã duyệt. Việc tiếp: commit phần đang dở → giai đoạn 0 (đếm dữ liệu, chỉ đọc) → giai đoạn 1.1. Không làm NP-408.
+[plans/plan-exam-by-source.md](./plans/plan-exam-by-source.md): upload khai báo đề đầy đủ / theo phần / sách luyện tập, xuất bản tạo đề luôn. 3 quyết định ở §8 đã duyệt. Không làm NP-408.
+- Giai đoạn 0: không có draft đã xuất bản, không có đề → không cần chuyển đổi.
+- Giai đoạn 1.1 xong: `src/exams/assemble.ts` (`examKeyOf`, `partOf`, `assembleExam`) + spec; chưa chỗ nào gọi. `assembleExam` nhận draft đã quy về `{jobId, jobCreatedAt, blockIndex, mondai, section, questionIds, rights}`.
+- Đã chạy: vitest `assemble` + `jlpt-structure` 24 đạt, oxlint sạch, watcher tsc 0 lỗi.
+- Việc tiếp: 1.2 (upload `kind`/`setName`, xuất bản + `syncExam`).
 
 ---
 
