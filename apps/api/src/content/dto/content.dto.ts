@@ -1,7 +1,9 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import { PartialType } from "@nestjs/mapped-types";
 import { Type } from "class-transformer";
+import { GRAMMAR_CONTEXTS, GRAMMAR_THEMES } from "../schemas/grammar-point.schema.js";
 import {
+  ArrayMaxSize,
   IsArray,
   IsIn,
   IsInt,
@@ -274,6 +276,72 @@ export class TextbookUpdateDto extends PartialType(TextbookDto) {}
 export class UnitUpdateDto extends PartialType(UnitDto) {}
 export class VocabularyUpdateDto extends PartialType(VocabularyDto) {}
 
+export class GrammarSenseDto {
+  @ApiProperty()
+  @IsInt()
+  @Min(1)
+  no: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  label?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(4000)
+  explanation?: string;
+
+  @ApiProperty({ type: () => [GrammarExampleDto] })
+  @IsArray()
+  @ArrayMaxSize(50)
+  @ValidateNested({ each: true })
+  @Type(() => GrammarExampleDto)
+  examples: GrammarExampleDto[];
+}
+
+export class GrammarTextbookRefDto {
+  @ApiProperty()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(40)
+  textbookId: string;
+
+  @ApiProperty()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(20)
+  unitId: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  order?: number;
+}
+
+export class GrammarCompareDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  grammarId?: string;
+
+  @ApiProperty()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(200)
+  label: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  note?: string;
+}
+
 export class GrammarPointDto {
   @ApiProperty()
   @IsString()
@@ -305,6 +373,96 @@ export class GrammarPointDto {
   @ValidateNested({ each: true })
   @Type(() => GrammarExampleDto)
   examples?: GrammarExampleDto[];
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  pattern?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  coreExplanation?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(30)
+  @IsString({ each: true })
+  @MaxLength(500, { each: true })
+  forms?: string[];
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(30)
+  @IsString({ each: true })
+  @MaxLength(4000, { each: true })
+  explanations?: string[];
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(30)
+  @IsString({ each: true })
+  @MaxLength(2000, { each: true })
+  notes?: string[];
+
+  @ApiPropertyOptional({ type: () => [GrammarSenseDto] })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(20)
+  @ValidateNested({ each: true })
+  @Type(() => GrammarSenseDto)
+  senses?: GrammarSenseDto[];
+
+  @ApiPropertyOptional({ type: () => [GrammarCompareDto] })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(20)
+  @ValidateNested({ each: true })
+  @Type(() => GrammarCompareDto)
+  compareWith?: GrammarCompareDto[];
+
+  @ApiPropertyOptional({ type: () => [GrammarTextbookRefDto] })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(20)
+  @ValidateNested({ each: true })
+  @Type(() => GrammarTextbookRefDto)
+  textbookRefs?: GrammarTextbookRefDto[];
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsArray()
+  @IsIn(GRAMMAR_THEMES, { each: true })
+  themeIds?: string[];
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsArray()
+  @IsIn(GRAMMAR_CONTEXTS, { each: true })
+  contextIds?: string[];
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  groupNo?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  groupJa?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  groupVi?: string;
 
   @ApiPropertyOptional()
   @IsOptional()

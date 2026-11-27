@@ -123,7 +123,7 @@ export class ContentController {
     return this.content.grammarFacets();
   }
 
-  @Get("content/grammar/index")
+  @Get("content/grammar/browse")
   @IsPublic()
   grammarIndex() {
     return this.content.grammarIndex("PUBLISHED");
@@ -162,7 +162,7 @@ export class ContentController {
   }
 
   @ApiBearerAuth()
-  @Get("admin/content/grammar/index")
+  @Get("admin/content/grammar/browse")
   @ContentAdmin()
   @ApiOperation({ summary: "Browse index of all grammar points incl. drafts (admin)" })
   adminGrammarIndex() {

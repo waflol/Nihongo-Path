@@ -81,7 +81,13 @@ for (const index of indexes) {
 await collection.createIndex({ status: 1, level: 1, themeIds: 1 }, { name: "status_1_level_1_themeIds_1" });
 await collection.createIndex({ status: 1, level: 1, contextIds: 1 }, { name: "status_1_level_1_contextIds_1" });
 const now = new Date();
-const operations = points.map((point) => ({
+// Points an admin has edited keep their content.
+const edited = new Set(
+  (await collection.find({ editedAt: { $exists: true } }, { projection: { sourceKey: 1 } }).toArray()).map((d) => d.sourceKey),
+);
+const writable = points.filter((point) => !edited.has(point.sourceKey));
+if (edited.size) console.log(`Skipping ${points.length - writable.length} admin-edited records.`);
+const operations = writable.map((point) => ({
   updateOne: {
     filter: { sourceProvider: point.sourceProvider, sourceKey: point.sourceKey },
     update: {

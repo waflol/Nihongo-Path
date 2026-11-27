@@ -446,6 +446,9 @@ export class ContentService {
     const update: Record<string, unknown> = { ...omitUndefined(rest) };
     // `textbooks` is only rewritten when sent; omitted = leave existing links.
     if (textbooks !== undefined) update.textbooks = toObjectIdArray(textbooks);
+    // A content edit pins the point against importer refreshes (ADR-grammar-source);
+    // publishing alone does not.
+    if (Object.keys(update).some((key) => key !== "status")) update.editedAt = new Date();
     const filter = { _id: objectId(id) };
     const doc = await this.grammar
       .findByIdAndUpdate(

@@ -86,7 +86,13 @@ User yêu cầu bỏ vì đã có Hộp thư phản hồi. Đã xoá: trang `/ad
 
 ---
 
-## NP-1004…1012 — Học ngữ pháp theo nguồn Super Honki (27/11/2026, chưa commit)
+## NP-1004…1012 — Học ngữ pháp theo nguồn Super Honki (27/11/2026)
+
+**Phân loại + form sửa chi tiết (26/11, 19:30):** phần lớn nằm trong commit `2d9e8fc` (phiên khác commit giữa chừng); phần sửa sau đó (endpoint `browse`, DTO của form sửa, `editedAt`) nằm ở commit kế tiếp.
+- Duyệt theo cấp độ (nhóm) / chủ đề / bối cảnh / giáo trình (bài) / tìm kiếm: `lib/grammar-catalog.ts` + `components/learn/grammar-explorer.tsx`, dùng chung `/learn/grammar` và `/admin/content/grammar-import`. API `GET (admin/)content/grammar/browse` — KHÔNG đặt tên đoạn đường dẫn là `index`, Next.js nuốt mất.
+- Sửa ngữ pháp đầy đủ trường: `components/admin/grammar-editor.tsx` (cả ở `/admin/content` tab Ngữ pháp). Sửa nội dung đặt `editedAt`; importer bỏ qua bản ghi đó.
+- Đã import lại: 630 mẫu có nhóm, 391 có lưu ý, 445 có mẫu so sánh; N5 vẫn PUBLISHED. Sao lưu: `data/grammar/backup-grammarpoints-20261126-2.ejson`.
+- Chưa có: tên bài giáo trình (UI hiện "Bài n"); chưa thử màn hình điện thoại; chưa bấm publish hàng loạt trên UI.
 
 **Trang reload liên tục (26/11, đã sửa):** `next dev` chạy lâu gửi HMR `type:"restart"` cho chunk entry ~2 lần/giây → trình duyệt tải lại mãi (mọi trang, kể cả `/`). `pm2 restart ui` là hết; nguyên nhân gốc trong Turbopack chưa rõ. Kiểm nhanh: mở WebSocket `ws://localhost:3001/_next/hmr?id=x` và đếm message `restart`. Cùng lượt: `/learn/grammar/study` đưa `getSession` vào Suspense (hết lỗi Blocking Route). Còn thấy: màn học ngữ pháp mặc định chọn bộ thẻ đầu tiên nên admin chưa lưu mẫu nào sẽ thấy trống.
 

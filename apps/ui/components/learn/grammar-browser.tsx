@@ -16,7 +16,7 @@ export function GrammarBrowser() {
 
   useEffect(() => {
     const controller = new AbortController();
-    fetch("/api/grammar/index", { signal: controller.signal })
+    fetch("/api/grammar/browse", { signal: controller.signal })
       .then((r) => (r.ok ? (r.json() as Promise<GrammarIndexItem[]>) : Promise.reject(new Error("request"))))
       .then(setItems)
       .catch((err: Error) => {

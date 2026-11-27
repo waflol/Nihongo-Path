@@ -3,7 +3,7 @@ import { plainToInstance } from "class-transformer";
 import { validateSync } from "class-validator";
 import { describe, expect, it, vi } from "vitest";
 import { ContentService } from "./content.service.js";
-import { AdminContentQuery, PublicContentQuery } from "./dto/content.dto.js";
+import { AdminContentQuery, GrammarPointUpdateDto, PublicContentQuery } from "./dto/content.dto.js";
 
 function serviceWith(findOne: ReturnType<typeof vi.fn>) {
   const service = Object.create(ContentService.prototype) as ContentService;
@@ -53,5 +53,22 @@ describe("grammar admin edits", () => {
     const { service, findByIdAndUpdate } = editor();
     await service.updateGrammar("6b0817685fe8725b34fe6330", { status: "PUBLISHED" });
     expect(findByIdAndUpdate.mock.calls[0][1]).not.toHaveProperty("editedAt");
+  });
+});
+
+describe("grammar editor payload", () => {
+  it("passes strict validation with every detail field", () => {
+    const body = {
+      label: "～うちに", meaning: "Trong lúc", level: "N3", status: "DRAFT",
+      pattern: "", structure: "", usage: "", coreExplanation: "x",
+      forms: ["V + うちに"], explanations: [], notes: ["y"],
+      senses: [{ no: 1, label: "", explanation: "", examples: [{ sentence: "a", translation: "b", note: "" }] }],
+      examples: [{ sentence: "a", translation: "b", note: "" }],
+      compareWith: [{ grammarId: "", label: "～間に", note: "" }],
+      textbookRefs: [{ textbookId: "shin-n3", unitId: "1", order: 1 }],
+      themeIds: ["thoi-gian"], contextIds: ["hoi-thoai"], groupNo: 1, groupJa: "", groupVi: "",
+    };
+    expect(validateSync(plainToInstance(GrammarPointUpdateDto, body), strict)).toHaveLength(0);
+    expect(validateSync(plainToInstance(GrammarPointUpdateDto, { themeIds: ["x"] }), strict)).toHaveLength(1);
   });
 });

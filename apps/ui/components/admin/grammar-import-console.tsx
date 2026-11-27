@@ -13,7 +13,7 @@ type Preview = { total: number; duplicateKeys: number; levels: Record<string, nu
 const button = "rounded-lg px-3 py-2 text-xs font-semibold disabled:opacity-50";
 
 async function fetchIndex(): Promise<GrammarIndexItem[] | null> {
-  const r = await fetch("/api/admin/content/grammar/index", { cache: "no-store" }).catch(() => null);
+  const r = await fetch("/api/admin/content/grammar/browse", { cache: "no-store" }).catch(() => null);
   return r?.ok ? ((await r.json()) as GrammarIndexItem[]) : null;
 }
 
