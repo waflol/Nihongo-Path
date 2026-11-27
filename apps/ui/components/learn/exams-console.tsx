@@ -25,6 +25,12 @@ const TABS: { key: Tab; label: string }[] = [
   { key: "stats", label: "Thống kê" },
 ];
 
+const KIND_FILTERS = [
+  { key: "", label: "Mọi loại" },
+  { key: "full", label: "Đề đầy đủ" },
+  { key: "section", label: "Theo phần" },
+] as const;
+
 const statusLabel: Record<string, string> = {
   in_progress: "Đang làm",
   submitted: "Đã nộp",
@@ -50,6 +56,7 @@ export function ExamsConsole() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [levelFilter, setLevelFilter] = useState("");
+  const [kindFilter, setKindFilter] = useState<(typeof KIND_FILTERS)[number]["key"]>("");
   const [starting, setStarting] = useState<string | null>(null);
 
   useEffect(() => {
@@ -99,7 +106,9 @@ export function ExamsConsole() {
     window.location.reload();
   }, []);
 
-  const visibleExams = levelFilter ? exams.filter((e) => e.level === levelFilter) : exams;
+  const visibleExams = exams.filter(
+    (e) => (!levelFilter || e.level === levelFilter) && (!kindFilter || e.kind === kindFilter),
+  );
 
   return (
     <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 sm:py-8">
@@ -188,10 +197,31 @@ export function ExamsConsole() {
             ))}
           </div>
 
+          {exams.some((e) => e.kind) && (
+            <div role="group" aria-label="Loại đề" className="mt-2 flex flex-wrap gap-2">
+              {KIND_FILTERS.map((k) => (
+                <button
+                  key={k.key}
+                  type="button"
+                  aria-pressed={kindFilter === k.key}
+                  onClick={() => setKindFilter(k.key)}
+                  className={
+                    "min-h-9 rounded-lg px-3 text-sm font-medium " +
+                    (kindFilter === k.key
+                      ? "bg-[var(--layer)] text-[var(--foreground)]"
+                      : "text-[var(--muted-foreground)] hover:text-[var(--foreground)]")
+                  }
+                >
+                  {k.label}
+                </button>
+              ))}
+            </div>
+          )}
+
           <div className="mt-4 space-y-3">
             {visibleExams.length === 0 && (
               <p className="rounded-2xl border border-dashed border-[var(--border)] p-8 text-center text-sm text-[var(--muted-foreground)]">
-                Chưa có đề thi{levelFilter ? ` cấp ${levelFilter}` : ""} nào được công khai.
+                Chưa có đề thi{levelFilter ? ` cấp ${levelFilter}` : ""} nào được công khai{kindFilter ? " thuộc loại này" : ""}.
               </p>
             )}
             {visibleExams.map((exam) => (
@@ -210,6 +240,11 @@ export function ExamsConsole() {
                         </span>
                       )}
                     </h3>
+                    {exam.kind && exam.parts && exam.parts.length > 0 && (
+                      <p className="mt-1 text-sm text-[var(--muted-foreground)]">
+                        {exam.kind === "full" ? "Đề đầy đủ" : "Đề theo phần"} · <span lang="ja">{exam.parts.join(" / ")}</span>
+                      </p>
+                    )}
                     {exam.description && (
                       <p className="mt-1 text-sm text-[var(--muted-foreground)]">{exam.description}</p>
                     )}

@@ -17,13 +17,15 @@ import { getSession } from "@/lib/session";
  *   POST /api/exam-import?audio=<draftId> {audio?, questions?, wholePart?} → 聴解 recordings
  *   POST /api/exam-import?picture=<draftId> {question, page, rect} | {question, clear} → a question's picture
  *   POST /api/exam-import?pictures=<draftId> → cut the block's pictures from its PDF
+ *   POST /api/exam-import?publishExam=<jobId> {sitting, answers?} → publish a sitting, build its exam
+ *   POST /api/exam-import?rename=<jobId> {setName?, sittings?} → rename while nothing is published
  *   GET  /api/exam-import?answerFile=<jobId> → answer-file template {fileName, csv}
  *   POST /api/exam-import?answerFile=<jobId> {text, save?, overwrite?} → load an answer file
  * The access token stays server-side (same pattern as /api/import).
  */
 const ID = /^[\w-]{8,40}$/;
 
-async function forward(path: string, method: "GET" | "POST", json?: string) {
+async function forward(path: string, method: "GET" | "POST" | "PATCH", json?: string) {
   const session = await getSession();
   if (!session.authenticated || !session.accessToken) {
     return NextResponse.json({ error: "Không đăng nhập" }, { status: 401 });
@@ -106,6 +108,16 @@ export async function POST(request: Request) {
     return forward(`/${marks}/marks`, "POST", "{}");
   }
   const sp = new URL(request.url).searchParams;
+  const publishExam = sp.get("publishExam");
+  if (publishExam) {
+    if (!/^[a-f0-9]{24}$/i.test(publishExam)) return NextResponse.json({ error: "id không hợp lệ" }, { status: 400 });
+    return forward(`/${publishExam}/publish-exam`, "POST", await request.text());
+  }
+  const rename = sp.get("rename");
+  if (rename) {
+    if (!/^[a-f0-9]{24}$/i.test(rename)) return NextResponse.json({ error: "id không hợp lệ" }, { status: 400 });
+    return forward(`/${rename}`, "PATCH", await request.text());
+  }
   const answerFile = sp.get("answerFile");
   if (answerFile) {
     if (!/^[a-f0-9]{24}$/i.test(answerFile)) return NextResponse.json({ error: "id không hợp lệ" }, { status: 400 });

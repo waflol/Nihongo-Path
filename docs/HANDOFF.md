@@ -22,7 +22,14 @@
 - Giai đoạn 0: không có draft đã xuất bản, không có đề → không cần chuyển đổi.
 - Giai đoạn 1.1 xong: `src/exams/assemble.ts` (`examKeyOf`, `partOf`, `assembleExam`) + spec; chưa chỗ nào gọi. `assembleExam` nhận draft đã quy về `{jobId, jobCreatedAt, blockIndex, mondai, section, questionIds, rights}`.
 - Đã chạy: vitest `assemble` + `jlpt-structure` 24 đạt, oxlint sạch, watcher tsc 0 lỗi.
-- Việc tiếp: 1.2 (upload `kind`/`setName`, xuất bản + `syncExam`).
+- Giai đoạn 1.2 xong (API): upload nhận `kind`/`setName`; `POST admin/import/:jobId/publish-exam {sitting}`; `PATCH admin/import/:jobId {setName?, sittings?:[{from,to}]}`; xuất bản khoá theo draft và tự dựng đề `DRAFT` (`exam-sync.service.ts`). Xoá lần nhập giữ draft đã xuất bản; không bỏ được draft đã xuất bản; job `practice` chưa xuất bản được.
+- Đã chạy: vitest `src/exams src/import src/ai` đạt, tsc (watcher + 2 spec) 0 lỗi; thử `publishExam`/`publish` với MongoDB thật trên database tạm (đã xoá collection).
+- **Chưa có tới 1.3/1.4:** UI chưa gửi `kind`/`setName`, chưa có nút "Xuất bản đề" / đổi tên kỳ → khối `sitting = unknown` chưa xuất bản được trên UI. Đề `reference` **chưa bị chặn** công khai; UI soạn đề cũ vẫn sửa được danh sách câu của đề nhập.
+- Giai đoạn 1.3 xong (API): đề `reference` không công khai được, người học không thấy / không `start` được (admin sit được mọi đề để kiểm, kể cả nháp); đề nhập không sửa được danh sách câu, cấp độ, tổng giờ; `PATCH admin/exams/:id {sectionTimes:{<key>:phút}}` khoá giờ phần; `POST admin/exams/:id/questions` soạn câu trong đề soạn tay; `GET exams?kind=` trả `kind`, `parts`; `GET admin/exams` trả `kind`, `origin`, `rights`, `sections`, `warnings`. Phần "chưa chặn reference / sửa được danh sách câu" ở dòng 1.2 đã hết.
+- Đã chạy: vitest `src/exams src/import src/ai` 470 đạt (1 skip), watcher tsc 0 lỗi, tsc 2 spec 0 lỗi; thử tạo / soạn câu / sửa giờ phần / quyền với MongoDB thật trên database tạm (đã xoá collection).
+- Giai đoạn 1.4 xong (UI, 27/11): form nhập chọn loại + tên bộ đề; đổi tên kỳ (`exam-import-rename.tsx`); nút "Xuất bản đề" + cảnh báo; admin `exams-console` bỏ tab ngân hàng, thêm editor đề (`exam-admin-editor.tsx`); learn `exams-console` lọc đầy đủ / theo phần. Không còn chỗ nào gọi `admin/exam-questions`.
+- Đã chạy: vitest `src/exams` 293 đạt; tsc API + UI sạch; oxlint API 0 lỗi; eslint các file UI sửa sạch (còn 1 cảnh báo `window.location.href` ở learn `exams-console.tsx`). **Chưa bấm thử trình duyệt** (nhập → duyệt → xuất bản → làm bài, 375 px).
+- Việc tiếp: 1.5 (dọn tài liệu, ADR), rồi giai đoạn 2 (sách luyện tập).
 
 ---
 

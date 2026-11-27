@@ -13,6 +13,11 @@ const btnPrimary =
 const fileButton =
   "file:mr-3 file:rounded file:border-0 file:bg-[var(--layer)] file:px-3 file:py-0.5 file:text-xs file:font-medium file:text-[var(--foreground)]";
 const LEVELS = ["N5", "N4", "N3", "N2", "N1"];
+const KINDS = [
+  { value: "full", label: "Đề đầy đủ", hint: "Có đủ các phần thi của cấp độ, kể cả 聴解." },
+  { value: "section", label: "Đề theo phần", hint: "Chỉ một vài phần thi. File khác cùng bộ đề và kỳ thi sẽ gộp vào đề này." },
+  { value: "practice", label: "Sách luyện tập", hint: "Đọc và duyệt được, nhưng chưa xuất bản được — phần làm từng câu đang được làm." },
+] as const;
 
 async function errorOf(res: Response): Promise<string> {
   const b = (await res.json().catch(() => null)) as { message?: string | string[]; error?: string } | null;
@@ -25,6 +30,8 @@ function PdfUpload() {
   const [file, setFile] = useState<File | null>(null);
   const [level, setLevel] = useState("N3");
   const [rights, setRights] = useState("reference");
+  const [kind, setKind] = useState<(typeof KINDS)[number]["value"]>("full");
+  const [setName, setSetName] = useState("");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
@@ -37,6 +44,8 @@ function PdfUpload() {
     fd.set("file", file);
     fd.set("level", level);
     fd.set("rights", rights);
+    fd.set("kind", kind);
+    fd.set("setName", setName.trim());
     const res = await fetch("/api/exam-import", { method: "POST", body: fd }).catch(() => null);
     setBusy(false);
     if (!res || !res.ok) {
@@ -44,6 +53,7 @@ function PdfUpload() {
       return;
     }
     setFile(null);
+    setSetName("");
     (e.target as HTMLFormElement).reset();
     setMsg({ ok: true, text: "Đã bắt đầu nhập — theo dõi ở thẻ tiến độ góc phải dưới (có thể sang trang khác, có nút Hủy và Nhật ký)." });
     window.dispatchEvent(new Event(EXAM_IMPORT_STARTED_EVENT));
@@ -55,6 +65,37 @@ function PdfUpload() {
       <p className="mt-1 text-sm text-[var(--muted-foreground)]">
         Đọc từng trang, tách theo 問題, AI chỉ cấu trúc hoá (không đoán đáp án). Mỗi lần một file; tối đa 100 MB.
       </p>
+      <fieldset className="mt-3">
+        <legend className="text-sm text-[var(--muted-foreground)]">Loại file</legend>
+        <div className="mt-1 grid gap-2 sm:grid-cols-3">
+          {KINDS.map((k) => (
+            <label
+              key={k.value}
+              className="flex min-h-11 cursor-pointer items-center gap-2 rounded-lg border border-[var(--border)] px-3 py-2 text-sm font-medium text-[var(--foreground)] has-[:checked]:border-[var(--primary)] has-[:checked]:bg-[color-mix(in_srgb,var(--primary)_10%,transparent)]"
+            >
+              <input
+                type="radio"
+                name="exam-kind"
+                checked={kind === k.value}
+                onChange={() => setKind(k.value)}
+                className="size-4 accent-[var(--primary)]"
+              />
+              {k.label}
+            </label>
+          ))}
+        </div>
+        <p className="mt-1.5 text-xs text-[var(--muted-foreground)]">{KINDS.find((k) => k.value === kind)?.hint}</p>
+      </fieldset>
+      <label className="mt-3 block text-sm">
+        <span className="text-[var(--muted-foreground)]">{kind === "practice" ? "Tên sách" : "Tên bộ đề"} (bỏ trống = tên file)</span>
+        <input
+          value={setName}
+          maxLength={150}
+          onChange={(e) => setSetName(e.target.value)}
+          placeholder="Đề chính thức N3"
+          className={`mt-1 ${inputClass}`}
+        />
+      </label>
       <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_8rem_10rem]">
         <label className="text-sm">
           <span className="text-[var(--muted-foreground)]">File PDF</span>
@@ -83,6 +124,9 @@ function PdfUpload() {
           </select>
         </label>
       </div>
+      {rights === "reference" && (
+        <p className="mt-2 text-xs text-[var(--muted-foreground)]">Đề nguồn tham khảo không công khai được cho người học; admin vẫn làm thử được.</p>
+      )}
       <div className="mt-3 flex flex-wrap items-center gap-3">
         <button type="submit" disabled={busy || !file} className={btnPrimary}>
           {busy ? "Đang tải lên…" : "Tải lên và nhập"}

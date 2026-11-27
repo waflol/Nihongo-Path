@@ -4,6 +4,7 @@ import { mondaiByNumber, mondaiNumberOf, PartTracker, sheetsOf } from "./mondai-
 import { type AnswerKeyBlock } from "./answer-key.js";
 import { cleanAnswerLine, cleanLine, isJunkLine, learnNoise, noiseFragments, noiseKey, stripNoiseFragments } from "./clean.js";
 import { isDrillBook, segmentDrillBook } from "./drill.js";
+import { type ExamKind } from "../schemas/exam.schema.js";
 
 /**
  * Block segmentation for JLPT exam import (NP-407 / plan §6 GĐ2).
@@ -207,8 +208,9 @@ interface RawLine {
  * NFKC-cleaned, noise-stripped, and broken CJK lines re-joined; the answer
  * region keeps its circled marks.
  */
-export function segmentBlocks(pages: string[], level?: string): Segmented {
-  if (isDrillBook(pages)) return segmentDrillBook(pages, level);
+export function segmentBlocks(pages: string[], level?: string, kind?: ExamKind): Segmented {
+  // A file declared to be an exam is never read as a drill book; undeclared, the layout decides.
+  if ((kind === undefined || kind === "practice") && isDrillBook(pages)) return segmentDrillBook(pages, level);
   const noise = learnNoise(pages);
   const fragments = noiseFragments(noise);
 

@@ -1,5 +1,5 @@
 import { Prop, Schema, SchemaFactory } from "@nestjs/mongoose";
-import { HydratedDocument } from "mongoose";
+import { HydratedDocument, Types } from "mongoose";
 import {
   QUESTION_RIGHTS,
   type QuestionRights,
@@ -112,6 +112,20 @@ export class ExamImportDraft {
   /** Content rights — imported material defaults to `reference` (Q-12). */
   @Prop({ type: String, enum: QUESTION_RIGHTS, default: "reference" })
   rights: QuestionRights;
+
+  // ── Set when published (plan-exam-by-source D4): what the exam is rebuilt from. ──
+
+  /** The bank rows this block wrote, in printed order. */
+  @Prop({ type: [Types.ObjectId] })
+  questionIds?: Types.ObjectId[];
+
+  /** The exam the block belongs to (`Exam.origin.key`). */
+  @Prop({ type: String, index: { sparse: true } })
+  examKey?: string;
+
+  /** When the block's job was created — kept here because the job may be deleted. */
+  @Prop({ type: Date })
+  jobCreatedAt?: Date;
 
   @Prop({ type: String, required: true })
   createdBy: string;

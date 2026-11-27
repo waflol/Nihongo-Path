@@ -268,7 +268,7 @@ export function DraftBlock({
   }
 
   async function act(kind: "publish" | "discard") {
-    if (kind === "discard" && !window.confirm("Loại khối này? Bạn không nhập khối này vào ngân hàng câu hỏi.")) return;
+    if (kind === "discard" && !window.confirm("Loại khối này? Khối này sẽ không vào đề.")) return;
     if (kind === "publish" && unchecked > 0 && !window.confirm(`Còn ${unchecked} câu dùng đáp án AI gợi ý chưa đối chiếu. Vẫn xuất bản?`)) return;
     setBusy(true);
     setError(null);
@@ -282,7 +282,11 @@ export function DraftBlock({
       setError(res ? await errorOf(res) : "Không kết nối được máy chủ");
       return;
     }
-    onDone(`Đã ${kind === "publish" ? "xuất bản" : "loại"} khối ${draft.blockIndex + 1}.`);
+    const warned = kind === "publish" ? ((await res.json().catch(() => null)) as { warnings?: string[] } | null)?.warnings?.length : 0;
+    onDone(
+      `Đã ${kind === "publish" ? "xuất bản" : "loại"} khối ${draft.blockIndex + 1}.` +
+        (warned ? ` Đề còn ${warned} cảnh báo — xem ở trang đề thi.` : ""),
+    );
     await onChanged();
   }
 

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AnswerFileDialog, mergeGiven, type GivenAnswers } from "./exam-import-answer-file";
 import { DraftBlock, type Suggestion, uncheckedAi } from "./exam-import-draft-block";
+import { RenameField } from "./exam-import-rename";
 import {
   deskButton,
   errorOf,
@@ -24,7 +25,18 @@ interface Job {
   fileName: string;
   level: string;
   status: string;
+  kind?: "full" | "section" | "practice";
+  setName?: string;
 }
+
+/** What publishing a sitting answered, shown until the next action. */
+interface Published {
+  warnings: string[];
+  skipped: { blockIndex: number; reason: string }[];
+}
+
+/** A job nobody named belongs to the collection its file is called. */
+const setNameOf = (job: Job) => job.setName || job.fileName.replace(/\.pdf$/i, "");
 
 const PROGRESS: BlockState[] = ["published", "ready", "missing", "error", "discarded"];
 
@@ -40,7 +52,7 @@ export function ExamImportDrafts({ jobId }: { jobId: string }) {
   /** AI-suggested answers per draft, kept here so their marks survive switching blocks (never stored). */
   const [suggestById, setSuggestById] = useState<Record<string, Suggestion[]>>({});
   const [answerFileOpen, setAnswerFileOpen] = useState(false);
-  const [bulk, setBulk] = useState<{ busy: boolean; ok: boolean; text: string } | null>(null);
+  const [bulk, setBulk] = useState<{ busy: boolean; ok: boolean; text: string; published?: Published } | null>(null);
   const [selected, setSelected] = useState<{ id: string; index: number }>({ id: "", index: 0 });
   /** Small screens show the block list as a drawer. */
   const [listOpen, setListOpen] = useState(false);
@@ -118,6 +130,9 @@ export function ExamImportDrafts({ jobId }: { jobId: string }) {
     return m;
   }, {});
 
+  // Names are what an exam is told apart by: fixed once anything is published.
+  const canRename = !!job && job.status !== "running" && !all.some((d) => d.status === "published");
+
   /** Unsaved edits are lost when the block changes, so ask first. */
   function leaveEditor(): boolean {
     if (editing.current && !window.confirm("Bỏ phần chỉnh sửa chưa lưu của khối này?")) return false;
@@ -136,31 +151,31 @@ export function ExamImportDrafts({ jobId }: { jobId: string }) {
 
   async function publishSitting(name: string) {
     const ready = readyOf(name);
-    if (ready.length === 0) return;
+    if (ready.length === 0 || !leaveEditor()) return;
     const withAi = ready.filter((d) => uncheckedAi(d, answersById[d._id], suggestById[d._id]) > 0).length;
     const aiNote = withAi > 0 ? `\n${withAi} khối còn đáp án AI gợi ý chưa đối chiếu.` : "";
-    if (!window.confirm(`Xuất bản ${ready.length} khối đã đủ đáp án của đề "${name}"?${aiNote}`)) return;
-    setBulk({ busy: true, ok: true, text: `Đang xuất bản 0/${ready.length}…` });
-    let n = 0;
-    for (const d of ready) {
-      const res = await fetch(`/api/exam-import?publish=${d._id}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ answers: fillAnswers(d, answersById[d._id]) }),
-      }).catch(() => null);
-      if (!res?.ok) {
-        setBulk({
-          busy: false,
-          ok: false,
-          text: `Dừng ở khối ${d.blockIndex + 1} (đã xuất bản ${n}/${ready.length}): ${res ? await errorOf(res) : "mất kết nối"}`,
-        });
-        await load();
-        return;
-      }
-      n += 1;
-      setBulk({ busy: true, ok: true, text: `Đang xuất bản ${n}/${ready.length}…` });
+    const open = all.filter((d) => d.sitting === name && isOpen(d)).length;
+    const left = open > ready.length ? `\n${open - ready.length} khối chưa đủ điều kiện sẽ chưa vào đề.` : "";
+    if (!window.confirm(`Xuất bản ${ready.length} khối của đề "${name}" và dựng đề thi?${left}${aiNote}`)) return;
+    setBulk({ busy: true, ok: true, text: `Đang xuất bản ${ready.length} khối…` });
+    const res = await fetch(`/api/exam-import?publishExam=${jobId}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      // Only the ready blocks' picks travel: the others stay unpublished.
+      body: JSON.stringify({ sitting: name, answers: Object.fromEntries(ready.map((d) => [d._id, fillAnswers(d, answersById[d._id])])) }),
+    }).catch(() => null);
+    if (!res?.ok) {
+      setBulk({ busy: false, ok: false, text: res ? await errorOf(res) : "Mất kết nối — bấm Tải lại rồi xuất bản lại" });
+      await load();
+      return;
     }
-    setBulk({ busy: false, ok: true, text: `Đã xuất bản ${n} khối của đề "${name}".` });
+    const r = (await res.json()) as Published & { published: number; questions: number };
+    setBulk({
+      busy: false,
+      ok: true,
+      text: `Đã xuất bản ${r.published} khối; đề "${name}" hiện có ${r.questions} câu.`,
+      published: { warnings: r.warnings, skipped: r.skipped },
+    });
     await load();
   }
 
@@ -286,9 +301,36 @@ export function ExamImportDrafts({ jobId }: { jobId: string }) {
           ))}
         </div>
         {bulk && (
-          <p role="status" className={`mt-1.5 text-sm ${bulk.ok ? "text-[var(--muted-foreground)]" : "text-[var(--bad)]"}`}>
-            {bulk.text}
-          </p>
+          <div role="status" className={`mt-1.5 text-sm ${bulk.ok ? "text-[var(--muted-foreground)]" : "text-[var(--bad)]"}`}>
+            <p>
+              {bulk.text}
+              {bulk.published && (
+                <>
+                  {" "}
+                  <Link href="/admin/exams" className="font-medium text-[var(--primary)] underline-offset-2 hover:underline">
+                    Mở trang đề thi
+                  </Link>
+                </>
+              )}
+            </p>
+            {bulk.published && bulk.published.warnings.length + bulk.published.skipped.length > 0 && (
+              <details className="mt-1">
+                <summary className="cursor-pointer text-xs font-medium">
+                  {bulk.published.warnings.length} cảnh báo, {bulk.published.skipped.length} khối bỏ qua
+                </summary>
+                <ul className="mt-1 max-h-32 list-disc overflow-y-auto pl-5 text-xs">
+                  {bulk.published.skipped.map((k) => (
+                    <li key={`k${k.blockIndex}`}>
+                      Khối {k.blockIndex + 1}: {k.reason}
+                    </li>
+                  ))}
+                  {bulk.published.warnings.map((w) => (
+                    <li key={w}>{w}</li>
+                  ))}
+                </ul>
+              </details>
+            )}
+          </div>
         )}
       </header>
 
@@ -299,6 +341,24 @@ export function ExamImportDrafts({ jobId }: { jobId: string }) {
           className={`${listOpen ? "absolute inset-y-0 left-0 z-20 flex shadow-2xl" : "hidden"} w-72 max-w-[85vw] shrink-0 flex-col border-r border-[var(--sheet-rule)] bg-[var(--sheet)] lg:static lg:flex lg:shadow-none`}
         >
           <div className="space-y-2 border-b border-[var(--sheet-rule)] p-3">
+            {job && (
+              <div className="flex flex-wrap items-baseline justify-between gap-2">
+                <p className="min-w-0 flex-1 truncate text-xs text-[var(--muted-foreground)]" title={setNameOf(job)}>
+                  {job.kind === "practice" ? "Sách" : "Bộ đề"}: <b className="text-[var(--sheet-ink)]">{setNameOf(job)}</b>
+                </p>
+                <RenameField
+                  jobId={jobId}
+                  label="Đổi tên"
+                  value={setNameOf(job)}
+                  bodyOf={(setName) => ({ setName })}
+                  disabled={!canRename}
+                  onSaved={load}
+                />
+              </div>
+            )}
+            {job?.kind === "practice" && (
+              <p className="text-xs text-[var(--muted-foreground)]">Sách luyện tập chưa xuất bản được.</p>
+            )}
             {sittings.length > 1 && (
               <select
                 aria-label="Lọc theo đề"
@@ -350,14 +410,27 @@ export function ExamImportDrafts({ jobId }: { jobId: string }) {
                         {stats.done}/{stats.total} xong
                       </span>
                     </div>
-                    {ready > 0 && (
+                    <div className="mt-0.5 flex flex-wrap justify-end">
+                      <RenameField
+                        jobId={jobId}
+                        label={name === "unknown" ? "Đặt tên kỳ thi để xuất bản" : "Đổi tên kỳ thi"}
+                        value={name}
+                        bodyOf={(to) => ({ sittings: [{ from: name, to }] })}
+                        disabled={!canRename || job?.kind === "practice"}
+                        onSaved={async () => {
+                          setSittingFilter("");
+                          await load();
+                        }}
+                      />
+                    </div>
+                    {ready > 0 && name !== "unknown" && job?.kind !== "practice" && (
                       <button
                         type="button"
                         className="mt-1.5 w-full rounded-lg border border-[var(--ok)]/50 bg-[var(--ok)]/10 py-1 text-xs font-semibold text-[var(--ok)] hover:bg-[var(--ok)]/20 disabled:opacity-50"
                         disabled={bulk?.busy}
                         onClick={() => void publishSitting(name)}
                       >
-                        Xuất bản {ready} khối đã đủ đáp án
+                        Xuất bản đề ({ready} khối sẵn sàng)
                       </button>
                     )}
                   </div>

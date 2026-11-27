@@ -17,6 +17,7 @@ import { ExamImageController } from "./exam-image.controller.js";
 import { ExamImageService } from "./exam-image.service.js";
 import { ExamImportController } from "./exam-import.controller.js";
 import { ExamImportService } from "./exam-import.service.js";
+import { ExamSyncService } from "./exam-sync.service.js";
 import { ExamImportDraft, ExamImportDraftSchema } from "./schemas/import-draft.schema.js";
 import {
   ExamImportJob,
@@ -59,7 +60,7 @@ export function buildExamsModule(): DynamicModule {
       ]),
     ],
     controllers: [ExamsController, ExamImportController, ExamAudioController, ExamImageController],
-    providers: [ExamsService, StimuliService, ExamImportService, ExamAudioService, ExamImageService],
+    providers: [ExamsService, StimuliService, ExamImportService, ExamSyncService, ExamAudioService, ExamImageService],
   };
 }
 

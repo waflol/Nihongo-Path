@@ -11,7 +11,7 @@ import {
 import { InjectModel } from "@nestjs/mongoose";
 import { mkdir, readFile, readdir, stat, unlink, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { Model } from "mongoose";
+import { Model, Types } from "mongoose";
 import type { AuthUser } from "../auth/auth.types.js";
 import { AiExampleService } from "../ai/ai-example.service.js";
 import { AiServicesService } from "../ai/ai-services.service.js";
@@ -50,6 +50,10 @@ import { applyMarks, enrich, type Junk, type Mark } from "./import/marks.js";
 import { OcrFailedError, openProsePdf, type ProsePdf } from "./import/prose.js";
 import { markCloze, parseByRules } from "./import/rules.js";
 import { segmentBlocks, type Block } from "./import/segment.js";
+import { isDrillBook } from "./import/drill.js";
+import { examKeyOf } from "./assemble.js";
+import { ExamSyncService, type ExamTarget } from "./exam-sync.service.js";
+import { type ExamKind } from "./schemas/exam.schema.js";
 import { readSuggestions, suggestPrompt, type AnswerSuggestion } from "./import/suggest.js";
 import { answerTemplate, headingOf, matchAnswerFile, mergeAnswers, parseAnswerFile, type AnswerFileDraft } from "./import/answer-file.js";
 import { parseAiJson, structurePrompt, type DraftAudio, type ParsedBlock, validateParsed } from "./import/structure.js";
@@ -142,6 +146,15 @@ export function settlePictureIssues(doc: { parsed?: ParsedBlock; issues: string[
 /** Key of the passage a listening block's own recording is published as. */
 const BLOCK_TRACK = "__track";
 
+const MAX_SET_NAME = 150;
+const MAX_SITTING_NAME = 60;
+
+/** Drops unset fields, which an update would otherwise store as `null`. */
+const defined = <T extends object>(o: T): T => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined)) as T;
+
+/** A job nobody named belongs to the collection its file is called. */
+const defaultSetName = (fileName: string): string => fileName.replace(/\.pdf$/i, "").trim().slice(0, MAX_SET_NAME) || "unnamed";
+
 /** Unread pages in a row that mean the AI is down, not that one page is hard. */
 const MAX_UNREAD_IN_A_ROW = 5;
 
@@ -153,7 +166,7 @@ const MAX_UNREAD_IN_A_ROW = 5;
  * answers. The result is a set of `exam_import_drafts` a human reviews, fills
  * in the answers from the printed key, and publishes. Publishing writes the
  * shared passages (`exam_stimuli`) and the questions (`exercise_questions`)
- * idempotently, so the same paper imported from two sources is kept once.
+ * idempotently per draft, then rebuilds the exam that draft belongs to.
  *
  * One job per user at a time; pages checkpoint so a restart re-reads only the
  * missing ones (never the whole PDF). A 4 GB box → pages are read
@@ -183,6 +196,7 @@ export class ExamImportService implements OnApplicationBootstrap {
     private readonly images: ExamImageService,
     private readonly ai: AiExampleService,
     private readonly services: AiServicesService,
+    private readonly examSync: ExamSyncService,
   ) {}
 
   /** Append to the job's event log (capped at the newest 400 lines). */
@@ -246,14 +260,14 @@ export class ExamImportService implements OnApplicationBootstrap {
 
   /**
    * Delete one import: the job, its pages and ALL its drafts, plus the kept PDF and page images.
-   * Questions already published to the bank stay (they are the exam content, not the draft).
+   * Published drafts and their questions stay: the exam is rebuilt from them.
    * A running job must be cancelled first.
    */
   async deleteJob(caller: AuthUser, jobId: string): Promise<{ deleted: boolean; drafts: number }> {
     const job = await this.jobs.findOne({ _id: jobId, user: caller.sub }).select("status").lean().exec();
     if (!job) throw new NotFoundException("Import job not found");
     if (job.status === "running") throw new ConflictException("Lần nhập đang chạy — hủy nó trước rồi mới xoá");
-    const d = await this.drafts.deleteMany({ jobId }).exec();
+    const d = await this.drafts.deleteMany({ jobId, status: { $ne: "published" } }).exec();
     await this.pages.deleteMany({ job: jobId }).exec();
     await this.jobs.deleteOne({ _id: jobId }).exec();
     for (const f of await readdir(this.dir).catch(() => [] as string[])) {
@@ -302,7 +316,7 @@ export class ExamImportService implements OnApplicationBootstrap {
   async startJob(
     caller: AuthUser,
     buffer: Buffer,
-    opts: { fileName: string; level: string; rights?: QuestionRights },
+    opts: { fileName: string; level: string; rights?: QuestionRights; kind?: ExamKind; setName?: string },
   ): Promise<{ jobId: string }> {
     const mine = await this.jobs.find({ user: caller.sub }).lean().exec();
     if (mine.some((j) => j.status === "running")) {
@@ -314,6 +328,8 @@ export class ExamImportService implements OnApplicationBootstrap {
         fileName: opts.fileName,
         level: opts.level,
         rights: opts.rights ?? "reference",
+        ...(opts.kind ? { kind: opts.kind } : {}),
+        setName: opts.setName?.trim() || defaultSetName(opts.fileName),
         numPages: 0,
         status: "running",
       });
@@ -437,7 +453,10 @@ export class ExamImportService implements OnApplicationBootstrap {
       for (let n = 1; n <= (numPages || pageRows.length || 1); n += 1) pagesArr.push(pageTexts.get(n) ?? "");
       // Pages no service could read: a block next to one may be missing questions or its passage.
       const unread = pagesArr.flatMap((_, i) => (pageTexts.has(i + 1) ? [] : [i + 1]));
-      const { blocks, answerKey, sheetKeys } = segmentBlocks(pagesArr, seed?.level ?? job.level);
+      const { blocks, answerKey, sheetKeys } = segmentBlocks(pagesArr, seed?.level ?? job.level, job.kind);
+      if (job.kind && job.kind !== "practice" && isDrillBook(pagesArr)) {
+        await this.log(id, "warn", "File có bố cục sách luyện tập (câu đánh số 【n】) nhưng được khai là đề thi — kiểm tra lại loại file");
+      }
 
       // 3. Structure each block, write its draft. A block that fails
       //    validation is kept as `error` — it never fails the whole job.
@@ -792,13 +811,140 @@ export class ExamImportService implements OnApplicationBootstrap {
   }
 
   /**
-   * Publish one reviewed draft: write its shared passages + questions into the
-   * bank (idempotent by content hash) and mark it `published`. Every question
-   * needs a human-entered answer (`0` = still unknown → refused).
+   * Publish one reviewed draft and rebuild its exam. Every question needs a
+   * human-entered answer (`0` = still unknown → refused). Publishing a draft
+   * that is already published only rebuilds the exam.
    */
-  async publish(caller: AuthUser, draftId: string, edits?: { answers?: number[] }): Promise<{ published: boolean; questions: number; stimuli: number }> {
+  async publish(
+    caller: AuthUser,
+    draftId: string,
+    edits?: { answers?: number[] },
+  ): Promise<{ published: boolean; questions: number; stimuli: number; examId?: string; warnings: string[] }> {
     const doc = await this.drafts.findById(draftId).exec();
     if (!doc) throw new NotFoundException("Import draft not found");
+    if (doc.status === "published") {
+      // The job may be deleted by now: the key still carries the (normalised) set name.
+      const owner = await this.jobs.findById(doc.jobId).exec();
+      const synced = doc.examKey
+        ? await this.examSync.sync(
+            { key: doc.examKey, level: doc.level, setName: owner?.setName || doc.examKey.split("|")[1], sitting: doc.sitting },
+            caller.sub,
+          )
+        : null;
+      return { published: true, questions: 0, stimuli: 0, examId: synced?.examId, warnings: synced?.warnings ?? [] };
+    }
+    const job = await this.publishableJob(doc.jobId);
+    const target = this.targetOf(job, doc);
+    const written = await this.writeDraft(caller, doc, job, target, edits);
+    const synced = await this.examSync.sync(target, caller.sub);
+    return { published: true, ...written, examId: synced.examId, warnings: synced.warnings };
+  }
+
+  /**
+   * Publish every ready block of one sitting, then rebuild its exam once. A block
+   * that is not ready is skipped and reported, never half-published.
+   */
+  async publishExam(
+    caller: AuthUser,
+    jobId: string,
+    sitting: unknown,
+    /** The reviewer's picks still on their screen, by draft id. */
+    answers?: unknown,
+  ): Promise<{ examId: string; published: number; questions: number; skipped: { draftId: string; blockIndex: number; reason: string }[]; warnings: string[] }> {
+    if (typeof sitting !== "string" || !sitting.trim()) throw new BadRequestException("Thiếu tên kỳ thi (sitting)");
+    const job = await this.publishableJob(jobId);
+    const docs = await this.drafts.find({ jobId, sitting, status: { $in: ["needs_review", "published"] } }).sort({ blockIndex: 1 }).exec();
+    if (docs.length === 0) throw new NotFoundException("Không có khối nào của kỳ thi này để xuất bản");
+    const target = this.targetOf(job, docs[0]);
+    const skipped: { draftId: string; blockIndex: number; reason: string }[] = [];
+    let published = 0;
+    for (const doc of docs) {
+      if (doc.status === "published") continue;
+      try {
+        const picked = (answers as Record<string, unknown> | undefined)?.[String(doc._id)];
+        const edits = Array.isArray(picked) ? { answers: picked.map((a) => Number(a) || 0) } : undefined;
+        await this.writeDraft(caller, doc, job, target, edits);
+        published += 1;
+      } catch (err) {
+        if (!(err instanceof BadRequestException)) throw err;
+        skipped.push({ draftId: String(doc._id), blockIndex: doc.blockIndex, reason: err.message });
+      }
+    }
+    if (published === 0 && !docs.some((d) => d.status === "published")) {
+      throw new BadRequestException(`Chưa khối nào đủ điều kiện xuất bản: ${skipped[0]?.reason ?? ""}`);
+    }
+    const synced = await this.examSync.sync(target, caller.sub);
+    return { ...synced, published, skipped };
+  }
+
+  /**
+   * Rename an import's collection or its sittings — what its exams are named by,
+   * so only while nothing of the import is published.
+   */
+  async renameJob(jobId: string, body: { setName?: unknown; sittings?: unknown }): Promise<{ setName: string; renamed: number }> {
+    const job = await this.jobs.findById(jobId).exec();
+    if (!job) throw new NotFoundException("Import job not found");
+    if (job.status === "running") throw new ConflictException("Lần nhập đang chạy — đợi xong rồi đổi tên");
+    if (await this.drafts.exists({ jobId, status: "published" }).exec()) {
+      throw new ConflictException("Lần nhập đã có khối xuất bản — không đổi tên được nữa");
+    }
+    const name = (v: unknown, what: string, max: number): string => {
+      const t = typeof v === "string" ? v.trim() : "";
+      if (!t || t.length > max || t.toLowerCase() === "unknown") throw new BadRequestException(`${what} không hợp lệ (1–${max} ký tự)`);
+      return t;
+    };
+    const setName = body.setName === undefined ? undefined : name(body.setName, "Tên bộ đề", MAX_SET_NAME);
+    if (body.sittings !== undefined && (!Array.isArray(body.sittings) || body.sittings.length > 200)) {
+      throw new BadRequestException("sittings phải là danh sách {from, to}");
+    }
+    // Check every rename before writing any.
+    const renames = ((body.sittings ?? []) as { from?: unknown; to?: unknown }[]).map((r) => {
+      if (typeof r?.from !== "string") throw new BadRequestException("sittings phải là danh sách {from, to}");
+      return { from: r.from, to: name(r.to, "Tên kỳ thi", MAX_SITTING_NAME) };
+    });
+    let renamed = 0;
+    // All at once, matched on the old label: renaming A→B and B→A swaps them.
+    const moves = await Promise.all(
+      renames.map(async (r) => ({ ...r, ids: (await this.drafts.find({ jobId, sitting: r.from }).select("_id").lean().exec()).map((d) => d._id) })),
+    );
+    for (const m of moves) {
+      if (m.ids.length === 0) continue;
+      await this.drafts.updateMany({ _id: { $in: m.ids } }, { $set: { sitting: m.to } }).exec();
+      renamed += m.ids.length;
+    }
+    if (setName !== undefined) await this.jobs.updateOne({ _id: jobId }, { $set: { setName } }).exec();
+    return { setName: setName ?? (job.setName || defaultSetName(job.fileName)), renamed };
+  }
+
+  private async publishableJob(jobId: string): Promise<ExamImportJobDocument> {
+    const job = await this.jobs.findById(jobId).exec();
+    if (!job) throw new NotFoundException("Import job not found");
+    if (job.kind === "practice") throw new BadRequestException("Sách luyện tập chưa xuất bản được — đang làm ở giai đoạn 2");
+    return job;
+  }
+
+  /** The exam a draft goes into; refused while its sitting has no name. */
+  private targetOf(job: ExamImportJobDocument, doc: ExamImportDraftDocument): ExamTarget {
+    const setName = job.setName || defaultSetName(job.fileName);
+    const key = examKeyOf(doc.level, setName, doc.sitting);
+    if (!key) throw new BadRequestException("Đặt tên kỳ thi trước khi xuất bản (khối này chưa biết thuộc đề nào)");
+    return { key, level: doc.level, setName, sitting: doc.sitting };
+  }
+
+  /**
+   * Write one draft's passages + questions and mark it published. Rows are keyed
+   * by draft and position, so a repeat overwrites them, and two papers printing
+   * the same question each keep their own.
+   */
+  private async writeDraft(
+    caller: AuthUser,
+    doc: ExamImportDraftDocument,
+    job: ExamImportJobDocument,
+    target: ExamTarget,
+    edits?: { answers?: number[] },
+  ): Promise<{ questions: number; stimuli: number }> {
+    const draftId = String(doc._id);
+    if (doc.status === "discarded") throw new BadRequestException("Khối này đã bỏ — không xuất bản được");
     if (edits?.answers) doc.answers = edits.answers.map((a) => Math.max(0, a | 0));
 
     const parsed = doc.parsed;
@@ -813,62 +959,58 @@ export class ExamImportService implements OnApplicationBootstrap {
 
     const rights = doc.rights;
     const sourceRef = { file: doc.file || doc.jobId, sitting: doc.sitting, no: doc.mondai };
-    // A 聴解 question prints no words of its own (`1番`, options "1" "2" "3"), the same in every
-    // paper: it is told apart by the paper and its place in it, not by its text.
     const listening = isListeningMondai(doc.mondai);
-    const where = `${sourceRef.file}|${doc.sitting}|${doc.mondai}`;
     const blockAudio = listening && doc.audio?.assetId ? doc.audio : null;
     const stimuliIn = [...(parsed.stimuli ?? [])];
     // The block's recording plays once above its questions: a listening "passage" that carries it.
     if (blockAudio) stimuliIn.push({ key: BLOCK_TRACK, kind: "listening", body: stripFormat(doc.instruction).trim() || "聴解" });
 
-    // 1. The shared passages, idempotent by content hash.
+    // 1. The shared passages, one per draft and key (the hash is unique in the collection).
     const stimIds = new Map<string, string>();
-    let stimuliWritten = 0;
     for (const st of stimuliIn) {
-      const hash = listening
-        ? contentHashOf(st.body, [where, st.key, blockAudio?.assetId ?? ""])
-        : contentHashOf(st.body, st.bodyB ? [st.bodyB] : []);
-      const existing = await this.stimuli.findOne({ contentHash: hash }).select("_id").lean().exec();
-      if (existing) {
-        stimIds.set(st.key, String(existing._id));
-        continue;
-      }
-      const s = await this.stimuli
-        .create({
-          level: doc.level || undefined,
-          mondai: doc.mondai ?? "reading-mid",
-          section: doc.section,
-          kind: st.kind,
-          title: st.title || undefined,
-          body: st.body,
-          bodyB: st.bodyB || undefined,
-          notes: st.notes || undefined,
-          questionCount: parsed.questions.filter((q) => (q.stimulusKey ?? (blockAudio ? BLOCK_TRACK : undefined)) === st.key).length,
-          ...(blockAudio ? { audio: blockAudio } : {}),
-          rights,
-          sourceRef,
-          contentHash: hash,
-          createdBy: caller.sub,
-        } as Partial<ExamStimulus>);
-      stimIds.set(st.key, String(s._id));
-      stimuliWritten += 1;
+      const hash = contentHashOf(`${draftId}|${st.key}`, [st.body]);
+      await this.stimuli
+        .updateOne(
+          { contentHash: hash },
+          {
+            $set: defined({
+              level: doc.level || undefined,
+              mondai: doc.mondai ?? "reading-mid",
+              section: doc.section,
+              kind: st.kind,
+              title: st.title || undefined,
+              body: st.body,
+              bodyB: st.bodyB || undefined,
+              notes: st.notes || undefined,
+              questionCount: parsed.questions.filter((q) => (q.stimulusKey ?? (blockAudio ? BLOCK_TRACK : undefined)) === st.key).length,
+              ...(blockAudio ? { audio: blockAudio } : {}),
+              rights,
+              sourceRef,
+              createdBy: caller.sub,
+            }),
+          },
+          { upsert: true },
+        )
+        .exec();
+      const row = await this.stimuli.findOne({ contentHash: hash }).select("_id").lean().exec();
+      stimIds.set(st.key, String(row!._id));
     }
 
-    // 2. The questions, idempotent by (prompt + options) content hash.
+    // 2. The questions.
     const siblings = (await this.drafts.find({ jobId: doc.jobId, sitting: doc.sitting }).select("blockIndex sitting parsed.questions.printedNo").lean().exec()) as unknown as DraftLike[];
     const printedFilled = fillPrintedNos(siblings).get(String(doc._id));
-    let written = 0;
+    const questionIds: Types.ObjectId[] = [];
     for (const q of parsed.questions) {
       const answerNo = answers[q.no - 1];
       const printedNo = printedFilled?.[q.no - 1] ?? q.printedNo;
       const answerText = q.options[answerNo - 1] ?? "";
-      const hash = listening ? contentHashOf(`${where}|${q.no}|${q.prompt}`, q.options) : contentHashOf(q.prompt, q.options);
+      // The collection's `contentHash` index is unique: scoped to the draft, so a repeat
+      // of the same words in another paper is its own row.
+      const hash = contentHashOf(`${draftId}|${q.no}|${q.prompt}`, q.options);
+      const dedupeKey = `imp:${draftId}:${q.no}`;
       const stimulusKey = q.stimulusKey ?? (blockAudio ? BLOCK_TRACK : undefined);
-      const exists = await this.bank.findOne({ contentHash: hash }).select("_id").lean().exec();
-      if (exists) continue;
       await this.bank
-        .create({
+        .updateOne({ dedupeKey }, { $set: defined({
           deck: null,
           card: null,
           kind: doc.mondai ? bankKindOf(doc.mondai) : "passage-question",
@@ -890,14 +1032,18 @@ export class ExamImportService implements OnApplicationBootstrap {
           sourceRef,
           contentHash: hash,
           createdBy: caller.sub,
-          dedupeKey: `imp:${hash}`,
-        } as Partial<ExerciseQuestion>);
-      written += 1;
+        } as Partial<ExerciseQuestion>) }, { upsert: true })
+        .exec();
+      const row = await this.bank.findOne({ dedupeKey }).select("_id").lean().exec();
+      questionIds.push(row!._id as Types.ObjectId);
     }
 
     doc.status = "published";
+    doc.questionIds = questionIds;
+    doc.examKey = target.key;
+    doc.jobCreatedAt = job.createdAt;
     await doc.save();
-    return { published: true, questions: written, stimuli: stimuliWritten };
+    return { questions: questionIds.length, stimuli: stimIds.size };
   }
 
   /** Discard a draft (a block the reviewer decides not to import). */
@@ -1281,6 +1427,7 @@ export class ExamImportService implements OnApplicationBootstrap {
   async discard(caller: AuthUser, draftId: string): Promise<{ discarded: boolean }> {
     const doc = await this.drafts.findById(draftId).exec();
     if (!doc) throw new NotFoundException("Import draft not found");
+    if (doc.status === "published") throw new ConflictException("Khối đã xuất bản vào đề — không bỏ được");
     doc.status = "discarded";
     await doc.save();
     return { discarded: true };

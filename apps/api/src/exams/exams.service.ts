@@ -15,7 +15,11 @@ import {
   type ExerciseKind,
 } from "../flashcards/schemas/exercise-question.schema.js";
 import { questionKey } from "../flashcards/exercise-questions.service.js";
-import { Exam, type ExamDocument } from "./schemas/exam.schema.js";
+import { CONTENT_ADMIN } from "../common/roles.js";
+import { type QuestionRights } from "../flashcards/schemas/exercise-question.schema.js";
+import { weakestRights } from "./assemble.js";
+import { ExamSyncService } from "./exam-sync.service.js";
+import { Exam, type ExamKind, type ExamDocument } from "./schemas/exam.schema.js";
 import {
   ExamAttempt,
   type ExamAttemptDocument,
@@ -516,6 +520,28 @@ export function finishStatus(deadlineMs: number | null | undefined, now: number)
 // ── Service (Mongo layer) ────────────────────────────────────────────
 
 const MAX_BANK_QUESTION = 400;
+const MAX_EXAM_QUESTIONS = 500;
+
+const REFERENCE_REFUSED = "Đề có câu thuộc nguồn tham khảo (reference) — không công khai được";
+const HIDDEN_FROM_LEARNERS = "Đề có câu nguồn tham khảo (reference): đang ẩn với người học";
+
+const isContentAdmin = (caller: AuthUser): boolean => (CONTENT_ADMIN as readonly string[]).includes(caller.role);
+
+export interface AdminExamPatch {
+  title?: string;
+  description?: string;
+  examType?: string;
+  year?: number;
+  level?: string;
+  timeLimitMin?: number;
+  /** `true` → explicitly remove the time limit (untimed exam). */
+  clearTimeLimit?: boolean;
+  /** Minutes per section key; a time set here survives rebuilding. */
+  sectionTimes?: Record<string, number>;
+  shuffle?: { questions?: boolean; options?: boolean };
+  questionIds?: string[];
+  status?: "DRAFT" | "PUBLISHED";
+}
 
 export interface AuthorQuestionInput {
   kind: string;
@@ -557,13 +583,16 @@ export class ExamsService {
     private readonly user: Model<UserDocument>,
     @InjectModel(ExamStimulus.name)
     private readonly stimuli: Model<ExamStimulusDocument>,
+    private readonly examSync: ExamSyncService,
   ) {}
 
   // ── Learner surface ───────────────────────────────────────────────
 
   /** Published exams the caller may take, with question counts. */
-  async listExams(filter: { level?: string; examType?: string; year?: number }) {
-    const q: Record<string, unknown> = { status: "PUBLISHED" };
+  async listExams(filter: { level?: string; examType?: string; year?: number; kind?: ExamKind }) {
+    // `reference` content is never offered to learners (Q-12).
+    const q: Record<string, unknown> = { status: "PUBLISHED", rights: { $ne: "reference" } };
+    if (filter.kind) q.kind = filter.kind;
     if (filter.level) q.level = filter.level;
     if (filter.examType) q.examType = filter.examType;
     if (filter.year) q.year = filter.year;
@@ -577,6 +606,8 @@ export class ExamsService {
       level: e.level || undefined,
       timeLimitMin: e.timeLimitMin ?? null,
       questionCount: e.questions?.length ?? 0,
+      kind: e.kind,
+      parts: (e.sections ?? []).map((s) => s.title || s.key),
       createdAt: e.createdAt,
     }));
   }
@@ -589,7 +620,9 @@ export class ExamsService {
    */
   async start(caller: AuthUser, examId: string): Promise<SitPayload | ResultPayload> {
     const exam = await this.exams.findById(examId).lean().exec();
-    if (!exam || exam.status !== "PUBLISHED") throw new NotFoundException("Exam not found");
+    // A content admin may sit any exam to check it; a learner only a published, servable one.
+    const open = exam?.status === "PUBLISHED" && exam.rights !== "reference";
+    if (!exam || !(open || isContentAdmin(caller))) throw new NotFoundException("Exam not found");
     if (exam.questions.length === 0) {
       throw new BadRequestException("Đề chưa có câu hỏi"); // T-P4-09
     }
@@ -861,7 +894,12 @@ export class ExamsService {
    * as the learner-generated rows: four distinct options, the answer among
    * them, text ≤ 400. Idempotent — same content upserts by `dedupeKey`.
    */
-  async adminAuthorQuestion(caller: AuthUser, input: AuthorQuestionInput): Promise<{ saved: boolean; id: string }> {
+  async adminAuthorQuestion(
+    caller: AuthUser,
+    input: AuthorQuestionInput,
+    /** The exam the question is written inside: it gets its own row, even if another exam has the same words. */
+    scope?: string,
+  ): Promise<{ saved: boolean; id: string }> {
     const kind = input.kind;
     if (!(EXERCISE_KINDS as readonly string[]).includes(kind)) {
       throw new BadRequestException(`Unknown question kind: ${kind}`);
@@ -884,8 +922,9 @@ export class ExamsService {
         `Câu hỏi không hợp lệ: cần tiêu đề, ${allowed.length === 1 ? "4" : allowed.join("/")} lựa chọn khác nhau và đáp án nằm trong các lựa chọn`,
       );
     }
-    const key = questionKey("", "", kind, answer, options);
-    const hash = contentHashOf(prompt, options);
+    // `contentHash` is unique in the collection, so a scoped row hashes its scope too.
+    const hash = contentHashOf(scope ? `${scope}|${prompt}` : prompt, options);
+    const key = questionKey(scope ? `${scope}:${hash}` : "", "", kind, answer, options);
     const res = await this.bank
       .updateOne(
         { dedupeKey: key },
@@ -920,27 +959,40 @@ export class ExamsService {
     return { saved: (res.upsertedCount ?? 0) > 0, id: String(doc?._id ?? "") };
   }
 
-  /** The bank, filterable (admin listing + the exam composer's picker). */
-  async adminListQuestions(query: { kind?: string; level?: string; q?: string; standalone?: boolean; limit?: number }) {
-    const filter: Record<string, unknown> = {};
-    if (query.kind && (EXERCISE_KINDS as readonly string[]).includes(query.kind)) filter.kind = query.kind;
-    if (query.level) filter.level = query.level;
-    if (query.standalone !== undefined) filter.card = query.standalone ? null : { $ne: null };
-    if (query.q) filter.prompt = { $regex: escapeRegex(query.q), $options: "i" };
-    const limit = Math.max(1, Math.min(query.limit ?? 100, 500));
-    const rows = await this.bank.find(filter).sort({ createdAt: -1 }).limit(limit).lean().exec();
-    return rows.map((r) => ({
-      _id: String(r._id),
-      kind: r.kind,
-      prompt: r.prompt,
-      sub: r.sub || undefined,
-      options: r.options,
-      answer: r.answer,
-      explain: r.explain || undefined,
-      level: r.level || undefined,
-      source: r.source,
-      standalone: r.card === null || r.card === undefined,
-      createdAt: r.createdAt,
+  /**
+   * Write a question by hand into one exam. Not for an imported exam: the next
+   * publish rebuilds it from its drafts and would drop the question.
+   */
+  async adminAddQuestion(caller: AuthUser, examId: string, input: AuthorQuestionInput): Promise<{ saved: boolean; id: string }> {
+    const exam = Types.ObjectId.isValid(examId) ? await this.exams.findById(examId).lean().exec() : null;
+    if (!exam) throw new NotFoundException("Exam not found");
+    if (exam.origin || exam.sections?.length) {
+      throw new BadRequestException("Đề nhập từ file được dựng lại từ bản nháp — sửa câu ở màn duyệt bản nháp");
+    }
+    if (exam.questions.length >= MAX_EXAM_QUESTIONS) throw new BadRequestException(`Đề tối đa ${MAX_EXAM_QUESTIONS} câu`);
+    const rights = input.rights ?? "own";
+    if (rights === "reference" && exam.status === "PUBLISHED") throw new BadRequestException(REFERENCE_REFUSED);
+    const saved = await this.adminAuthorQuestion(caller, { ...input, level: exam.level, rights }, `exam:${examId}`);
+    const id = new Types.ObjectId(saved.id);
+    const all = [...exam.questions.filter((q) => String(q) !== saved.id), id];
+    await this.exams
+      .updateOne({ _id: exam._id }, { $addToSet: { questions: id }, $set: { rights: await this.rightsOf(all) } })
+      .exec();
+    return saved;
+  }
+
+  /** One exam's questions in its own order, with their answers (admin review). */
+  async adminExamQuestions(examId: string) {
+    const exam = Types.ObjectId.isValid(examId) ? await this.exams.findById(examId).select("questions").lean().exec() : null;
+    if (!exam) throw new NotFoundException("Exam not found");
+    return bankByOrder(await this.loadBank(exam.questions), exam.questions.map(String)).map((q) => ({
+      _id: q._id,
+      kind: q.kind,
+      mondai: q.mondai,
+      prompt: q.prompt,
+      options: q.options,
+      answer: q.answer,
+      explain: q.explain || undefined,
     }));
   }
 
@@ -959,6 +1011,20 @@ export class ExamsService {
       status: e.status,
       questionIds: (e.questions ?? []).map((id) => String(id)),
       questionCount: e.questions?.length ?? 0,
+      kind: e.kind,
+      rights: e.rights,
+      origin: e.origin ? { setName: e.origin.setName, sitting: e.origin.sitting } : undefined,
+      sections: (e.sections ?? []).map((s) => ({
+        key: s.key,
+        title: s.title,
+        timeLimitMin: s.timeLimitMin ?? null,
+        timeLocked: s.timeLocked === true,
+        questionCount: s.questions.length,
+      })),
+      warnings: [
+        ...(e.status === "PUBLISHED" && e.rights === "reference" ? [HIDDEN_FROM_LEARNERS] : []),
+        ...(e.warnings ?? []),
+      ],
       createdAt: e.createdAt,
       updatedAt: e.updatedAt,
     }));
@@ -977,7 +1043,9 @@ export class ExamsService {
     const title = String(body.title ?? "").trim();
     if (title.length === 0) throw new BadRequestException("Đề thi thiếu tên");
     const questionIds = await this.resolveBankIds(body.questionIds ?? []);
+    const rights = await this.rightsOf(questionIds);
     const doc = await this.exams.create({
+      rights,
       title: title.slice(0, 200),
       description: String(body.description ?? "").trim().slice(0, 500) || undefined,
       examType: String(body.examType ?? "").trim().slice(0, 100) || undefined,
@@ -992,19 +1060,16 @@ export class ExamsService {
     return { id: String(doc._id) };
   }
 
-  async adminUpdateExam(caller: AuthUser, examId: string, body: {
-    title?: string;
-    description?: string;
-    examType?: string;
-    year?: number;
-    level?: string;
-    timeLimitMin?: number;
-    /** `true` → explicitly remove the time limit (untimed exam). */
-    clearTimeLimit?: boolean;
-    shuffle?: { questions?: boolean; options?: boolean };
-    questionIds?: string[];
-    status?: "DRAFT" | "PUBLISHED";
-  }) {
+  async adminUpdateExam(caller: AuthUser, examId: string, body: AdminExamPatch) {
+    const exam = await this.exams.findById(examId).select("origin").lean().exec();
+    if (!exam) throw new NotFoundException("Exam not found");
+    // An imported exam is also written by publishing: take turns with it.
+    return exam.origin
+      ? this.examSync.exclusive(exam.origin.key, () => this.applyExamPatch(examId, body))
+      : this.applyExamPatch(examId, body);
+  }
+
+  private async applyExamPatch(examId: string, body: AdminExamPatch) {
     const exam = await this.exams.findById(examId).exec();
     if (!exam) throw new NotFoundException("Exam not found");
     // Rebuild from the lean doc: one plain `updateOne` so an unset field is
@@ -1014,13 +1079,47 @@ export class ExamsService {
       shuffle: { questions: boolean; options: boolean };
       questions: Types.ObjectId[];
     };
+    const sections = lean.sections ?? [];
+    const imported = !!lean.origin;
+    // A sectioned or imported exam's question list and level come from its drafts.
+    const fixed = imported || sections.length > 0;
+    const current = (lean.questions ?? []).map(String);
+    const listChanged =
+      body.questionIds !== undefined &&
+      (body.questionIds.length !== current.length || body.questionIds.some((id, i) => id !== current[i]));
+    if (fixed && listChanged) {
+      throw new BadRequestException("Không sửa được danh sách câu của đề này — sửa ở màn duyệt bản nháp rồi xuất bản lại");
+    }
+    if (imported && body.level !== undefined && body.level.trim() !== (lean.level ?? "")) {
+      throw new BadRequestException("Không đổi được cấp độ của đề nhập từ file");
+    }
+    if (
+      sections.length > 0 &&
+      (body.clearTimeLimit || (body.timeLimitMin !== undefined && body.timeLimitMin !== lean.timeLimitMin))
+    ) {
+      throw new BadRequestException("Đề chia phần: sửa thời gian của từng phần");
+    }
+    const times = Object.entries(body.sectionTimes ?? {});
+    for (const [key, minutes] of times) {
+      if (!sections.some((s) => s.key === key)) throw new BadRequestException(`Đề không có phần: ${key}`);
+      if (!Number.isInteger(minutes) || minutes < 1 || minutes > 240) {
+        throw new BadRequestException("Thời gian mỗi phần là số phút nguyên từ 1 đến 240");
+      }
+    }
+
+    const questions = !fixed && body.questionIds !== undefined ? await this.resolveBankIds(body.questionIds) : lean.questions;
+    const rights = await this.rightsOf(questions);
+    // Refused on publishing, or on adding to a published exam — an exam that turned
+    // `reference` by a rebuild stays editable (and hidden).
+    if (rights === "reference" && (body.status === "PUBLISHED" || (listChanged && lean.status === "PUBLISHED"))) {
+      throw new BadRequestException(REFERENCE_REFUSED);
+    }
+
     const next: Record<string, unknown> = {
       title: body.title !== undefined ? String(body.title).trim().slice(0, 200) : lean.title,
       description: body.description !== undefined ? String(body.description).trim().slice(0, 500) : (lean.description ?? undefined),
       examType: body.examType !== undefined ? String(body.examType).trim().slice(0, 100) : lean.examType,
       year: body.year !== undefined ? body.year : lean.year,
-      level: body.level !== undefined ? String(body.level).trim().slice(0, 8) : lean.level,
-      timeLimitMin: body.clearTimeLimit ? undefined : (body.timeLimitMin !== undefined ? body.timeLimitMin : (lean.timeLimitMin ?? undefined)),
       shuffle:
         body.shuffle !== undefined
           ? { questions: body.shuffle.questions !== false, options: body.shuffle.options !== false }
@@ -1028,13 +1127,26 @@ export class ExamsService {
               questions: lean.shuffle?.questions !== false,
               options: lean.shuffle?.options !== false,
             },
-      questions:
-        body.questionIds !== undefined ? await this.resolveBankIds(body.questionIds) : lean.questions,
       status: body.status !== undefined ? body.status : lean.status,
+      rights,
     };
+    if (!imported) next.level = body.level !== undefined ? String(body.level).trim().slice(0, 8) : lean.level;
+    if (!fixed) next.questions = questions;
+    if (sections.length === 0) {
+      next.timeLimitMin = body.clearTimeLimit ? undefined : (body.timeLimitMin ?? lean.timeLimitMin ?? undefined);
+    } else if (times.length > 0) {
+      const minutes = new Map(times);
+      const updated = sections.map((s) =>
+        minutes.has(s.key) ? { ...s, timeLimitMin: minutes.get(s.key)!, timeLocked: true } : s,
+      );
+      next.sections = updated;
+      next.timeLimitMin = updated.reduce((n, s) => n + (s.timeLimitMin ?? 0), 0);
+    }
     const set: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(next)) if (v !== undefined) set[k] = v;
-    await this.exams.updateOne({ _id: exam._id }, { $set: set }).exec();
+    // `$set` skips unset fields, so removing the time limit needs `$unset`.
+    const unset = sections.length === 0 && body.clearTimeLimit ? { $unset: { timeLimitMin: 1 } } : {};
+    await this.exams.updateOne({ _id: exam._id }, { $set: set, ...unset }).exec();
     return { id: examId };
   }
 
@@ -1054,6 +1166,12 @@ export class ExamsService {
       .exec();
     if (!attempt) throw new NotFoundException("Attempt not found");
     return attempt;
+  }
+
+  private async rightsOf(ids: Types.ObjectId[]): Promise<QuestionRights> {
+    if (ids.length === 0) return "own";
+    const rows = await this.bank.find({ _id: { $in: ids } }).select("rights").lean().exec();
+    return weakestRights(rows.map((r) => r.rights ?? "own"));
   }
 
   /** Bank rows for the ids an attempt actually serves (missing ones drop out). */
@@ -1237,10 +1355,6 @@ function toCore(doc: ExamAttemptDocument): AttemptCore {
     sectionKeys: doc.sectionKeys,
     questionSections: doc.questionSections,
   };
-}
-
-function escapeRegex(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 const pad2 = (n: number): string => String(n).padStart(2, "0");

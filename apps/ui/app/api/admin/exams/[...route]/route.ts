@@ -8,9 +8,9 @@ import { getSession } from "@/lib/session";
  * proxy: the access token is exchanged server-side, and the API enforces
  * `@ContentAdmin` (a non-admin gets 403 even if this gate were bypassed).
  *
- * Serves: `/api/admin/exams/exam-questions` (POST author / GET list),
- * `/api/admin/exams/exams` (GET all / POST create),
- * `/api/admin/exams/exams/:id` (PATCH / DELETE).
+ * Serves: `/api/admin/exams/exams` (GET all / POST create),
+ * `/api/admin/exams/exams/:id` (PATCH / DELETE),
+ * `/api/admin/exams/exams/:id/questions` (GET list / POST write one).
  */
 async function forward(
   request: NextRequest,

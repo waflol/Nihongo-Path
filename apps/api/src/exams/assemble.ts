@@ -104,8 +104,9 @@ function newestPerMondai(drafts: AssembleDraft[]): AssembleDraft[] {
   return drafts.filter((d) => winners.get(slotOf(d))!.jobId === d.jobId);
 }
 
-function weakestRights(rights: QuestionRights[]): QuestionRights {
-  if (rights.length === 0 || rights.includes("reference")) return "reference";
+/** The most restrictive of the questions' rights: one `reference` question makes the exam `reference`. */
+export function weakestRights(rights: QuestionRights[]): QuestionRights {
+  if (rights.includes("reference")) return "reference";
   return rights.includes("licensed") ? "licensed" : "own";
 }
 
@@ -174,7 +175,8 @@ export function assembleExam(
     kind: complete ? "full" : "section",
     sections,
     questions: sections.flatMap((s) => s.questions),
-    rights: weakestRights(used.map((d) => d.rights)),
+    // An exam nothing is known about is not one a learner may be given.
+    rights: used.length > 0 ? weakestRights(used.map((d) => d.rights)) : "reference",
     warnings,
   };
 }

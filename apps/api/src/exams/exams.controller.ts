@@ -36,7 +36,7 @@ import {
   EXERCISE_KINDS,
   type ExerciseKind,
 } from "../flashcards/schemas/exercise-question.schema.js";
-import { EXAM_STATUSES, type ExamStatus } from "./schemas/exam.schema.js";
+import { EXAM_KINDS, EXAM_STATUSES, type ExamStatus } from "./schemas/exam.schema.js";
 import { ExamsService } from "./exams.service.js";
 import { StimuliService } from "./stimuli.service.js";
 import { JLPT_STRUCTURE } from "./jlpt-structure.js";
@@ -50,6 +50,7 @@ class ExamsQuery {
   @IsOptional() @IsString() @MaxLength(8) level?: string;
   @IsOptional() @IsString() @MaxLength(100) examType?: string;
   @IsOptional() @Type(() => Number) @IsInt() @Min(1990) @Max(2100) year?: number;
+  @IsOptional() @IsIn(EXAM_KINDS as unknown as string[]) kind?: (typeof EXAM_KINDS)[number];
 }
 
 /** One answer inside a submit: question id → served option index (0–3) or null. */
@@ -121,6 +122,9 @@ class AdminExamDto {
   /** `true` → explicitly remove the exam's time limit (untimed). */
   @IsOptional() @IsBoolean() clearTimeLimit?: boolean;
 
+  /** Minutes per section key (a sectioned exam). */
+  @IsOptional() @IsObject() sectionTimes?: Record<string, number>;
+
   @IsOptional() @ValidateNested() @Type(() => ShuffleDto) shuffle?: ShuffleDto;
 
   @IsOptional() @IsArray() @ArrayMaxSize(500) @IsString({ each: true })
@@ -173,15 +177,6 @@ class StimulusDto {
 class StimuliQuery {
   @IsOptional() @IsString() @MaxLength(8) level?: string;
   @IsOptional() @IsIn(MONDAI_TYPES as unknown as string[]) mondai?: MondaiType;
-  @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(500) limit?: number;
-}
-
-class AdminQuestionQuery {
-  @IsOptional() @IsIn(EXERCISE_KINDS as unknown as string[]) kind?: ExerciseKind;
-  @IsOptional() @IsString() @MaxLength(8) level?: string;
-  @IsOptional() @IsString() @MaxLength(200) q?: string;
-  /** `true` = standalone (admin-authored) questions only. */
-  @IsOptional() @IsIn(["true", "false"]) standalone?: string;
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(500) limit?: number;
 }
 
@@ -273,26 +268,6 @@ export class ExamsController {
 
   // ── Admin (P4-EXAM-09) ───────────────────────────────────────────
 
-  @Post("admin/exam-questions")
-  @ContentAdmin()
-  @HttpCode(HttpStatus.CREATED)
-  @ApiOperation({ summary: "Author a standalone bank question (admin, idempotent by dedupeKey)" })
-  adminAuthorQuestion(@CurrentUser() caller: AuthUser, @Body() body: AdminQuestionDto) {
-    return this.exams.adminAuthorQuestion(caller, body);
-  }
-  @Get("admin/exam-questions")
-  @ContentAdmin()
-  @ApiOperation({ summary: "List the question bank (?kind, ?level, ?q, ?standalone, ?limit)" })
-  adminListQuestions(@Query() query: AdminQuestionQuery) {
-    return this.exams.adminListQuestions({
-      kind: query.kind,
-      level: query.level,
-      q: query.q,
-      standalone: query.standalone === "true" ? true : query.standalone === "false" ? false : undefined,
-      limit: query.limit,
-    });
-  }
-
   @Get("admin/exams")
   @ContentAdmin()
   @ApiOperation({ summary: "All exams, any status (admin)" })
@@ -325,10 +300,26 @@ export class ExamsController {
       level: body.level,
       timeLimitMin: body.timeLimitMin,
       clearTimeLimit: body.clearTimeLimit,
+      sectionTimes: body.sectionTimes,
       shuffle: body.shuffle,
       questionIds: body.questionIds,
       status: body.status,
     });
+  }
+
+  @Get("admin/exams/:id/questions")
+  @ContentAdmin()
+  @ApiOperation({ summary: "One exam's questions in order, with answers (admin)" })
+  adminExamQuestions(@Param("id") id: string) {
+    return this.exams.adminExamQuestions(id);
+  }
+
+  @Post("admin/exams/:id/questions")
+  @ContentAdmin()
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({ summary: "Write a question by hand into a hand-composed exam (admin)" })
+  adminAddQuestion(@CurrentUser() caller: AuthUser, @Param("id") id: string, @Body() body: AdminQuestionDto) {
+    return this.exams.adminAddQuestion(caller, id, body);
   }
 
   @Delete("admin/exams/:id")

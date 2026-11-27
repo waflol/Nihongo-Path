@@ -20,6 +20,10 @@ export interface ExamListItem {
   /** null = untimed. */
   timeLimitMin: number | null;
   questionCount: number;
+  /** Absent on a hand-composed exam. */
+  kind?: "full" | "section" | "practice";
+  /** Titles of the timed parts the exam has. */
+  parts?: string[];
   createdAt: string;
 }
 

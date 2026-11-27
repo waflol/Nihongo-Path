@@ -1,5 +1,6 @@
 import { Prop, Schema, SchemaFactory } from "@nestjs/mongoose";
 import { HydratedDocument } from "mongoose";
+import { EXAM_KINDS, type ExamKind } from "./exam.schema.js";
 
 export const EXAM_IMPORT_JOB_STATUSES = ["running", "done", "error", "cancelled"] as const;
 
@@ -22,6 +23,17 @@ export class ExamImportJob {
   /** The declared JLPT level (N1…N5) the import targets. */
   @Prop({ type: String, required: true })
   level: string;
+
+  /**
+   * What the admin said the file is. Absent (an older job, or a caller that did
+   * not say) = the layout decides how it is segmented; it publishes as exams.
+   */
+  @Prop({ type: String, enum: EXAM_KINDS })
+  kind?: ExamKind;
+
+  /** The collection / book the file belongs to — half of an exam's identity. Empty = the file name. */
+  @Prop({ type: String, default: "" })
+  setName?: string;
 
   /** Content rights of the imported material (default `reference`, Q-12). */
   @Prop({ type: String, default: "reference" })

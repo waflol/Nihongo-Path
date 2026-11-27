@@ -1,6 +1,6 @@
 # Plan — Đề thi theo nguồn: đề đầy đủ, đề theo phần, sách luyện tập (bỏ ngân hàng câu hỏi)
 
-> **Ngày lập:** 27/11/2026. **Trạng thái:** chủ dự án đã duyệt 27/11/2026 (gồm 3 đề xuất ở §8). Xong giai đoạn 0 và 1.1; tiếp theo 1.2.
+> **Ngày lập:** 27/11/2026. **Trạng thái:** chủ dự án đã duyệt 27/11/2026 (gồm 3 đề xuất ở §8). Xong giai đoạn 0 và 1.1–1.4 (UI chưa kiểm trình duyệt); tiếp theo 1.5.
 > **Thay thế:** các phần ngân hàng / sinh đề của [plan-jlpt-question-bank.md](./plan-jlpt-question-bank.md) (NP-408, và phần "phủ ngân hàng / sinh đề thử" của NP-409). Phần schema, import (NP-406/407) và màn làm bài vẫn dùng.
 > **Điều kiện bắt đầu:** working tree đang có nhiều thay đổi NP-407/410 và trang cấu trúc đề chưa commit, đụng đúng các file plan này sửa (`exam-import.service.ts`, `exams.service.ts`, `exams.controller.ts`, hai `exams-console.tsx`). Commit xong phần đó rồi mới làm.
 
@@ -34,7 +34,7 @@ Ngoài phạm vi: lời giải ở cuối sách; sách có bố cục khác `dri
 **D3 — Khoá đề.** `origin.key = level | setName (chuẩn hoá) | sitting`. Cùng khoá → cùng đề, nên file 文字・語彙 và file 聴解 cùng `setName` + kỳ gộp làm một. Hai sách khác nhau đều có `N3-1` không đụng nhau vì khác `setName`. `sitting = "unknown"` → bắt admin đặt tên trước khi xuất bản. Với `practice`: `level | setName | mondai | unitNo` (số `第N回` lặp lại theo từng dạng).
 
 **D4 — Xuất bản draft = ghi câu hỏi + đồng bộ đề.**
-- `dedupeKey = imp:<draftId>:<q.no>`; bài đọc cũng theo `draftId + key`. Bỏ tra `contentHash` toàn cục (hiện `if (exists) continue` làm đề sau thiếu câu). `contentHash` vẫn lưu, không dùng để bỏ qua.
+- `dedupeKey = imp:<draftId>:<q.no>`; bài đọc cũng theo `draftId + key`. Bỏ tra `contentHash` toàn cục (hiện `if (exists) continue` làm đề sau thiếu câu). Cả hai collection có index **unique** trên `contentHash`, nên hash của bản nhập được tính kèm `draftId` (không phải đổi index).
 - Draft lưu `questionIds[]` sau khi ghi. Ghi bằng upsert theo `dedupeKey` để chạy lại sau lỗi giữa chừng không nhân đôi.
 - Sau đó dựng lại `sections` + `questions` của đề từ **mọi draft đã xuất bản cùng khoá** (hàm thuần, chạy bao nhiêu lần cũng ra một kết quả).
 - Hai lần nhập cùng phủ một 問題: draft của job mới nhất thắng. Nhiều khối cùng 問題 trong một job thì nối theo `blockIndex`.
@@ -56,6 +56,7 @@ origin?: { key: string; setName: string; sitting: string; jobIds: string[] }   /
 book?: { key: string; title: string; unitNo: number; unitTitle: string; order: number }
 rights?: "own" | "licensed" | "reference"
 sections[].timeLocked?: boolean            // admin đã sửa thời gian
+warnings?: string[]                        // cảnh báo của lần dựng đề gần nhất
 
 // exam_import_jobs
 kind: "full" | "section" | "practice"      // job cũ: coi như "full"
@@ -64,6 +65,8 @@ setName: string
 // exam_import_drafts
 unitNo?: number                            // số 第N回
 questionIds?: ObjectId[]                   // điền khi xuất bản
+examKey?: string                           // đề chứa khối (= origin.key)
+jobCreatedAt?: Date                        // giữ lại vì job có thể bị xoá; xoá job không xoá draft đã xuất bản
 
 // exam_attempts
 mode?: "exam" | "practice"                 // vắng = exam

@@ -7,6 +7,7 @@ import {
   HttpCode,
   HttpStatus,
   Param,
+  Patch,
   Post,
   Query,
   StreamableFile,
@@ -22,6 +23,7 @@ import { ContentAdmin } from "../auth/decorators/roles.decorator.js";
 import type { AuthUser } from "../auth/auth.types.js";
 import { QUESTION_RIGHTS, type QuestionRights } from "../flashcards/schemas/exercise-question.schema.js";
 import { ExamImportService } from "./exam-import.service.js";
+import { EXAM_KINDS, type ExamKind } from "./schemas/exam.schema.js";
 
 const MAX_PDF_BYTES = 100 * 1024 * 1024;
 
@@ -50,7 +52,7 @@ export class ExamImportController {
   async start(
     @CurrentUser() caller: AuthUser,
     @UploadedFile() file: UploadFile | null,
-    @Body() body: { level?: string; rights?: string },
+    @Body() body: { level?: string; rights?: string; kind?: string; setName?: string },
   ) {
     if (!file?.buffer?.length) throw new UnprocessableEntityException("Thiếu file PDF");
     if (!file.buffer.subarray(0, 5).toString("latin1").startsWith("%PDF")) {
@@ -60,7 +62,11 @@ export class ExamImportController {
     if (!["N5", "N4", "N3", "N2", "N1"].includes(level)) throw new BadRequestException("level phải là N5…N1");
     const rights = (body.rights ?? "reference") as QuestionRights;
     if (!(QUESTION_RIGHTS as readonly string[]).includes(rights)) throw new BadRequestException("rights không hợp lệ");
-    return this.imports.startJob(caller, file.buffer, { fileName: file.originalname, level, rights });
+    const kind = (body.kind || undefined) as ExamKind | undefined;
+    if (kind && !(EXAM_KINDS as readonly string[]).includes(kind)) throw new BadRequestException("kind phải là full, section hoặc practice");
+    const setName = String(body.setName ?? "").trim();
+    if (setName.length > 150) throw new BadRequestException("Tên bộ đề tối đa 150 ký tự");
+    return this.imports.startJob(caller, file.buffer, { fileName: file.originalname, level, rights, kind, setName });
   }
 
   @Get()
@@ -165,6 +171,21 @@ export class ExamImportController {
   @ApiOperation({ summary: "Event log of an import job" })
   log(@CurrentUser() caller: AuthUser, @Param("jobId") jobId: string) {
     return this.imports.jobLog(caller, jobId);
+  }
+
+  @Post(":jobId/publish-exam")
+  @ContentAdmin()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: "Publish every ready block of one sitting and build its exam" })
+  publishExam(@CurrentUser() caller: AuthUser, @Param("jobId") jobId: string, @Body() body: { sitting?: unknown; answers?: unknown }) {
+    return this.imports.publishExam(caller, jobId, body?.sitting, body?.answers);
+  }
+
+  @Patch(":jobId")
+  @ContentAdmin()
+  @ApiOperation({ summary: "Rename the import's collection (setName) or sittings, while nothing is published" })
+  rename(@Param("jobId") jobId: string, @Body() body: { setName?: unknown; sittings?: unknown }) {
+    return this.imports.renameJob(jobId, body ?? {});
   }
 
   @Post(":jobId/cancel")

@@ -1,8 +1,31 @@
 import { Prop, Schema, SchemaFactory } from "@nestjs/mongoose";
-import { HydratedDocument, Types } from "mongoose";
+import { HydratedDocument, Schema as MongooseSchema, Types } from "mongoose";
+import { QUESTION_RIGHTS, type QuestionRights } from "../../flashcards/schemas/exercise-question.schema.js";
 
 export const EXAM_STATUSES = ["DRAFT", "PUBLISHED"] as const;
 export type ExamStatus = (typeof EXAM_STATUSES)[number];
+
+/** `full` = every timed part of the level; `section` = only some; `practice` = a drill-book unit. */
+export const EXAM_KINDS = ["full", "section", "practice"] as const;
+export type ExamKind = (typeof EXAM_KINDS)[number];
+
+/** Where an imported exam came from. `key` (level | set | sitting) names it: one exam per key. */
+export interface ExamOrigin {
+  key: string;
+  setName: string;
+  sitting: string;
+  jobIds: string[];
+}
+
+const ORIGIN_SCHEMA = new MongooseSchema(
+  {
+    key: { type: String, required: true },
+    setName: { type: String, required: true },
+    sitting: { type: String, required: true },
+    jobIds: { type: [String], default: [] },
+  },
+  { _id: false },
+);
 
 /**
  * An exam: a named set of bank questions with a time limit and shuffle rules
@@ -60,11 +83,28 @@ export class Exam {
         key: { type: String, required: true },
         title: { type: String },
         timeLimitMin: { type: Number, min: 1, max: 240 },
+        timeLocked: { type: Boolean },
         questions: { type: [Types.ObjectId], default: [] },
       },
     ],
   })
-  sections?: { key: string; title?: string; timeLimitMin?: number; questions: Types.ObjectId[] }[];
+  sections?: { key: string; title?: string; timeLimitMin?: number; timeLocked?: boolean; questions: Types.ObjectId[] }[];
+
+  // ── Imported exams (plan-exam-by-source). Absent on a hand-composed exam. ──
+
+  @Prop({ type: String, enum: EXAM_KINDS })
+  kind?: ExamKind;
+
+  @Prop({ type: ORIGIN_SCHEMA })
+  origin?: ExamOrigin;
+
+  /** What the last rebuild found missing (for the admin). */
+  @Prop({ type: [String] })
+  warnings?: string[];
+
+  /** The most restrictive rights among the exam's questions; `reference` is never served to learners. */
+  @Prop({ type: String, enum: QUESTION_RIGHTS })
+  rights?: QuestionRights;
 
   /** Present when the exam was produced by the generator (NP-408). */
   @Prop({
@@ -104,3 +144,4 @@ export type ExamDocument = HydratedDocument<Exam>;
 export const ExamSchema = SchemaFactory.createForClass(Exam);
 // "What can I take now" + admin listing: published first, by level / family.
 ExamSchema.index({ status: 1, level: 1, examType: 1 });
+ExamSchema.index({ "origin.key": 1 }, { unique: true, sparse: true });

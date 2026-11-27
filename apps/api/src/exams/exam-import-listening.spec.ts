@@ -41,10 +41,15 @@ function harness(draft: Record<string, unknown>, assets = 1) {
     },
   };
   fake.stimuli = {
-    findOne: () => chain(null),
-    create: async (o: Record<string, unknown>) => (created.stimuli.push(o), { _id: `st${created.stimuli.length}` }),
+    updateOne: (filter: object, u: { $set: Record<string, unknown> }) => ({ exec: async () => created.stimuli.push({ ...filter, ...u.$set }) }),
+    findOne: () => chain({ _id: `st${created.stimuli.length}` }),
   };
-  fake.bank = { findOne: () => chain(null), create: async (o: Record<string, unknown>) => (created.bank.push(o), o) };
+  fake.bank = {
+    updateOne: (filter: object, u: { $set: Record<string, unknown> }) => ({ exec: async () => created.bank.push({ ...filter, ...u.$set }) }),
+    findOne: () => chain({ _id: `q${created.bank.length}` }),
+  };
+  fake.jobs = { findById: () => ({ exec: async () => ({ fileName: "f.pdf", setName: "set", createdAt: new Date(0) }) }) };
+  fake.examSync = { sync: async () => ({ examId: "e", questions: 0, warnings: [] }) };
   fake.audioAssets = { countDocuments: () => ({ exec: async () => assets }) };
   // Pictures: no kept PDF here; a crop is recorded and stored under a made-up id.
   const crops: unknown[] = [];
@@ -115,7 +120,7 @@ describe("ExamImportService — listening drafts", () => {
       ["2番", "3", "st1", { assetId: B }],
     ]);
     // The same "1番" with options 1-2-3 recurs in every paper: each paper's is its own question.
-    const other = harness({ ...quickDraft(), sitting: "2024-07" });
+    const other = harness({ ...quickDraft(), _id: "d2", sitting: "2024-07" });
     (other.svc as unknown as { drafts: { find: unknown } }).drafts.find = () => chain([]);
     await other.svc.publish(caller, "d1");
     expect(other.created.bank[0].contentHash).not.toBe(created.bank[0].contentHash);
