@@ -1,7 +1,7 @@
 # Danh sách ticket & tiến độ — Nihongo Path
 
 > **Cập nhật:** 27/11/2026. Nguồn: [IMPLEMENTATION_CHECKLIST.md](./IMPLEMENTATION_CHECKLIST.md) (trạng thái từng task),
-> [OPEN_QUESTIONS.md](./OPEN_QUESTIONS.md) (quyết định đang chờ), `git log` đến `bfba124`, [HANDOFF.md](./HANDOFF.md).
+> [OPEN_QUESTIONS.md](./OPEN_QUESTIONS.md) (quyết định đang chờ), `git log` đến `c4be469`, [HANDOFF.md](./HANDOFF.md).
 >
 > **Cách đọc trạng thái:** theo quy ước checklist §0.1. `✅` = checklist đã `[x]` có bằng chứng; `🟡` = `[~]` làm dở / chưa kiểm
 > chứng đủ; `⬜` = chưa làm; `⏸` = chờ chủ sản phẩm quyết định; `➕` = đã làm **ngoài** checklist gốc (có commit, chưa có tiêu chí nghiệm thu).
@@ -65,7 +65,7 @@
 | NP-402 | API làm bài: bắt đầu/nộp, hết giờ server, xáo, chấm | P4-EXAM-04…06 | Verify API với thời gian giả lập (code + vitest xong 18/11) |
 | NP-403 | Xem lại lỗi + thống kê + màn kết quả | P4-EXAM-07/08, P4-UI-02 | Verify API + trình duyệt |
 | NP-404 | Màn làm bài có timer/lưu nháp + admin soạn đề (`app/admin/exams`) | P4-EXAM-09, P4-UI-01 | Code xong (commit 39c481b); còn verify trình duyệt |
-| NP-407 | Xuất bản đề thật + làm bài trên trình duyệt, đo RSS file lớn, GĐ2 sách luyện tập | P4-JLPT-05 (`[~]`) | Theo [plan-exam-by-source.md](./plans/plan-exam-by-source.md); đã kiểm các màn chính trên Chrome Live 27/11 |
+| NP-407 | Xuất bản đề thật + làm bài trên trình duyệt, đo RSS file lớn, GĐ2 sách luyện tập | P4-JLPT-05 (`[~]`) | Theo [plan-exam-by-source.md](./plans/plan-exam-by-source.md); đã kiểm các màn chính trên Chrome Live 27/11. Số câu theo cấp đã đổi theo bảng mới (`a25fa23`), chưa bấm thử dòng nhắc trên bản nháp |
 | NP-409 | Bấm thử làm đề theo phần thật + xem kết quả trên trình duyệt (đã bỏ phần ngân hàng / đề ngẫu nhiên) | P4-JLPT-07 (`[~]`) | Chrome Live + mobile 375 px |
 | NP-501, 502 | 429 khi request song song ở lượt cuối; reset kỳ và `ALLOW` chưa thử live | P5-QUOTA-01…06 (`[x]`) | Vượt hạn mức → 429; đổi gói có hiệu lực (đạt 26/11) |
 | NP-114, 115 | `done-partial`: test gửi lại batch với Mongo thật, `pnpm -r build` và bấm thử trình duyệt | — (`plan-fsrs-6.md`) | Vitest 11+14 đạt; tsc sạch |

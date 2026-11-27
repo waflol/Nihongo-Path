@@ -22,7 +22,7 @@
 
 ---
 
-## Cấu trúc đề N5–N1 theo bảng mới + thẻ trên Khu học tập (27/11/2026, chưa commit)
+## Cấu trúc đề N5–N1 theo bảng mới + thẻ trên Khu học tập (27/11/2026, commit `a25fa23`, gộp với học 3 trụ cột)
 
 - Chủ sản phẩm đưa 5 bảng cấu trúc đề (Dungmori) và chốt dùng theo bảng. `jlpt-structure.ts` đổi: N1 文章の文法 4, 中文 8, 長文 3, 統合 2, 主張 3, 聴解 **60 phút**; N2 語形成 3, 文章の文法 4, 中文 8, 即時応答 11, 統合 3; N3 文章の文法 4. N4, N5 giữ nguyên.
 - **Khác jlpt.jp** (ghi trong comment đầu file): N1 聴解 55 phút từ 12/2022; N2 聴解 即時応答 12 / 統合 4. Mục "Lệch cần xem" bên dưới đã được thay bằng quyết định theo bảng. Cột "thời gian làm bài" gợi ý và "mục tiêu" trong bảng **chưa đưa vào app**.
