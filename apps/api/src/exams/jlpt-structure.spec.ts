@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { LISTENING_LAYOUT } from "./import/listening.js";
 import { OFFICIAL_MONDAI } from "./import/mondai-table.js";
-import { JLPT_STRUCTURE, type JlptLevelStructure } from "./jlpt-structure.js";
+import { JLPT_STRUCTURE, usualCountOf, type JlptLevelStructure } from "./jlpt-structure.js";
 
 const level = (l: JlptLevelStructure["level"]) => JLPT_STRUCTURE.find((s) => s.level === l)!;
 const bySection = (l: JlptLevelStructure["level"]) => {
@@ -11,13 +11,13 @@ const bySection = (l: JlptLevelStructure["level"]) => {
 };
 
 describe("JLPT_STRUCTURE", () => {
-  it("lists N5 … N1 with the official times (testsections.html; N1 聴解 55 min since Dec 2022)", () => {
+  it("lists N5 … N1 with the times of the product owner's tables", () => {
     expect(JLPT_STRUCTURE.map((s) => [s.level, s.parts.map((p) => p.timeMin), s.totalMin])).toEqual([
       ["N5", [20, 40, 30], 90],
       ["N4", [25, 55, 35], 115],
       ["N3", [30, 70, 40], 140],
       ["N2", [105, 50], 155],
-      ["N1", [110, 55], 165],
+      ["N1", [110, 60], 170],
     ]);
   });
 
@@ -36,11 +36,11 @@ describe("JLPT_STRUCTURE", () => {
     }
   });
 
-  it("adds up to the official guidebook's subtotals (and N1 聴解 as revised in 2022)", () => {
+  it("adds up to the subtotals of those tables", () => {
     expect(["N1", "N2", "N3", "N4", "N5"].map((l) => bySection(l as JlptLevelStructure["level"]))).toEqual([
-      { vocab: 25, grammar: 20, reading: 26, listening: 30 },
-      { vocab: 32, grammar: 22, reading: 21, listening: 32 },
-      { vocab: 35, grammar: 23, reading: 16, listening: 28 },
+      { vocab: 25, grammar: 19, reading: 22, listening: 30 },
+      { vocab: 30, grammar: 21, reading: 20, listening: 30 },
+      { vocab: 35, grammar: 22, reading: 16, listening: 28 },
       { vocab: 35, grammar: 25, reading: 10, listening: 28 },
       { vocab: 35, grammar: 26, reading: 6, listening: 24 },
     ]);
@@ -57,5 +57,12 @@ describe("JLPT_STRUCTURE", () => {
       ["即時応答", 3],
     ]);
     expect(level("N2").parts[0].mondai[6]).toMatchObject({ no: 7, nameJa: "文の文法1（文法形式の判断）", count: 12, section: "grammar" });
+  });
+
+  it("tells the usual count of a 大問 at a level, nothing for a form the level does not print", () => {
+    expect(usualCountOf("n2", "word-formation")).toBe(3);
+    expect(usualCountOf("N3", "text-grammar")).toBe(4);
+    expect(usualCountOf("N3", "word-formation")).toBeUndefined();
+    expect(usualCountOf(undefined, "context")).toBeUndefined();
   });
 });

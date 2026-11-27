@@ -54,10 +54,15 @@ class QueueQuery {
   @IsIn(["learn", "review"])
   mode?: "learn" | "review";
 
-  /** Restrict a queue to one card kind, e.g. GRAMMAR. */
+  /** Restrict a queue to one card kind, e.g. GRAMMAR or KANJI. */
   @IsOptional()
-  @IsIn(["VOCABULARY", "GRAMMAR", "CUSTOM"])
-  kind?: "VOCABULARY" | "GRAMMAR" | "CUSTOM";
+  @IsIn(["VOCABULARY", "GRAMMAR", "KANJI", "CUSTOM"])
+  kind?: "VOCABULARY" | "GRAMMAR" | "KANJI" | "CUSTOM";
+
+  /** Restrict a queue / count / stats to one learning pillar. */
+  @IsOptional()
+  @IsIn(["vocab", "grammar", "kanji"])
+  pillar?: "vocab" | "grammar" | "kanji";
 
   @IsOptional()
   @IsString()
@@ -147,12 +152,38 @@ class DeckProgressQuery {
   tz?: string;
 }
 
+class PillarLimitsDto {
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(500)
+  vocab?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(500)
+  grammar?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(500)
+  kanji?: number;
+}
+
 class SettingsDto {
+  @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(1)
   @Max(500)
-  newCardsPerDay!: number;
+  newCardsPerDay?: number;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => PillarLimitsDto)
+  newCardsPerDayByPillar?: PillarLimitsDto;
 }
 
 /**
@@ -170,13 +201,13 @@ export class SrsController {
   @Get("exercise-priority")
   @ApiOperation({ summary: "Per deck: words learned today, then words due — what the exercises drill first" })
   exercisePriority(@CurrentUser() caller: AuthUser, @Query() query: QueueQuery) {
-    return this.srs.exercisePriority(caller, query.tz);
+    return this.srs.exercisePriority(caller, query.tz, query.pillar);
   }
 
   @Get("due-count")
   @ApiOperation({ summary: "How many learned words are due today (same count as the review hub)" })
   dueCount(@CurrentUser() caller: AuthUser, @Query() query: QueueQuery) {
-    return this.srs.dueCount(caller, query.tz);
+    return this.srs.dueCount(caller, query.tz, query.pillar);
   }
 
   @Get("queue/:deckId")
@@ -194,7 +225,7 @@ export class SrsController {
       contextId: query.contextId,
       textbookId: query.textbookId,
       unitId: query.unitId,
-    });
+    }, query.pillar);
   }
 
   @Post("reviews")
@@ -250,10 +281,12 @@ export class SrsController {
     @Query("deckId") deckId?: string,
     @Query("range") range?: string,
     @Query("offset") offset?: string,
+    @Query("pillar") pillar?: "vocab" | "grammar" | "kanji",
   ) {
     const off = Math.max(-520, Math.min(0, Math.trunc(Number(offset) || 0)));
     const r = range === "week" || range === "month" || range === "year" ? range : "all";
-    return this.srs.masteryStats(caller, deckId || undefined, r, off);
+    const p = pillar === "vocab" || pillar === "grammar" || pillar === "kanji" ? pillar : undefined;
+    return this.srs.masteryStats(caller, deckId || undefined, r, off, p);
   }
 
   @Get("decks-progress")

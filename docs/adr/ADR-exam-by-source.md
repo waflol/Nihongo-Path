@@ -20,3 +20,7 @@ Xuất bản bản nháp ghi câu hỏi rồi dựng lại đề từ mọi bả
 - Collection `exercise_questions` giữ nguyên (không đổi tên, không chuyển dữ liệu); không còn endpoint/UI ngân hàng.
 - Đề soạn tay cũ (không `kind`) chạy như trước; soạn câu tay nằm trong một đề.
 - Sách luyện tập tái dùng `Exam` + `ExamAttempt` (giai đoạn 2).
+
+## Bổ sung (27/11/2026)
+
+- Vẫn giữ nguyên tắc không có màn quản trị ngân hàng câu hỏi rời, nhưng bổ sung chế độ **Thi thử xáo trộn từ các đề** cho người học ([plan-exam-hub.md](../plans/plan-exam-hub.md)): rút câu từ các đề đã công khai (`own | licensed`) **chỉ trong đúng một cấp độ đã chọn** và lắp đúng cấu trúc phần thi + dạng 問題 của cấp đó.

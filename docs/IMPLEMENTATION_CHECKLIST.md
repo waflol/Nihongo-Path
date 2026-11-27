@@ -4,7 +4,7 @@
 > duy nhất, phụ thuộc, file/module dự kiến, tiêu chí hoàn thành kiểm chứng được
 > và cách kiểm thử.
 >
-> **Ngày lập:** 30/10/2026. Cập nhật lần cuối: 25/11/2026. Danh sách ticket + tiến độ: [TICKETS.md](./TICKETS.md).
+> **Ngày lập:** 30/10/2026. Cập nhật lần cuối: 27/11/2026. Danh sách ticket + tiến độ: [TICKETS.md](./TICKETS.md).
 
 ---
 
@@ -374,8 +374,8 @@ chặn route, CRUD nội dung. Test case: `T-P2-01` … `T-P2-10`.
 | P4-JLPT-02 | Schema: +3 `kind`, trường §5.2, `exam_stimuli`, `Exam.sections/generated`, `attempt` chấm theo phần (NP-406) | P4-JLPT-01 | `schemas/{exercise-question,stimulus,exam,attempt}.schema.ts` | Đề phẳng cũ không đổi hành vi; đề có phần có `sections[]` | xem schema + vitest (19/11) | `[x]` |
 | P4-JLPT-03 | `groupedOrder` + chấm `points`/`sectionScores` + `estimateJlptScaled` + sit payload có `stimuli` không lộ đáp án (NP-406) | P4-JLPT-02 | `shuffle.ts`, `exams.service.ts` | Cùng seed → cùng thứ tự; nhóm bài đọc liền nhau; payload đệ quy không có khoá `answer/explain/correct` | vitest `shuffle.spec`, `grading.spec`, `sit-payload.spec` (19/11) | `[x]` |
 | P4-JLPT-04 | CRUD admin `exam_stimuli` + `adminAuthorQuestion` nới theo `optionCountsOf` (NP-406) | P4-JLPT-03 | `stimuli.service.ts`, `exams.controller.ts` | Route `exams/admin/stimuli` guard admin; câu 3 phương án cho `listening` | vitest (19/11); chưa verify API/trình duyệt thật | `[x]` |
-| P4-JLPT-05 | Import PDF đề → draft có người duyệt (NP-407) | P4-JLPT-04 | `src/exams/import/*` | Draft nhóm đúng kỳ × mondai; ≥ 90% câu ngôn ngữ N3 7/2010 tách đúng; publish idempotent theo `contentHash` | vitest + đo RSS; đã code (`NP-407`), còn verify trình duyệt/DB thật và đối chiếu tiêu chí (25/11/2026) | `[~]` |
-| P4-JLPT-06 | ~~Bộ sinh đề theo blueprint (NP-408)~~ — bỏ 27/11/2026, thay bằng đề theo nguồn (plan-exam-by-source) | P4-JLPT-04 | `src/exams/{blueprints,generator}.ts` | Đề đúng blueprint; khoá Q-12: người học chỉ bốc `own\|licensed` | vitest (chưa bắt đầu) | `[ ]` |
+| P4-JLPT-05 | Import PDF đề → draft có người duyệt (NP-407) | P4-JLPT-04 | `src/exams/import/*` | Draft nhóm đúng kỳ × mondai; ≥ 90% câu ngôn ngữ N3 7/2010 tách đúng; publish idempotent theo `contentHash` | vitest 293 đạt; đã code (`d1848be`, `d0c0e2a`, `e9f784e`, `43b9cbe`, `51294eb`, `5854251`: drill, 聴解 + hình, gợi ý AI, file đáp án, xuất bản theo nguồn), kiểm các màn chính trên Chrome Live 27/11; còn xuất bản đề thật + làm bài + GĐ2 sách luyện tập + đo RSS | `[~]` |
+| P4-JLPT-06 | ~~Bộ sinh đề theo blueprint (NP-408)~~ — bỏ 27/11/2026, thay bằng đề theo nguồn (plan-exam-by-source) | P4-JLPT-04 | `src/exams/{blueprints,generator}.ts` | Đề đúng blueprint; khoá Q-12: người học chỉ bốc `own\|licensed` | Không làm — bỏ ngân hàng + sinh đề theo ADR-exam-by-source (27/11/2026) | `[—]` |
 | P4-JLPT-07 | UI làm đề theo phần + admin phủ ngân hàng (NP-409) | P4-JLPT-05, P4-JLPT-06 | `apps/ui/...` | Bấm thử Chromium headless + mobile 375 px | Chromium headless + mobile 375 px; đã kiểm các màn chính trên Chrome Live 27/11; phần phủ ngân hàng / đề ngẫu nhiên đã bỏ (NP-408 không làm) | `[~]` |
 
 ---

@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
 import { GrammarBrowser } from "@/components/learn/grammar-browser";
+import { PillarNav } from "@/components/learn/pillar-nav";
+import { PillarProgress } from "@/components/learn/pillar-progress";
 
 export const metadata: Metadata = {
   title: "Ngữ pháp N5–N1",
@@ -10,8 +12,12 @@ export const metadata: Metadata = {
 
 export default function GrammarPage() {
   return (
-    <Suspense fallback={<p className="py-16 text-center text-sm text-[var(--muted-foreground)]">Đang tải…</p>}>
-      <GrammarBrowser />
-    </Suspense>
+    <>
+      <PillarNav pillar="grammar" />
+      <PillarProgress pillar="grammar" className="max-w-5xl" />
+      <Suspense fallback={<p className="py-16 text-center text-sm text-[var(--muted-foreground)]">Đang tải…</p>}>
+        <GrammarBrowser />
+      </Suspense>
+    </>
   );
 }

@@ -349,6 +349,11 @@ export function DraftBlock({
             <span className={`font-semibold ${STATE_TEXT[state]}`}>{STATE_LABEL[state]}</span>
             <span>Đề {draft.sitting}</span>
             <span>{questions.length} câu</span>
+            {draft.expectedCount !== undefined && draft.expectedCount !== questions.length && (
+              <span className="font-semibold text-[var(--warn)]" title="Số câu theo cấu trúc đề của cấp độ — đối chiếu ảnh trang, đề thật có thể khác">
+                Đề {draft.level} thường có {draft.expectedCount} câu
+              </span>
+            )}
             {draft.parsedBy && <span title={PARSED_BY[draft.parsedBy].title}>{PARSED_BY[draft.parsedBy].label}</span>}
             {open && unchecked > 0 && <span className="font-semibold text-[var(--warn)]">{unchecked} câu AI gợi ý chưa đối chiếu</span>}
           </p>

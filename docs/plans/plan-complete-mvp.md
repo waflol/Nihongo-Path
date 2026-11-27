@@ -16,9 +16,9 @@
 MVP được coi là sẵn sàng khi người dùng có thể:
 
 1. đăng ký/đăng nhập;
-2. học và ôn flashcard từ vựng/ngữ pháp bằng FSRS;
-3. duyệt và học danh mục ngữ pháp N5–N1;
-4. làm bài luyện tập/ngữ pháp và đề tự soạn có chấm điểm server;
+2. học và ôn tập theo **3 trụ cột đối xứng** (Từ vựng · Ngữ pháp · Kanji) trên `/learn`, mỗi trụ cột đều có đủ **Flashcard học mới + Ôn tập FSRS (tách quota) + Bài tập (gắn SRS + luyện tự do)** theo [plan-three-pillars.md](./plan-three-pillars.md);
+3. duyệt và tra cứu danh mục Ngữ pháp & Kanji N5–N1;
+4. làm bài luyện thi 問題 và đề thi có thời gian chấm điểm server;
 5. gửi phản hồi, admin xử lý và xem audit;
 6. admin nhập, duyệt, xuất bản nội dung;
 7. hệ thống chạy ổn định trên VPS, có backup/rollback tối thiểu và không lộ đáp án, dữ liệu riêng tư hay nội dung chưa publish.
@@ -38,18 +38,24 @@ Thanh toán, quảng cáo, media/STT, shadowing và Kaiwa để sau MVP. Không 
 
 **Đóng khi:** `git status` chỉ còn thay đổi có chủ đích; mỗi commit có phạm vi rõ và HANDOFF khớp code.
 
-### Slice B — Hoàn tất grammar end-to-end
+### Slice B — Hoàn tất 3 trụ cột học cốt lõi (Từ vựng · Ngữ pháp · Kanji)
 
-Phụ thuộc trực tiếp: không còn blocker kỹ thuật; quyền crawl đã được cho phép nhưng provenance/attribution phải giữ trong DB và UI admin.
+Chi tiết kiến trúc xem [plan-three-pillars.md](./plan-three-pillars.md). Chia làm 3 lát cắt nhỏ:
 
-1. Sửa các lỗi đã ghi trong HANDOFF: `textbookId` string, quota `GRAMMAR`, dedupe card, markup hiển thị, filter label, preview 400 KB, console pagination.
-2. Chạy import 630 mẫu với index mới; xác nhận thống kê N5–N1 và idempotency khi chạy lại.
-3. Hoàn thiện admin preview → chỉnh sửa → publish, audit và lọc DRAFT/PUBLISHED.
-4. Hoàn thiện grammar flashcard session dùng queue FSRS hiện tại: lật thẻ, phím tắt/mobile, đánh giá, resume, progress.
-5. Thêm bài luyện tập grammar tối thiểu: multiple choice + điền mẫu; không lộ đáp án trước submit; câu sai có thể lưu vào queue.
-6. Verify browser với tài khoản learner/admin thật.
+- **Slice B1 — Nền FSRS tách kênh & Khu Từ vựng + `/learn` 3 trụ cột (`NP-1013`, `NP-1014`):**
+  1. Mở rộng `Flashcard.kind` (`KANJI`), `FlashcardDeck` (`pillar`, `systemKey`), `User` (`newCardsPerDayByPillar`) và tách quota/bộ đếm `SrsService` theo `pillar`.
+  2. Đồng bộ idempotent 5 bộ thẻ mặc định `Ngữ pháp N5–N1` và 5 bộ `Kanji N5–N1` từ dữ liệu `PUBLISHED`.
+  3. Thiết kế lại `/learn` theo 3 cụm trụ cột + khu Luyện thi; chuẩn hoá `/learn/vocab/*` (Bộ thẻ · Học mới · Ôn tập · Bài tập) và thêm toggle Luyện tự do.
+- **Slice B2 — Ngữ pháp end-to-end (`NP-1006`–`NP-1012`):**
+  1. Sửa các lỗi đã ghi trong HANDOFF (`textbookId` string, quota `GRAMMAR`, dedupe card, markup `JaText` trên flashcard, filter label, preview 400 KB, console pagination).
+  2. Chạy import 630 mẫu với index mới; hoàn thiện admin preview → chỉnh sửa → publish, audit và lọc DRAFT/PUBLISHED.
+  3. Hoàn thiện `/learn/grammar/study` (học mới trên deck N5–N1), `/learn/grammar/review` (ôn tập FSRS riêng), và `/learn/grammar/practice` (gắn SRS + luyện tự do N5–N1, 4 dạng bài, lưu câu sai).
+- **Slice B3 — Kanji end-to-end (`NP-1015`, `NP-1016`):**
+  1. Hỗ trợ mặt thẻ `kind === "KANJI"` trong `StudySession` (nét viết KanjiVG, Hán Việt, on/kun, liên tưởng, từ liên quan) + nút lưu bộ cá nhân.
+  2. Tạo `/learn/kanji/study` (học mới N5–N1) và `/learn/kanji/review` (ôn tập FSRS riêng).
+  3. Xây dựng `/learn/kanji/practice` (gắn SRS + luyện tự do N5–N1, dùng `kanji-lookalikes` làm đáp án nhiễu).
 
-**Đóng khi:** NP-1004–1012 có trạng thái và bằng chứng tương ứng; N5 publish được, N4–N1 chỉ publish sau review; một learner hoàn thành luồng browse → save → study → practice.
+**Đóng khi:** 3 trụ cột Từ vựng · Ngữ pháp · Kanji có luồng đồng nhất *Danh mục/Bộ thẻ → Học mới → Ôn tập FSRS → Bài tập* và verify browser với tài khoản learner/admin thật.
 
 ### Slice C — Đóng P4 và NP-021
 
@@ -101,11 +107,12 @@ Làm sau A–D, trước khi mở rộng tính năng:
 
 ## 5. Thứ tự ticket tiếp theo
 
-1. NP-1006 → NP-1012: hoàn tất grammar vertical slice và verify thật.
-2. NP-401 → NP-404, NP-021: đóng P4 core và import thật.
-3. NP-408 → NP-409: generator + UI đề ngẫu nhiên.
-4. NP-024, NP-501, NP-502: đóng các điểm verify P5 còn thiếu.
-5. NP-1101 → NP-1104: test, security, vận hành, release.
+1. `NP-1013` → `NP-1014`: tách kênh FSRS, đồng bộ deck mặc định N5–N1, thiết kế lại `/learn` 3 trụ cột và chuẩn hoá khu Từ vựng.
+2. `NP-1006` → `NP-1012`: hoàn tất Ngữ pháp (Flashcard mới + Ôn tập + Bài tập) và verify thật.
+3. `NP-1015` → `NP-1016`: hoàn tất Kanji (Flashcard mới + Ôn tập + Bài tập) và verify thật.
+4. `NP-401` → `NP-404`, `NP-021`, `NP-407`, `NP-409`: đóng P4 core và import thật.
+5. `NP-024`, `NP-501`, `NP-502`: đóng các điểm verify P5 còn thiếu.
+6. `NP-1101` → `NP-1104`: test, security, vận hành, release.
 
 ## 6. Quy tắc cập nhật trạng thái
 

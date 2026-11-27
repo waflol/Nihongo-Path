@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useExamLevel } from "@/components/learn/use-exam-level";
 import { LevelBadge } from "@/components/learn/level-select";
 import { MONDAI_LABELS, SECTION_TITLES } from "@/components/learn/exam-sectioned";
 
@@ -102,21 +103,24 @@ function PartTable({ part }: { part: StructurePart }) {
 
 /**
  * The JLPT paper of each level (N5 … N1): its timed parts, the 大問 of each in printed order
- * and the usual number of questions. Data from `GET /exams/structure` (official jlpt.jp tables).
+ * and the usual number of questions (`GET /exams/structure`). Opens on `initialLevel`, else on
+ * the level picked last.
  */
 export function ExamStructure({ levels, initialLevel }: { levels: LevelStructure[]; initialLevel?: string }) {
-  const [level, setLevel] = useState(() => levels.find((l) => l.level === initialLevel)?.level ?? levels[0]?.level ?? "N5");
-  const current = levels.find((l) => l.level === level);
+  const [picked, remember] = useExamLevel();
+  const [chosen, setChosen] = useState(initialLevel);
+  const current = levels.find((l) => l.level === chosen) ?? levels.find((l) => l.level === picked) ?? levels[0];
+  const level = current?.level;
 
   return (
     <div className="mx-auto w-full max-w-4xl px-4 py-6 sm:px-6 sm:py-8">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-semibold tracking-tight text-[var(--foreground)]">Cấu trúc đề thi JLPT</h1>
         <Link
-          href="/learn/exams"
+          href="/learn"
           className="rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs font-medium text-[var(--foreground)] hover:bg-[var(--layer-hover)]"
         >
-          ← Đề thi
+          ← Khu học tập
         </Link>
       </div>
       <p className="mt-1 text-sm text-[var(--muted-foreground)]">
@@ -130,7 +134,10 @@ export function ExamStructure({ levels, initialLevel }: { levels: LevelStructure
             type="button"
             role="tab"
             aria-selected={l.level === level}
-            onClick={() => setLevel(l.level)}
+            onClick={() => {
+              setChosen(l.level);
+              remember(l.level);
+            }}
             className={`rounded-lg px-4 py-1.5 text-sm font-semibold transition-colors ${
               l.level === level ? "bg-[var(--primary)] text-[var(--primary-foreground)]" : "text-[var(--muted-foreground)] hover:bg-[var(--layer-hover)] hover:text-[var(--foreground)]"
             }`}
@@ -163,11 +170,7 @@ export function ExamStructure({ levels, initialLevel }: { levels: LevelStructure
       )}
 
       <p className="mt-6 text-xs leading-5 text-[var(--muted-foreground)]">
-        Số câu là con số tham khảo (目安) do ban tổ chức công bố — đề thật có thể chênh một vài câu. Thời gian và số câu theo bảng chính thức trên{" "}
-        <a href="https://www.jlpt.jp/guideline/testsections.html" target="_blank" rel="noreferrer" className="text-[var(--primary)] hover:underline">
-          jlpt.jp
-        </a>
-        ; phần nghe N1 theo thay đổi từ kỳ thi tháng 12/2022 (55 phút).
+        Số câu là con số tham khảo (目安) — đề thật có thể chênh một vài câu.
       </p>
     </div>
   );

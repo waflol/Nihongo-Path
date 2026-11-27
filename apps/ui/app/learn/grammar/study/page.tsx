@@ -3,6 +3,7 @@ import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/session";
 import { StudySession } from "@/components/learn/study-session";
+import { PillarNav } from "@/components/learn/pillar-nav";
 
 export const metadata: Metadata = {
   title: "Học thẻ ngữ pháp",
@@ -37,14 +38,17 @@ async function AsyncGrammarStudy({ searchParams }: { searchParams: Promise<Searc
 
 export default function GrammarStudyPage({ searchParams }: { searchParams: Promise<Search> }) {
   return (
-    <Suspense
-      fallback={
-        <p className="mx-auto max-w-6xl px-4 py-16 text-center text-sm text-[var(--muted-foreground)] sm:px-6">
-          Đang tải…
-        </p>
-      }
-    >
-      <AsyncGrammarStudy searchParams={searchParams} />
-    </Suspense>
+    <>
+      <PillarNav pillar="grammar" />
+      <Suspense
+        fallback={
+          <p className="mx-auto max-w-6xl px-4 py-16 text-center text-sm text-[var(--muted-foreground)] sm:px-6">
+            Đang tải…
+          </p>
+        }
+      >
+        <AsyncGrammarStudy searchParams={searchParams} />
+      </Suspense>
+    </>
   );
 }

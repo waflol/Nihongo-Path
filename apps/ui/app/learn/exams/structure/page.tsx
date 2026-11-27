@@ -10,8 +10,7 @@ export const metadata: Metadata = {
 };
 
 /** The JLPT paper of each level: parts, 大問, question counts and time. */
-export default async function ExamStructurePage({ searchParams }: { searchParams: Promise<{ level?: string }> }) {
-  const { level } = await searchParams;
+export default function ExamStructurePage({ searchParams }: { searchParams: Promise<{ level?: string }> }) {
   return (
     <Suspense
       fallback={
@@ -20,7 +19,7 @@ export default async function ExamStructurePage({ searchParams }: { searchParams
         </p>
       }
     >
-      <ExamStructureGate level={level?.toUpperCase()} />
+      <ExamStructureGate searchParams={searchParams} />
     </Suspense>
   );
 }

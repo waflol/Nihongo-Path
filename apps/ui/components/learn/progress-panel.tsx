@@ -2,6 +2,7 @@
 
 import { useConfirm } from "@/components/learn/use-confirm";
 import { ReviewChart } from "@/components/learn/review-chart";
+import { capitalize, PILLAR_NOUN, type PillarId } from "@/components/learn/pillar-nav";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 interface Stats {
@@ -47,7 +48,12 @@ const LEVELS: Record<string, { label: string; hint: string; color: string }> = {
 const UNSEEN_COLOR = "#9ca3af";
 
 /** Daily new-card limit + mastery distribution chart for the learner. */
-export function ProgressPanel({ compact = false, dense = false }: { compact?: boolean; dense?: boolean } = {}) {
+export function ProgressPanel({
+  compact = false,
+  dense = false,
+  pillar,
+}: { compact?: boolean; dense?: boolean; /** Only this pillar; omitted → all together. */ pillar?: PillarId } = {}) {
+  const noun = PILLAR_NOUN[pillar ?? "vocab"];
   const { confirm, dialog } = useConfirm();
   const [stats, setStats] = useState<Stats | null>(null);
   const [perDay, setPerDay] = useState("20");
@@ -71,7 +77,7 @@ export function ProgressPanel({ compact = false, dense = false }: { compact?: bo
     if (hit && !force) return Promise.resolve(hit);
     const pending = inflight.current.get(key);
     if (pending) return pending;
-    const p = fetch(`/api/srs/stats?range=${r}&offset=${sh}`, { cache: "no-store" })
+    const p = fetch(`/api/srs/stats?range=${r}&offset=${sh}${pillar ? `&pillar=${pillar}` : ""}`, { cache: "no-store" })
       .then(async (res) => {
         if (!res.ok) return null;
         const data = (await res.json()) as Stats;
@@ -82,7 +88,7 @@ export function ProgressPanel({ compact = false, dense = false }: { compact?: bo
       .finally(() => inflight.current.delete(key));
     inflight.current.set(key, p);
     return p;
-  }, []);
+  }, [pillar]);
 
   /** Warm the cache: all ranges for now, then the previous period of each. */
   const prefetch = useCallback(async () => {
@@ -126,14 +132,14 @@ export function ProgressPanel({ compact = false, dense = false }: { compact?: bo
       setMsg("Nhập số từ 1 đến 500");
       return;
     }
-    if (!(await confirm({ title: "Lưu cài đặt?", message: `Giới hạn thẻ mới mỗi ngày: ${n}.`, confirmLabel: "Lưu", tone: "primary" }))) return;
+    if (!(await confirm({ title: "Lưu cài đặt?", message: `Giới hạn ${noun} mới mỗi ngày: ${n}.`, confirmLabel: "Lưu", tone: "primary" }))) return;
     setSaving(true);
     setMsg(null);
     try {
       const res = await fetch("/api/srs/settings", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ newCardsPerDay: n }),
+        body: JSON.stringify(pillar ? { newCardsPerDayByPillar: { [pillar]: n } } : { newCardsPerDay: n }),
       });
       setMsg(res.ok ? "Đã lưu" : "Không lưu được");
       if (res.ok) {
@@ -279,7 +285,7 @@ export function ProgressPanel({ compact = false, dense = false }: { compact?: bo
               ]
             : [
                 { v: stats.reviewsInRange, l: "Lượt ôn" },
-                { v: stats.newInRange, l: "Từ mới" },
+                { v: stats.newInRange, l: `${capitalize(noun)} mới` },
                 { v: stats.newToday, l: "Mới hôm nay" },
               ];
         return (
@@ -351,7 +357,7 @@ export function ProgressPanel({ compact = false, dense = false }: { compact?: bo
         const unit = range === "year" ? "tháng" : "ngày";
         const tiles = [
           { v: stats.reviewsInRange, l: "Lượt ôn", c: "#3b82f6" },
-          { v: stats.newInRange, l: "Từ mới", c: "#10b981" },
+          { v: stats.newInRange, l: `${capitalize(noun)} mới`, c: "#10b981" },
           { v: `${activeDays}/${series.length}`, l: `${unit[0].toUpperCase()}${unit.slice(1)} có học`, c: "#8b5cf6" },
           { v: avg, l: `TB mỗi ${unit} học`, c: "#f59e0b" },
         ];
@@ -370,7 +376,7 @@ export function ProgressPanel({ compact = false, dense = false }: { compact?: bo
               <p className="text-sm font-medium text-[var(--foreground)]">Hoạt động học</p>
               <div className="flex items-center gap-3 text-[11px] text-[var(--muted-foreground)]">
                 <span className="inline-flex items-center gap-1"><span className="size-2 rounded-sm bg-[#93c5fd]" />Lượt ôn</span>
-                <span className="inline-flex items-center gap-1"><span className="size-2 rounded-sm bg-[#10b981]" />Từ mới</span>
+                <span className="inline-flex items-center gap-1"><span className="size-2 rounded-sm bg-[#10b981]" />{capitalize(noun)} mới</span>
               </div>
             </div>
 
@@ -392,7 +398,7 @@ export function ProgressPanel({ compact = false, dense = false }: { compact?: bo
                       <div
                         key={b.key}
                         className="group relative flex h-full min-w-0 flex-1 items-end"
-                        title={`${b.key}: ${b.reviews} lượt ôn, ${b.newCards} từ mới`}
+                        title={`${b.key}: ${b.reviews} lượt ôn, ${b.newCards} ${noun} mới`}
                       >
                         {range === "week" && b.reviews > 0 && (
                           <span
@@ -544,11 +550,11 @@ export function ProgressPanel({ compact = false, dense = false }: { compact?: bo
       {(compact || dense) && (
       <div className={"mt-4 shrink-0 border-t border-[var(--border)] pt-3 lg:mt-auto lg:pt-4 " + (compact ? "max-lg:hidden" : "lg:hidden")}>
         <label htmlFor="new-per-day" className="text-sm font-medium text-[var(--foreground)]">
-          Số từ mới mỗi ngày
+          Số {noun} mới mỗi ngày
         </label>
         <p className="mt-1 hidden text-xs text-[var(--muted-foreground)]">
           Bộ thẻ lớn sẽ được chia đều theo số này mỗi ngày
-          {stats ? ` — hôm nay đã học ${stats.newToday} từ mới.` : "."}
+          {stats ? ` — hôm nay đã học ${stats.newToday} ${noun} mới.` : "."}
         </p>
         <div className="mt-1.5 flex items-center gap-2">
           <input
@@ -573,7 +579,7 @@ export function ProgressPanel({ compact = false, dense = false }: { compact?: bo
       </div>
       )}
 
-      {compact && <ReviewChart embedded bare range={range === "month" ? "month" : "week"} className="mt-2 h-24 shrink-0 [@media(max-height:700px)]:h-[4.5rem] lg:hidden" />}
+      {compact && <ReviewChart embedded bare pillar={pillar} range={range === "month" ? "month" : "week"} className="mt-2 h-24 shrink-0 [@media(max-height:700px)]:h-[4.5rem] lg:hidden" />}
 
     </section>
   );

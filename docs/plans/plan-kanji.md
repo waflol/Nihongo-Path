@@ -1,7 +1,9 @@
 # Plan — Phần học Kanji
 
-> **Ngày lập:** 06/11/2026. **Cập nhật:** 08/11/2026. **Người lập:** [CC].
+> **Ngày lập:** 06/11/2026. **Cập nhật:** 27/11/2026. **Người lập:** [CC].
 > **Trạng thái:** MVP đã triển khai (commit `bf68798`) — phạm vi thực tế chốt theo **2.136 chữ Jōyō** (`Unihan kJoyoKanji = 2010`), phân cấp theo dải `rank` (N5: 1–120 · N4: 121–320 · N3: 321–720 · N2: 721–1200 · N1: 1201–2136), Hán Việt phủ 2.129/2.136 chữ; nghĩa tiếng Việt của từ vựng liên quan lấy từ `vocabulary`/`flashcards` có sẵn trước rồi mới dịch lười bằng AI.
+>
+> **Điều chỉnh 27/11/2026:** Mở rộng Kanji thành trụ cột học đầy đủ trong [plan-three-pillars.md](./plan-three-pillars.md): **Danh mục + Flashcard học mới (`/learn/kanji/study`, 5 deck mặc định N5–N1) + Ôn tập FSRS riêng (`/learn/kanji/review`, tách hạn mức thẻ mới/ngày) + Bài tập Kanji (`/learn/kanji/practice`, gắn SRS + luyện tự do)**.
 >
 > Mỗi trường và nguồn dữ liệu dưới đây đều đã được **kiểm chứng bằng cách tải
 > thật** và đo phủ sóng. Số liệu ghi kèm ở §2 là kết quả đo ban đầu trên 2.211 kanji JLPT N5–N1.
@@ -422,6 +424,8 @@ tạp: onyomi/kunyomi là mảng, words là mảng object, strokes không sửa 
 | P3K-10 | UI `/learn/kanji/[char]` (animate nét vẽ + **dòng credit KanjiVG có link**) | P3K-09 | `kanji-detail.tsx`, `stroke-order.tsx` | `[x]` |
 | P3K-11 | UI admin `/admin/kanji` (list, form, nút AI, nút deck) | P3K-07 | sinh liên tưởng → sửa → publish | `[ ]` |
 | P3K-12 | Link Kanji ở `/learn/page.tsx`; `database.md` (collection + index + **giấy phép từng trường**); trang `/credits` ghi công EDRDG + KanjiVG | P3K-09 | đã thêm link ở `/learn/page.tsx` và giấy phép trong `database.md`; chưa có trang `/credits` riêng | `[~]` |
+| P3K-13 | Tách màn Học mới (`/learn/kanji/study`) & Ôn tập FSRS (`/learn/kanji/review`) cho Flashcard Kanji có nét viết, Hán Việt, on/kun, liên tưởng ([plan-three-pillars.md](./plan-three-pillars.md), `NP-1015`) | P3K-08 | — | `[ ]` |
+| P3K-14 | Bài tập Kanji (`/learn/kanji/practice`) gắn tiến độ SRS + luyện tự do N5–N1, dùng `kanji-lookalikes` làm nhiễu ([plan-three-pillars.md](./plan-three-pillars.md), `NP-1016`) | P3K-13 | — | `[ ]` |
 
 **Thứ tự:** 01 → 02 → 03 → 04 (nạp data) → 05 → 06 → 07 → 08 → 09 → 10 → 11 → 12.
 

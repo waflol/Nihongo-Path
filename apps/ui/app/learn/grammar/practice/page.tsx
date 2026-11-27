@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { GrammarPractice } from "@/components/learn/grammar-practice";
+import { PillarNav } from "@/components/learn/pillar-nav";
 
 export const metadata: Metadata = {
   title: "Luyện tập ngữ pháp",
@@ -8,5 +9,10 @@ export const metadata: Metadata = {
 };
 
 export default function GrammarPracticePage() {
-  return <GrammarPractice />;
+  return (
+    <>
+      <PillarNav pillar="grammar" />
+      <GrammarPractice />
+    </>
+  );
 }

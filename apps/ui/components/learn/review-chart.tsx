@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { capitalize, PILLAR_NOUN, type PillarId } from "@/components/learn/pillar-nav";
 
 interface Bucket {
   key: string;
@@ -34,12 +35,15 @@ export function ReviewChart({
   embedded = false,
   bare = false,
   range: fixedRange,
+  pillar,
 }: {
   className?: string;
   embedded?: boolean;
   /** No title row: the caller's own range tabs drive `range`. */
   bare?: boolean;
   range?: Range;
+  /** Only this pillar's activity; omitted → every pillar together. */
+  pillar?: PillarId;
 }) {
   const [ownRange, setRange] = useState<Range>("week");
   const range = fixedRange ?? ownRange;
@@ -49,7 +53,7 @@ export function ReviewChart({
   useEffect(() => {
     let alive = true;
     setError(false);
-    fetch(`/api/srs/stats?range=${range}&offset=0`, { cache: "no-store" })
+    fetch(`/api/srs/stats?range=${range}&offset=0${pillar ? `&pillar=${pillar}` : ""}`, { cache: "no-store" })
       .then(async (res) => {
         if (!res.ok) throw new Error("bad");
         const data = (await res.json()) as Stats;
@@ -59,11 +63,12 @@ export function ReviewChart({
     return () => {
       alive = false;
     };
-  }, [range]);
+  }, [range, pillar]);
 
   const series = stats?.series ?? [];
   const max = Math.max(1, ...series.map((b) => Math.max(b.reviews, b.newCards)));
   const dense = series.length > 14;
+  const noun = PILLAR_NOUN[pillar ?? "vocab"];
 
   return (
     <section
@@ -86,7 +91,7 @@ export function ReviewChart({
             </span>
             <span className="inline-flex items-center gap-1">
               <span className="size-2 rounded-sm bg-[#10b981]" />
-              Từ mới
+              {capitalize(noun)} mới
             </span>
           </span>
           <div role="tablist" className="flex rounded-lg border border-[var(--border)] p-0.5 text-xs">
@@ -130,7 +135,7 @@ export function ReviewChart({
                   <div
                     key={b.key}
                     className="flex h-full min-w-0 flex-1 items-end justify-center gap-0.5"
-                    title={`${b.key}: ${b.reviews} lượt ôn, ${b.newCards} từ mới`}
+                    title={`${b.key}: ${b.reviews} lượt ôn, ${b.newCards} ${noun} mới`}
                   >
                     <div
                       className="relative w-full max-w-5 rounded-t-sm bg-[var(--primary)]"

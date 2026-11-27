@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import Link from "next/link";
 import { ProgressPanel } from "@/components/learn/progress-panel";
 import { FitScreen } from "@/components/fit-screen";
@@ -6,95 +7,71 @@ import { ReviewChart } from "@/components/learn/review-chart";
 import { DueButton } from "@/components/learn/due-button";
 import { TodayStrip } from "@/components/learn/today-strip";
 import { LearnSidebar } from "@/components/learn/learn-sidebar";
+import { ExamStructureSlot } from "@/components/learn/exam-structure-slot";
 import { ExtraDialog } from "@/components/learn/learn-extras";
 import { PushReminderCard } from "@/components/pwa/push-reminder-card";
 import { InstallAppCard } from "@/components/pwa/install-app-card";
 
 export const metadata: Metadata = {
   title: "Khu học tập",
-  description:
-    "Khu học tập: flashcard, bài tập, luyện nghe và lộ trình ôn tập. (Placeholder)",
-  // Private learning area — not public crawlable content (spec §17.3).
+  description: "Khu học tập 3 trụ cột: Từ vựng, Ngữ pháp, Kanji và Luyện thi JLPT.",
   robots: { index: false, follow: true },
 };
 
 const SERIF = '"Yu Mincho","Hiragino Mincho ProN","Noto Serif JP","Shippori Mincho",serif';
 
-type Tile = {
+type PillarCard = {
+  kanji: string;
+  title: string;
+  desc: string;
+  href: string;
+  studyHref: string;
+  reviewHref: string;
+  practiceHref: string;
+};
+
+const PILLARS: PillarCard[] = [
+  {
+    kanji: "語",
+    title: "Từ vựng",
+    desc: "Bộ thẻ cá nhân, học từ mới, ôn tập FSRS và bài tập.",
+    href: "/learn/vocab",
+    studyHref: "/learn/vocab/study",
+    reviewHref: "/learn/vocab/review",
+    practiceHref: "/learn/vocab/exercises",
+  },
+  {
+    kanji: "文",
+    title: "Ngữ pháp",
+    desc: "Mẫu ngữ pháp N5–N1, flashcard học mới, ôn tập và bài tập.",
+    href: "/learn/grammar",
+    studyHref: "/learn/grammar/study",
+    reviewHref: "/learn/grammar/review",
+    practiceHref: "/learn/grammar/practice",
+  },
+  {
+    kanji: "漢",
+    title: "Kanji",
+    desc: "Tra cứu N5–N1, nét viết KanjiVG, Hán Việt, ôn tập và bài tập.",
+    href: "/learn/kanji",
+    studyHref: "/learn/kanji/study",
+    reviewHref: "/learn/kanji/review",
+    practiceHref: "/learn/kanji/practice",
+  },
+];
+
+type ExamTile = {
   href: string | null;
   kanji: string;
   title: string;
   desc: string;
-  featured?: boolean;
 };
 
-// Bento: one featured 2×2 tile, six compact tiles, one full-width "coming soon" strip.
-const tiles: Tile[] = [
-  { href: "/learn/decks", kanji: "札", title: "Flashcard", desc: "Bộ thẻ cá nhân, ôn theo thuật toán lặp lại ngắt quãng.", featured: true },
-  { href: "/learn/review", kanji: "復", title: "Ôn tập hôm nay", desc: "Những từ đã đến hạn ôn." },
-  { href: "/learn/exercises", kanji: "練", title: "Bài tập", desc: "Trắc nghiệm, gõ đáp án, đặt câu." },
-  { href: "/learn/exam", kanji: "試", title: "Luyện thi", desc: "6 dạng 問題 kiểu JLPT." },
-  { href: "/learn/kanji", kanji: "漢", title: "Kanji N5–N1", desc: "Tra theo cấp, Hán Việt, thứ tự nét, on/kun." },
-  { href: "/learn/grammar", kanji: "文", title: "Ngữ pháp N5–N1", desc: "Theo cấp độ, chủ đề, bối cảnh và giáo trình." },
+const EXAM_TILES: ExamTile[] = [
+  { href: "/learn/exam", kanji: "試", title: "Luyện thi 問題", desc: "6 dạng 問題 kiểu JLPT." },
   { href: "/learn/exams", kanji: "考", title: "Đề thi có thời gian", desc: "Làm đề, chấm điểm trên máy chủ, xem lại lỗi." },
-  { href: null, kanji: "聴", title: "Luyện nghe", desc: "Đang chuẩn bị, sẽ có ở Sprint 6." },
+  { href: null, kanji: "聴", title: "Luyện nghe", desc: "Sắp ra mắt — Sprint 6." },
 ];
-
-function tileClasses(t: Tile): string {
-  const featured = !!t.featured;
-  return [
-    "learn-tile relative flex min-h-0 flex-col items-center justify-center gap-2.5 overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--background-1)] p-4 text-center transition-all duration-300 sm:gap-3",
-    featured ? "learn-tile-featured col-span-2 sm:row-span-2 sm:items-start sm:text-left lg:gap-4 lg:p-6" : "",
-    !t.href ? "border-dashed bg-transparent col-span-2 opacity-90 sm:col-span-2" : "",
-    t.href
-      ? "hover:z-10 hover:scale-[1.02] hover:border-[color-mix(in_srgb,var(--primary)_45%,var(--border))] hover:shadow-[0_14px_30px_-18px_color-mix(in_srgb,var(--primary)_55%,transparent)] motion-reduce:hover:scale-100 focus-visible:z-10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--primary)]"
-      : "lg:flex-row lg:justify-start lg:gap-4 lg:text-left lg:items-center",
-  ]
-    .filter(Boolean)
-    .join(" ");
-}
-
-function TileBody({ t }: { t: Tile }) {
-  const featured = !!t.featured;
-  return (
-    <>
-      <span
-        aria-hidden="true"
-        style={{ fontFamily: SERIF }}
-        className={
-          "flex shrink-0 items-center justify-center rounded-xl bg-[color-mix(in_srgb,var(--primary)_13%,transparent)] font-bold text-[var(--primary)] " +
-          (featured ? "size-12 text-3xl lg:size-14 lg:text-4xl" : "max-sm:size-9 max-sm:text-lg size-10 text-xl lg:size-11 lg:text-2xl")
-        }
-      >
-        {t.kanji}
-      </span>
-      <div className="min-w-0">
-        <h2
-          className={
-            "tracking-tight text-[var(--foreground)] " +
-            (featured ? "text-lg font-semibold lg:text-[26px]" : "max-sm:text-sm text-[15px] font-semibold")
-          }
-        >
-          {t.title}
-        </h2>
-        <p
-          className={
-            featured
-              ? "mt-1.5 max-w-[19rem] text-sm leading-relaxed text-[var(--muted-foreground)] lg:text-[15px]"
-              : "mt-0.5 line-clamp-2 max-sm:line-clamp-1 text-xs leading-snug text-[var(--muted-foreground)] sm:text-[13px]"
-          }
-        >
-          {t.desc}
-        </p>
-      </div>
-      {!t.href && (
-        <span className="absolute right-3 top-3 rounded-full bg-[color-mix(in_srgb,var(--primary)_12%,transparent)] px-2.5 py-1 text-[11px] font-medium text-[var(--primary)] max-sm:hidden sm:right-4 sm:top-4">
-          Sắp ra mắt
-        </span>
-      )}
-    </>
-  );
-}
 
 export default function LearnPage() {
   return (
@@ -136,19 +113,102 @@ export default function LearnPage() {
         </div>
       </div>
 
-      <div className="mt-4 flex min-h-0 flex-1 flex-col gap-3 sm:mt-5 lg:grid lg:flex-none lg:grid-cols-[26rem_minmax(0,1fr)] lg:grid-rows-[auto_auto] lg:gap-4">
-        <div className="grid grid-cols-2 gap-3 max-lg:order-2 sm:grid-cols-4 sm:gap-4 lg:col-span-2 lg:row-start-2">
-          {tiles.map((t) =>
-            t.href ? (
-              <Link key={t.title} href={t.href} className={tileClasses(t)}>
-                <TileBody t={t} />
-              </Link>
-            ) : (
-              <div key={t.title} className={tileClasses(t)}>
-                <TileBody t={t} />
+      <div className="mt-4 flex min-h-0 flex-1 flex-col gap-4 sm:mt-5 lg:grid lg:flex-none lg:grid-cols-[26rem_minmax(0,1fr)] lg:grid-rows-[auto_auto]">
+        <div className="flex flex-col gap-4 max-lg:order-2 lg:col-span-2 lg:row-start-2">
+          {/* Hàng trên: 3 trụ cột đối xứng */}
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 sm:gap-4">
+            {PILLARS.map((p) => (
+              <div
+                key={p.title}
+                className="flex flex-col justify-between gap-3 rounded-2xl border border-[var(--border)] bg-[var(--background-1)] p-4 transition hover:border-[color-mix(in_srgb,var(--primary)_45%,var(--border))]"
+              >
+                <Link href={p.href} className="group flex items-start gap-3">
+                  <span
+                    aria-hidden="true"
+                    style={{ fontFamily: SERIF }}
+                    className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-[color-mix(in_srgb,var(--primary)_13%,transparent)] text-2xl font-bold text-[var(--primary)]"
+                  >
+                    {p.kanji}
+                  </span>
+                  <div className="min-w-0">
+                    <h2 className="text-base font-semibold tracking-tight text-[var(--foreground)] group-hover:text-[var(--primary)]">
+                      {p.title}
+                    </h2>
+                    <p className="mt-0.5 line-clamp-2 text-xs leading-snug text-[var(--muted-foreground)] sm:text-[13px]">
+                      {p.desc}
+                    </p>
+                  </div>
+                </Link>
+                <div className="flex flex-wrap items-center gap-1.5 border-t border-[var(--border)] pt-2.5">
+                  <Link
+                    href={p.studyHref}
+                    className="rounded-lg bg-[var(--primary)] px-2.5 py-1 text-xs font-medium text-[var(--primary-foreground)] transition hover:opacity-90"
+                  >
+                    Học mới
+                  </Link>
+                  <Link
+                    href={p.reviewHref}
+                    className="rounded-lg border border-[var(--border)] px-2.5 py-1 text-xs font-medium text-[var(--foreground)] transition hover:bg-[var(--background)]"
+                  >
+                    Ôn tập
+                  </Link>
+                  <Link
+                    href={p.practiceHref}
+                    className="rounded-lg border border-[var(--border)] px-2.5 py-1 text-xs font-medium text-[var(--foreground)] transition hover:bg-[var(--background)]"
+                  >
+                    Bài tập
+                  </Link>
+                </div>
               </div>
-            )
-          )}
+            ))}
+          </div>
+
+          {/* Cấu trúc đề của cấp độ đang chọn */}
+          <Suspense fallback={null}>
+            <ExamStructureSlot />
+          </Suspense>
+
+          {/* Hàng dưới: Luyện thi & mở rộng */}
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 sm:gap-4">
+            {EXAM_TILES.map((t) =>
+              t.href ? (
+                <Link
+                  key={t.title}
+                  href={t.href}
+                  className="flex items-center gap-3 rounded-2xl border border-[var(--border)] bg-[var(--background-1)] p-3.5 transition hover:border-[color-mix(in_srgb,var(--primary)_45%,var(--border))]"
+                >
+                  <span
+                    aria-hidden="true"
+                    style={{ fontFamily: SERIF }}
+                    className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-[color-mix(in_srgb,var(--primary)_13%,transparent)] text-xl font-bold text-[var(--primary)]"
+                  >
+                    {t.kanji}
+                  </span>
+                  <div className="min-w-0">
+                    <h2 className="text-sm font-semibold text-[var(--foreground)]">{t.title}</h2>
+                    <p className="mt-0.5 line-clamp-1 text-xs text-[var(--muted-foreground)]">{t.desc}</p>
+                  </div>
+                </Link>
+              ) : (
+                <div
+                  key={t.title}
+                  className="flex items-center gap-3 rounded-2xl border border-dashed border-[var(--border)] p-3.5 opacity-80"
+                >
+                  <span
+                    aria-hidden="true"
+                    style={{ fontFamily: SERIF }}
+                    className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-[color-mix(in_srgb,var(--primary)_10%,transparent)] text-xl font-bold text-[var(--primary)]"
+                  >
+                    {t.kanji}
+                  </span>
+                  <div className="min-w-0">
+                    <h2 className="text-sm font-semibold text-[var(--foreground)]">{t.title}</h2>
+                    <p className="mt-0.5 line-clamp-1 text-xs text-[var(--muted-foreground)]">{t.desc}</p>
+                  </div>
+                </div>
+              ),
+            )}
+          </div>
         </div>
 
         <ReviewChart className="hidden lg:-ml-3 lg:col-start-2 lg:row-start-1 lg:flex lg:rounded-l-none" />

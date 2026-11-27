@@ -7,7 +7,9 @@ import { ExamStructure, type LevelStructure } from "@/components/learn/exam-stru
  * Server gate for `/learn/exams/structure`. Signed out → `/login?from=…`; the structure is
  * read server-side (`GET /exams/structure`) so the access token never reaches the browser.
  */
-export async function ExamStructureGate({ level }: { level?: string }) {
+export async function ExamStructureGate({ searchParams }: { searchParams: Promise<{ level?: string }> }) {
+  // Awaited here, inside the page's Suspense, so the route is not blocked on it.
+  const level = (await searchParams).level?.toUpperCase();
   const session = await getSession();
   if (!session.authenticated || !session.accessToken) {
     redirect("/login?from=/learn/exams/structure");

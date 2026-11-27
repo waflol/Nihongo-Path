@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
 import { KanjiBrowser } from "@/components/learn/kanji-browser";
+import { PillarNav } from "@/components/learn/pillar-nav";
+import { PillarProgress } from "@/components/learn/pillar-progress";
 
 export const metadata: Metadata = {
   title: "Kanji N5–N1",
@@ -19,14 +21,18 @@ async function Browser({ searchParams }: { searchParams: Promise<Search> }) {
 
 export default function KanjiPage({ searchParams }: { searchParams: Promise<Search> }) {
   return (
-    <Suspense
-      fallback={
-        <p className="mx-auto max-w-5xl px-4 py-16 text-center text-sm text-[var(--muted-foreground)] sm:px-6">
-          Đang tải…
-        </p>
-      }
-    >
-      <Browser searchParams={searchParams} />
-    </Suspense>
+    <>
+      <PillarNav pillar="kanji" />
+      <PillarProgress pillar="kanji" className="max-w-6xl" />
+      <Suspense
+        fallback={
+          <p className="mx-auto max-w-5xl px-4 py-16 text-center text-sm text-[var(--muted-foreground)] sm:px-6">
+            Đang tải…
+          </p>
+        }
+      >
+        <Browser searchParams={searchParams} />
+      </Suspense>
+    </>
   );
 }

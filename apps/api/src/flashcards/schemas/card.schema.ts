@@ -1,8 +1,23 @@
 import { Prop, Schema, SchemaFactory } from "@nestjs/mongoose";
 import { HydratedDocument, Types } from "mongoose";
 
-export const CARD_KINDS = ["VOCABULARY", "GRAMMAR", "CUSTOM"] as const;
+export const CARD_KINDS = ["VOCABULARY", "GRAMMAR", "KANJI", "CUSTOM"] as const;
 export type CardKind = (typeof CARD_KINDS)[number];
+
+export const PILLARS = ["vocab", "grammar", "kanji"] as const;
+export type Pillar = (typeof PILLARS)[number];
+
+export function cardKindToPillar(kind?: string | null): Pillar {
+  if (kind === "GRAMMAR") return "grammar";
+  if (kind === "KANJI") return "kanji";
+  return "vocab";
+}
+
+export function pillarToCardKinds(pillar: Pillar): CardKind[] {
+  if (pillar === "grammar") return ["GRAMMAR"];
+  if (pillar === "kanji") return ["KANJI"];
+  return ["VOCABULARY", "CUSTOM"];
+}
 
 /**
  * Where a card came from. `manual` = created in the UI; `import` = a batch
@@ -51,6 +66,9 @@ export class Flashcard {
 
   @Prop({ type: Types.ObjectId, ref: "GrammarPoint" })
   grammar?: Types.ObjectId | null;
+
+  @Prop({ type: Types.ObjectId, ref: "Kanji" })
+  kanji?: Types.ObjectId | null;
 
   /** Question face (e.g. the Japanese term, a sentence with a blank, a rule). */
   @Prop({ type: String, trim: true, required: true })

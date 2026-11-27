@@ -4,6 +4,37 @@
 
 ---
 
+## Plan Khu Luyện thi JLPT hợp nhất (27/11/2026, đã lưu plan, chưa code)
+
+- Đã chốt và lưu [plans/plan-exam-hub.md](./plans/plan-exam-hub.md) (liên kết chéo `plan-exam-by-source.md`, `ADR-exam-by-source.md`, `plan-three-pillars.md`):
+  1. **Hợp nhất `/learn/exam` + `/learn/exams` thành 1 khu Luyện thi JLPT** tại `/learn/exams` (`/learn/exam` redirect sang `/learn/exams?mode=practice`), gắn với **Mức độ muốn thi (`targetLevel`: N5–N1)** đồng bộ giữa `use-exam-level.ts` (`jlpt-exam-level`) và `User.targetLevel` (`GET/PATCH /users/me`).
+  2. **Thi thử có tính thời gian (`?mode=mock`):** gồm **Thi theo đề cố định** (giữ nguyên bản in) và **Thi đề xáo trộn** (chỉ lấy từ đề công khai `own | licensed` **cùng đúng 1 cấp `targetLevel` đã chọn**, lắp chuẩn `JLPT_STRUCTURE`, giữ nguyên cụm `stimulus`).
+  3. **Luyện tập theo phần (`?mode=practice`):** không giới hạn giờ, chấm ngay từng câu (`POST /exams/attempts/:id/check`), chia **4 kỹ năng (`Từ vựng · Ngữ pháp · Đọc · Nghe`) → các dạng `問題` đúng của cấp đang chọn**, hỗ trợ làm lại câu sai.
+
+---
+
+## Cấu trúc đề N5–N1 theo bảng mới + thẻ trên Khu học tập (27/11/2026, chưa commit)
+
+- Chủ sản phẩm đưa 5 bảng cấu trúc đề (Dungmori) và chốt dùng theo bảng. `jlpt-structure.ts` đổi: N1 文章の文法 4, 中文 8, 長文 3, 統合 2, 主張 3, 聴解 **60 phút**; N2 語形成 3, 文章の文法 4, 中文 8, 即時応答 11, 統合 3; N3 文章の文法 4. N4, N5 giữ nguyên.
+- **Khác jlpt.jp** (ghi trong comment đầu file): N1 聴解 55 phút từ 12/2022; N2 聴解 即時応答 12 / 統合 4. Mục "Lệch cần xem" bên dưới đã được thay bằng quyết định theo bảng. Cột "thời gian làm bài" gợi ý và "mục tiêu" trong bảng **chưa đưa vào app**.
+- Một nguồn: `LISTENING_LAYOUT` giờ sinh từ `JLPT_STRUCTURE`. Nhập đề: `listDrafts` trả `expectedCount` (`usualCountOf`, bỏ qua sách luyện tập); màn duyệt hiện "Đề N3 thường có 4 câu" khi lệch — chỉ nhắc, không chặn.
+- `/learn`: thẻ "Cấu trúc đề thi" (`exam-structure-{slot,card}.tsx`) — chọn N5–N1, nhớ trên máy (`use-exam-level.ts`, localStorage `jlpt-exam-level`); `/learn/exams/structure` mở theo `?level=` rồi đến cấp đã nhớ, nút quay về Khu học tập. Sửa lỗi "blocking route" của trang này.
+- Đã chạy: vitest `src/exams src/import src/ai` 471 đạt (1 skip), watcher tsc API 0 lỗi, tsc + eslint file UI sạch; Chrome Live (admin) máy tính: chọn N1, nhớ, mở chi tiết N1/N2; khung 375 px (iframe) thẻ không tràn ngang.
+- **Chưa kiểm:** dòng "thường có N câu" trên màn duyệt (chưa mở bản nháp thật); chỉnh khoảng cách nút ở 375 px sau lần xem cuối.
+- **Lưu ý:** API khởi động chậm (~5 phút từ "Starting Nest application" đến khi nghe :3000); trong lúc đó UI báo `fetch failed`. Next dev cũng tự khởi động lại khi gần hết bộ nhớ (`memory threshold` trong log ui, ~19:25); ngay sau đó trang tải chậm.
+
+---
+
+## Điều chỉnh plan học 3 trụ cột Từ vựng · Ngữ pháp · Kanji (27/11/2026)
+
+- Chủ sản phẩm chốt điều chỉnh kiến trúc học cốt lõi thành **3 trụ cột đối xứng** trong [plans/plan-three-pillars.md](./plans/plan-three-pillars.md) (đồng bộ với `plan-complete-mvp.md`, `plan-kanji.md`, `TICKETS.md`, `NP-1013…1016`):
+  1. `/learn` gom thành 3 cụm chính (**Từ vựng · Ngữ pháp · Kanji**), mỗi cụm có đủ: **Danh mục/Bộ thẻ + Flashcard học mới + Ôn tập FSRS + Bài tập** (cụm Luyện thi/Đề thi giữ riêng).
+  2. Có sẵn **5 bộ thẻ mặc định N5–N1** cho Ngữ pháp và Kanji từ dữ liệu `PUBLISHED` (vẫn cho lưu/tạo bộ cá nhân).
+  3. **Bài tập** ưu tiên thẻ vừa học hôm nay + đến hạn ôn SRS (`exercise-priority`), kèm nút chuyển sang **Luyện tự do theo cấp N5–N1**.
+  4. **Tách kênh FSRS (`pillar`)**: tách hạn mức thẻ mới/ngày và bộ đếm đến hạn riêng cho `vocab`, `grammar`, `kanji`.
+
+---
+
 ## Popup tiến độ thu nhỏ / phóng to (27/11/2026)
 
 - `components/progress-popup.tsx`: `useMinimizedPopups` (localStorage `progress-popups-minimized`, đồng bộ giữa các tab), `MinimizeButton` (−), `MiniPopup` (viên tròn: ký hiệu + % + vạch tiến độ, bấm để phóng to).

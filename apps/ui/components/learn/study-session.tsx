@@ -1,5 +1,7 @@
 "use client";
 
+import { deckPillar } from "./pillar-nav";
+
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
@@ -129,7 +131,7 @@ const FLUSH_DEBOUNCE_MS = 1500;
  * `useSearchParams` call in a statically-rendered tree fails the build, so
  * the real component is wrapped in its own `<Suspense>` boundary here.
  */
-export function StudySession({ mode, kind, grammarFilter }: { mode: "learn" | "review"; kind?: "GRAMMAR"; grammarFilter?: { level?: string; themeId?: string; contextId?: string; textbookId?: string; unitId?: string } }) {
+export function StudySession({ mode, kind, grammarFilter }: { mode: "learn" | "review"; kind?: "GRAMMAR" | "KANJI"; grammarFilter?: { level?: string; themeId?: string; contextId?: string; textbookId?: string; unitId?: string } }) {
   return (
     <Suspense
       fallback={
@@ -143,7 +145,7 @@ export function StudySession({ mode, kind, grammarFilter }: { mode: "learn" | "r
   );
 }
 
-function StudySessionInner({ mode, kind, grammarFilter }: { mode: "learn" | "review"; kind?: "GRAMMAR"; grammarFilter?: { level?: string; themeId?: string; contextId?: string; textbookId?: string; unitId?: string } }) {
+function StudySessionInner({ mode, kind, grammarFilter }: { mode: "learn" | "review"; kind?: "GRAMMAR" | "KANJI"; grammarFilter?: { level?: string; themeId?: string; contextId?: string; textbookId?: string; unitId?: string } }) {
   const searchParams = useSearchParams();
   const deckParam = searchParams.get("deck");
   // `learn` (/learn/study): new words in deck order, up to the daily amount.
@@ -363,7 +365,15 @@ function StudySessionInner({ mode, kind, grammarFilter }: { mode: "learn" | "rev
         setLoading(false);
         return;
       }
-      const list = (await res.json().catch(() => [])) as DeckRef[];
+      const rawList = (await res.json().catch(() => [])) as (DeckRef & {
+        pillar?: string;
+        systemKey?: string;
+        category?: string;
+      })[];
+      const targetPillar = kind === "GRAMMAR" ? "grammar" : kind === "KANJI" ? "kanji" : "vocab";
+      const list = (Array.isArray(rawList) ? rawList : []).filter(
+        (d) => deckPillar(d) === targetPillar,
+      );
       if (cancelled) return;
       setDecks(list);
 

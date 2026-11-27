@@ -1,28 +1,15 @@
-import type { Metadata } from "next";
-import { Suspense } from "react";
-import { LearnExercisesGate } from "./gate";
+import { redirect } from "next/navigation";
 
-export const metadata: Metadata = {
-  title: "Bài tập",
-  description: "Trắc nghiệm và gõ đáp án theo bộ flashcard.",
-  // Private learning area — never indexed (spec §17.3).
-  robots: { index: false, follow: true },
-};
-
-/**
- * Exercises (P3-UI-07): the drill modes that sit beside the flashcard review
- * — multiple choice and type-in-the-answer.
- */
-export default function LearnExercisesPage() {
-  return (
-    <Suspense
-      fallback={
-        <p className="mx-auto max-w-3xl px-4 py-16 text-center text-sm text-[var(--muted-foreground)] sm:px-6">
-          Đang tải…
-        </p>
-      }
-    >
-      <LearnExercisesGate />
-    </Suspense>
-  );
+export default async function LegacyExercisesRedirect({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const sp = await searchParams;
+  const qs = new URLSearchParams();
+  for (const [k, v] of Object.entries(sp)) {
+    if (typeof v === "string") qs.set(k, v);
+  }
+  const q = qs.toString();
+  redirect(q ? `/learn/vocab/exercises?${q}` : "/learn/vocab/exercises");
 }

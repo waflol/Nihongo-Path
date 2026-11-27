@@ -1,7 +1,7 @@
 # Danh sách ticket & tiến độ — Nihongo Path
 
-> **Cập nhật:** 26/11/2026. Nguồn: [IMPLEMENTATION_CHECKLIST.md](./IMPLEMENTATION_CHECKLIST.md) (trạng thái từng task),
-> [OPEN_QUESTIONS.md](./OPEN_QUESTIONS.md) (quyết định đang chờ), `git log` đến `b9775eb`, [HANDOFF.md](./HANDOFF.md).
+> **Cập nhật:** 27/11/2026. Nguồn: [IMPLEMENTATION_CHECKLIST.md](./IMPLEMENTATION_CHECKLIST.md) (trạng thái từng task),
+> [OPEN_QUESTIONS.md](./OPEN_QUESTIONS.md) (quyết định đang chờ), `git log` đến `5854251`, [HANDOFF.md](./HANDOFF.md).
 >
 > **Cách đọc trạng thái:** theo quy ước checklist §0.1. `✅` = checklist đã `[x]` có bằng chứng; `🟡` = `[~]` làm dở / chưa kiểm
 > chứng đủ; `⬜` = chưa làm; `⏸` = chờ chủ sản phẩm quyết định; `➕` = đã làm **ngoài** checklist gốc (có commit, chưa có tiêu chí nghiệm thu).
@@ -21,7 +21,7 @@
 | P1 | Foundation | 34 | 0 | 0 | 0 | 100% |
 | P2 | Identity & Content | 22 | 0 | 0 | 0 | 100% |
 | P3 | Flashcards & SRS | 25 | 2 | 0 | 0 | 92% (+2 dở) |
-| P4 | Exercises & Exams | 5 | 14 | 1 | 0 | 25% (+14 dở, chờ verify trình duyệt) |
+| P4 | Exercises & Exams | 5 | 14 | 0 | 0 | 25% (+14 dở, 1 bỏ) |
 | P5 | Admin, Feedback, Entitlements | 11 | 3 | 0 | 0 | 79% (+3 dở) |
 | P6 | Media & STT | 0 | 0 | 14 | 1 | 0% |
 | P7 | Phân tích câu & Shadowing | 0 | 0 | 11 | 1 | 0% |
@@ -29,7 +29,7 @@
 | P9 | Thanh toán | 0 | 0 | 11 | 1 | 0% |
 | P10 | AdSense | 0 | 0 | 8 | 2 | 0% |
 | P11 | Production readiness | 0 | 0 | 12 | 1 | 0% |
-| **Tổng** | | **103** | **19** | **64** | **7** | **~53% xong** (103/193) |
+| **Tổng** | | **103** | **19** | **63** | **7** | **~53% xong** (103/193, 1 bỏ) |
 
 \* % = ✅ / tổng task của phase. Ô checklist có kèm ghi chú được đếm theo ký hiệu đầu ô.
 
@@ -65,9 +65,11 @@
 | NP-402 | API làm bài: bắt đầu/nộp, hết giờ server, xáo, chấm | P4-EXAM-04…06 | Verify API với thời gian giả lập (code + vitest xong 18/11) |
 | NP-403 | Xem lại lỗi + thống kê + màn kết quả | P4-EXAM-07/08, P4-UI-02 | Verify API + trình duyệt |
 | NP-404 | Màn làm bài có timer/lưu nháp + admin soạn đề (`app/admin/exams`) | P4-EXAM-09, P4-UI-01 | Code xong (commit 39c481b); còn verify trình duyệt |
-| NP-407 | Verify trình duyệt/DB thật, đo RSS, đối chiếu tiêu chí | P4-JLPT-05 (`[~]`) | Theo plan-jlpt-question-bank |
-| NP-409 | Bấm thử trình duyệt; nút "Đề ngẫu nhiên" + mục ngân hàng admin (chờ NP-408) | P4-JLPT-07 (`[~]`) | Chromium headless + mobile 375 px |
+| NP-407 | Xuất bản đề thật + làm bài trên trình duyệt, đo RSS file lớn, GĐ2 sách luyện tập | P4-JLPT-05 (`[~]`) | Theo [plan-exam-by-source.md](./plans/plan-exam-by-source.md); đã kiểm các màn chính trên Chrome Live 27/11 |
+| NP-409 | Bấm thử làm đề theo phần thật + xem kết quả trên trình duyệt (đã bỏ phần ngân hàng / đề ngẫu nhiên) | P4-JLPT-07 (`[~]`) | Chrome Live + mobile 375 px |
 | NP-501, 502 | 429 khi request song song ở lượt cuối; reset kỳ và `ALLOW` chưa thử live | P5-QUOTA-01…06 (`[x]`) | Vượt hạn mức → 429; đổi gói có hiệu lực (đạt 26/11) |
+| NP-114, 115 | `done-partial`: test gửi lại batch với Mongo thật, `pnpm -r build` và bấm thử trình duyệt | — (`plan-fsrs-6.md`) | Vitest 11+14 đạt; tsc sạch |
+| NP-1004, 1005, 1006, 1007, 1008, 1009, 1012 | Grammar Super Honki: giới hạn preview 400 KB, tên bài giáo trình, mobile/TTS, publish hàng loạt & audit | P11 (`2d9e8fc`, `a1744c5`) | Đã import 630 mẫu, publish 99 mẫu N5 |
 | NP-027 | Thử Antigravity CLI với tài khoản Google thật | `plans/plan-antigravity-cli.md` §3 | Gọi `agy` thật qua đăng nhập dùng chung |
 
 ## 4. Đã làm ngoài checklist (➕)
@@ -171,8 +173,12 @@ Plan chi tiết: [plans/plan-jlpt-question-bank.md](./plans/plan-jlpt-question-b
 | NP-1008 | Tích hợp grammar flashcard và FSRS | NP-1005 |
 | NP-1009 | UI danh mục và chi tiết ngữ pháp | NP-1007 |
 | NP-1010 | UI flashcard ngữ pháp | NP-1008, NP-1009 |
-| NP-1011 | Bài luyện tập ngữ pháp | NP-1007 |
+| NP-1011 | Bài luyện tập ngữ pháp (gắn SRS + luyện tự do N5–N1) | NP-1007, NP-1013 |
 | NP-1012 | Admin review và chất lượng nội dung grammar | NP-1006 |
+| NP-1013 | Tách kênh FSRS (`vocab`/`grammar`/`kanji`) & đồng bộ deck mặc định N5–N1 ([plan-three-pillars.md](./plans/plan-three-pillars.md)) | — |
+| NP-1014 | Thiết kế lại `/learn` theo 3 trụ cột & chuẩn hoá khu Từ vựng | NP-1013 |
+| NP-1015 | Flashcard Kanji học mới & Ôn tập FSRS (`/learn/kanji/study`, `/learn/kanji/review`) | NP-1013, NP-107 |
+| NP-1016 | Bài tập Kanji (`/learn/kanji/practice` — gắn SRS + luyện tự do, nhiễu `kanji-lookalikes`) | NP-1015 |
 
 ### P11 — Sẵn sàng production
 | Ticket | Cụm task | Chặn bởi |
@@ -194,7 +200,7 @@ Plan chi tiết: [plans/plan-jlpt-question-bank.md](./plans/plan-jlpt-question-b
 | Q-09 AdSense, domain, thương hiệu | NP-1001, NP-1104 | ⏸ |
 | Q-10 RPO/RTO, hosting, monitoring | NP-1103 | ⏸ |
 | Q-11 Giới hạn media | NP-601 | ⏸ |
-| Q-12 Quyền dùng đề thi chính thức | NP-401, NP-407, NP-408 | ⏸ (phần P3 đã duyệt 05/11) |
+| Q-12 Quyền dùng đề thi chính thức | NP-401, NP-407 | ⏸ (phần P3 đã duyệt 05/11) |
 | Q-19…Q-24 Mơ hồ (a11y, MVP, đa ngôn ngữ, video ngoài, vượt hạn mức, consent audio) | nhiều ticket | ⏸ |
 
 ## 7. Việc nên làm kế tiếp (đề xuất)
@@ -202,8 +208,9 @@ Plan chi tiết: [plans/plan-jlpt-question-bank.md](./plans/plan-jlpt-question-b
 Plan tổng thể: [plans/plan-complete-mvp.md](./plans/plan-complete-mvp.md) (27/11/2026 — thứ tự các lát dọc A→E để về MVP, không làm P6–P10 khi còn quyết định sản phẩm ⏸).
 
 1. **Đóng và bảo vệ working tree** (Slice A): commit lát dọc theo nhóm + HANDOFF, không để dồn một đống.
-2. **Grammar end-to-end** (Slice B): sửa lỗi còn ghi ở HANDOFF, chạy `--write`, admin preview/publish, flashcard + luyện tập (NP-1006→1012).
-3. **P4 + NP-021** (Slice C): verify API/trình duyệt thật, import file scan thật, NP-408/409.
+2. **Nền 3 trụ cột & Khu Từ vựng** (Slice B1, [plan-three-pillars.md](./plans/plan-three-pillars.md)): tách kênh FSRS, đồng bộ deck mặc định N5–N1, `/learn` 3 trụ cột (`NP-1013`, `NP-1014`).
+3. **Grammar & Kanji end-to-end** (Slice B2–B3): hoàn tất Flashcard mới + Ôn tập + Bài tập cho Ngữ pháp (`NP-1006`→`NP-1012`) và Kanji (`NP-1015`, `NP-1016`).
+3. **P4 + NP-021** (Slice C): verify API/trình duyệt thật, import file scan thật, NP-407/409 (GĐ2 sách luyện tập).
 4. **P5** (Slice D): audit phản hồi và đổi role (NP-024), request song song của quota (NP-501/502); sau đó xét đóng GitHub #16–#18.
 5. **Production gate** (Slice E): chạy backlog `T-*`, security review, backup/restore, production build (NP-1101→1104).
 6. **Hỏi chủ sản phẩm Q-12**: quyết định được dùng đề thi chính thức hay chỉ đề tự soạn.

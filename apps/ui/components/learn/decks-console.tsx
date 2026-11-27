@@ -1,5 +1,7 @@
 "use client";
 
+import { deckPillar } from "./pillar-nav";
+
 import { fetchShared } from "@/lib/inflight-fetch";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -88,9 +90,16 @@ export function DecksConsole() {
         setLoadedFor(version);
         return;
       }
-      const list = (await res.json().catch(() => [])) as Deck[];
+      const rawList = (await res.json().catch(() => [])) as (Deck & {
+        pillar?: string;
+        systemKey?: string;
+        category?: string;
+      })[];
       if (cancelled) return;
-      setDecks(Array.isArray(list) ? list : []);
+      const list = (Array.isArray(rawList) ? rawList : []).filter(
+        (d) => deckPillar(d) === "vocab",
+      );
+      setDecks(list);
 
       // Progress is a second call scoped to the caller's OWN decks (P3-UI-03
       // "hiển thị số thẻ mới/đến hạn"). A failure here must not blank the

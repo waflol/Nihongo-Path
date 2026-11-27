@@ -5,22 +5,14 @@ import { optionCountsOf, SECTION_OF, type MondaiType, type SectionKey } from "./
  * each part the 大問 in printed order with the usual number of questions (小問数, a 目安 —
  * "the actual number may vary slightly from session to session").
  *
- * Sources (accessed 2026-11-27; jlpt.jp itself was under maintenance that day, so the tables
- * were read through search-engine copies of the official files):
- *  - Times: 「試験科目と問題の構成」 https://www.jlpt.jp/guideline/testsections.html — N1 聴解
- *    is 55 min from the 2nd test of 2022 (December).
- *  - N1 聴解 counts: 「N1の試験時間・問題数の目安の変更について」
- *    https://www.jlpt.jp/topics/202208051659676565.html — 課題理解 5, ポイント理解 6, 概要理解 5,
- *    即時応答 11, 統合理解 3 from December 2022; N1 言語知識・読解 unchanged.
- *  - Every other count: the official guidebook table, "New JLPT Guidebook Executive Summary"
- *    https://www.jlpt.jp/e/reference/pdf/guidebook_s_e.pdf (rows: kanji reading 6/5/8/9/12,
- *    orthography –/5/6/6/8, word formation N2 5, contextually-defined 7/7/11/10/10, paraphrases
- *    6/5/5/5/5, grammar form 10/12/13/15/16, sentence composition 5, text grammar 5, short
- *    passages 4/5/4/4/3, mid-size 9/9/6/4/2, information retrieval 2/2/2/2/1; listening totals
- *    37/32/28/28/24). Usage (5 at N2–N4, 6 at N1), long passages (N1 4, N3 4), integrated (N1 3,
- *    N2 2) and thematic (N1 4, N2 3) were read off the table's subtotals (vocabulary 25/32/35/35/35,
- *    reading 26/21/16/10/6) — re-check them against https://www.jlpt.jp/guideline/pdf/n1.pdf … n5.pdf
- *    when the site is back. The N3 figures match the official 2010-07 paper (plan §5.4).
+ * Source: the N5–N1 「Cấu trúc đề thi」 tables (Dungmori) the product owner gave on 2026-11-27 —
+ * times and counts follow them. Where they differ from the jlpt.jp announcements read the same
+ * day (through search-engine copies): N1 聴解 is 60 min here (jlpt.jp: 55 from December 2022),
+ * and N2 即時応答 / 統合理解 are 11 / 3 (official guidebook table: 12 / 4). The N2 table labels
+ * 聴解 問題4 「発語表現」 but describes 即時応答, which is what N2 has.
+ *
+ * This is the one source of the counts: the structure page, the import (a 聴解 問題 that prints
+ * nothing, and the reviewer's "usual count") and the assembled exam's times all read it.
  */
 
 export interface JlptMondai {
@@ -101,18 +93,18 @@ const SPEC: Record<JlptLevelStructure["level"], PartSpec[]> = {
         ["usage", 6],
         ["grammar-form", 10],
         ["star-order", 5],
-        ["text-grammar", 5],
+        ["text-grammar", 4],
         ["reading-short", 4],
-        ["reading-mid", 9],
-        ["reading-long", 4],
-        ["reading-integrated", 3],
-        ["reading-thematic", 4],
+        ["reading-mid", 8],
+        ["reading-long", 3],
+        ["reading-integrated", 2],
+        ["reading-thematic", 3],
         ["info-retrieval", 2],
       ],
     },
     {
       key: "listening",
-      timeMin: 55,
+      timeMin: 60,
       rows: [
         ["listening-task", 5],
         ["listening-point", 6],
@@ -129,15 +121,15 @@ const SPEC: Record<JlptLevelStructure["level"], PartSpec[]> = {
       rows: [
         ["kanji-reading", 5],
         ["orthography", 5],
-        ["word-formation", 5],
+        ["word-formation", 3],
         ["context", 7],
         ["paraphrase", 5],
         ["usage", 5],
         ["grammar-form", 12],
         ["star-order", 5],
-        ["text-grammar", 5],
+        ["text-grammar", 4],
         ["reading-short", 5],
-        ["reading-mid", 9],
+        ["reading-mid", 8],
         ["reading-integrated", 2],
         ["reading-thematic", 3],
         ["info-retrieval", 2],
@@ -150,8 +142,8 @@ const SPEC: Record<JlptLevelStructure["level"], PartSpec[]> = {
         ["listening-task", 5],
         ["listening-point", 6],
         ["listening-summary", 5],
-        ["listening-quick", 12],
-        ["listening-integrated", 4],
+        ["listening-quick", 11],
+        ["listening-integrated", 3],
       ],
     },
   ],
@@ -173,7 +165,7 @@ const SPEC: Record<JlptLevelStructure["level"], PartSpec[]> = {
       rows: [
         ["grammar-form", 13],
         ["star-order", 5],
-        ["text-grammar", 5],
+        ["text-grammar", 4],
         ["reading-short", 4],
         ["reading-mid", 6],
         ["reading-long", 4],
@@ -285,3 +277,9 @@ function build(level: JlptLevelStructure["level"]): JlptLevelStructure {
 
 /** Easiest first, as a learner climbs: N5 … N1. */
 export const JLPT_STRUCTURE: readonly JlptLevelStructure[] = (["N5", "N4", "N3", "N2", "N1"] as const).map(build);
+
+/** The usual number of questions of a 大問 at a level; `undefined` when the level does not print it. */
+export function usualCountOf(level: string | undefined, mondai: string | null | undefined): number | undefined {
+  const found = JLPT_STRUCTURE.find((s) => s.level === level?.trim().toUpperCase());
+  return found?.parts.flatMap((p) => p.mondai).find((m) => m.mondai === mondai)?.count;
+}

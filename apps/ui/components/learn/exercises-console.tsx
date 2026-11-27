@@ -1,5 +1,7 @@
 "use client";
 
+import { deckPillar } from "./pillar-nav";
+
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { ComposeDrill } from "./compose-drill";
@@ -192,10 +194,16 @@ export function ExercisesConsole({ variant = "exercises" }: { variant?: "exercis
         setLoading(false);
         return;
       }
-      const list = (await res.json().catch(() => [])) as DeckRef[];
+      const list = (await res.json().catch(() => [])) as (DeckRef & {
+        pillar?: string;
+        systemKey?: string;
+        category?: string;
+      })[];
       if (cancelled) return;
       // Shared (published) decks are readable by every learner, so they can be drilled too.
-      const usable = (Array.isArray(list) ? list : []).filter((d) => !!d._id);
+      const usable = (Array.isArray(list) ? list : []).filter(
+        (d) => !!d._id && deckPillar(d) === "vocab",
+      );
       setDecks(usable);
       type Prio = Record<string, { today: string[]; due: string[] }>;
       const pr: Prio = await fetch("/api/srs/exercise-priority", { cache: "no-store" })

@@ -54,6 +54,22 @@ export class User {
   @Prop({ type: Number, default: 20, min: 1, max: 500 })
   newCardsPerDay: number;
 
+  /** Per-pillar daily new card limits so learning one pillar does not exhaust another. */
+  @Prop({
+    type: {
+      vocab: { type: Number, default: 20, min: 1, max: 500 },
+      grammar: { type: Number, default: 10, min: 1, max: 500 },
+      kanji: { type: Number, default: 15, min: 1, max: 500 },
+    },
+    default: () => ({ vocab: 20, grammar: 10, kanji: 15 }),
+    _id: false,
+  })
+  newCardsPerDayByPillar?: {
+    vocab: number;
+    grammar: number;
+    kanji: number;
+  };
+
   @Prop({ type: String, default: "ACTIVE", enum: USER_STATUSES })
   status: UserStatus;
 

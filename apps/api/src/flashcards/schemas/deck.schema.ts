@@ -4,6 +4,9 @@ import { HydratedDocument, Types } from "mongoose";
 export const DECK_STATUSES = ["DRAFT", "PUBLISHED"] as const;
 export type DeckStatus = (typeof DECK_STATUSES)[number];
 
+export const DECK_PILLARS = ["vocab", "grammar", "kanji"] as const;
+export type DeckPillar = (typeof DECK_PILLARS)[number];
+
 /**
  * A flashcard deck (P3-CARD-01, spec §4.2–4.3, database.md "flashcard_decks").
  *
@@ -35,6 +38,14 @@ export class FlashcardDeck {
   /** Optional level tag (e.g. `N5`), free-form, mirrors content `level`. */
   @Prop({ type: String, trim: true })
   level?: string;
+
+  /** Pillar this deck belongs to; defaults to "vocab" for legacy decks. */
+  @Prop({ type: String, enum: DECK_PILLARS, default: "vocab" })
+  pillar?: DeckPillar;
+
+  /** Unique key for system-managed default decks (e.g. "grammar:N5", "kanji:N5"). */
+  @Prop({ type: String, trim: true })
+  systemKey?: string;
 
   /** Free-form grouping label (e.g. "Từ vựng", "Kanji", "Ngữ pháp"). */
   @Prop({ type: String, trim: true, default: "" })
@@ -74,3 +85,5 @@ export const FlashcardDeckSchema =
 FlashcardDeckSchema.index({ user: 1, shared: 1, status: 1 });
 // Published shared decks (every learner lists them).
 FlashcardDeckSchema.index({ shared: 1, status: 1 });
+// System-managed default decks (grammar:N5..N1, kanji:N5..N1).
+FlashcardDeckSchema.index({ systemKey: 1 }, { unique: true, sparse: true });

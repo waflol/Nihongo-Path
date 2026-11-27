@@ -26,6 +26,7 @@ import { ExerciseQuestionsService } from "./exercise-questions.service.js";
 import { HanVietCheckLog, HanVietCheckLogSchema } from "./schemas/han-viet-check-log.schema.js";
 import { CardReport, CardReportSchema } from "./schemas/card-report.schema.js";
 import { CardReportsService } from "./card-reports.service.js";
+import { SystemDecksService } from "./system-decks.service.js";
 
 /**
  * Personal-deck + save-a-word surface (P3-CARD-01..04).
@@ -68,7 +69,9 @@ export function buildFlashcardsModule(): DynamicModule {
       ExampleSuggestService,
       ExerciseQuestionsService,
       CardReportsService,
+      SystemDecksService,
     ],
+    exports: [SystemDecksService],
   };
 }
 

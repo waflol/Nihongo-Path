@@ -32,6 +32,8 @@ export interface Draft {
   sitting: string;
   level?: string;
   mondai?: string | null;
+  /** Usual number of questions of this 問題 at the paper's level (absent for a practice book). */
+  expectedCount?: number;
   /** 聴解: the block's recording (this 問題, or the paper's whole listening part). */
   audio?: DraftAudio | null;
   section: string;

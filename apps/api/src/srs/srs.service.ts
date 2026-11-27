@@ -6,9 +6,12 @@ import {
 } from "@nestjs/common";
 import { InjectModel } from "@nestjs/mongoose";
 import { Model, Types } from "mongoose";
-import type {
-  Flashcard,
-  FlashcardDocument,
+import {
+  cardKindToPillar,
+  pillarToCardKinds,
+  type Flashcard,
+  type FlashcardDocument,
+  type Pillar,
 } from "../flashcards/schemas/card.schema.js";
 import type { GrammarPointDocument } from "../content/schemas/grammar-point.schema.js";
 import { grammarTextbookFilter } from "../content/grammar-filter.js";
@@ -161,10 +164,23 @@ export class SrsService {
     return doc?.timezone ?? "Asia/Ho_Chi_Minh";
   }
 
-  /** Words due today across every deck — identical to the review hub's `counts.due`. */
-  async dueCount(caller: AuthUser, tz?: string): Promise<{ due: number }> {
-    const q = await this.getQueue(caller, "all", tz, 1, "review");
-    return { due: q.counts.due };
+  /** Words due today across every deck — identical to the review hub's `counts.due`, with per-pillar breakdown. */
+  async dueCount(
+    caller: AuthUser,
+    tz?: string,
+    pillar?: Pillar,
+  ): Promise<{ due: number; total: number; vocab: number; grammar: number; kanji: number }> {
+    const [vocabQ, grammarQ, kanjiQ] = await Promise.all([
+      this.getQueue(caller, "all", tz, 1, "review", undefined, undefined, "vocab"),
+      this.getQueue(caller, "all", tz, 1, "review", "GRAMMAR", undefined, "grammar"),
+      this.getQueue(caller, "all", tz, 1, "review", "KANJI", undefined, "kanji"),
+    ]);
+    const vocab = vocabQ.counts.due;
+    const grammar = grammarQ.counts.due;
+    const kanji = kanjiQ.counts.due;
+    const total = vocab + grammar + kanji;
+    const due = pillar === "vocab" ? vocab : pillar === "grammar" ? grammar : pillar === "kanji" ? kanji : total;
+    return { due, total, vocab, grammar, kanji };
   }
 
   /**
@@ -213,6 +229,7 @@ export class SrsService {
     mode: "learn" | "review" = "review",
     kind?: Flashcard["kind"],
     grammarFilter?: { level?: string; themeId?: string; contextId?: string; textbookId?: string; unitId?: string },
+    pillar?: Pillar,
   ): Promise<StudyQueue> {
     // `all` = the review hub: every card the caller has already learned, from
     // any deck they can read — no new cards, no deck distinction.
@@ -220,11 +237,13 @@ export class SrsService {
     // learn = a deck's new words only; review (SRS) = due words only, for "all" or one deck.
     const learn = mode === "learn" && !reviewAll;
     // Independent lookups run together (each is a separate DB round trip).
-    const [, timezone, newPerDay] = await Promise.all([
+    const [deckDoc, timezone] = await Promise.all([
       reviewAll ? undefined : this.resolveAccessibleDeck(caller, deckId),
       this.resolveTimezone(caller, tz),
-      this.newCardsPerDay(caller),
     ]);
+    const effectivePillar: Pillar =
+      pillar ?? (kind ? cardKindToPillar(kind) : (deckDoc?.pillar as Pillar | undefined) ?? "vocab");
+    const newPerDay = await this.newCardsPerDay(caller, effectivePillar);
     const today = localDayKey(Date.now(), timezone);
     const userId = new Types.ObjectId(caller.sub);
     const grammarIds = kind === "GRAMMAR" && grammarFilter && Object.values(grammarFilter).some(Boolean)
@@ -236,7 +255,7 @@ export class SrsService {
         }).select("_id").lean().exec()).map((g: { _id: Types.ObjectId }) => g._id)
       : undefined;
     const cardFilter = {
-      ...(kind ? { kind } : {}),
+      ...(kind ? { kind } : pillar ? { kind: { $in: pillarToCardKinds(pillar) } } : {}),
       ...(grammarIds ? { grammar: { $in: grammarIds } } : {}),
     };
 
@@ -417,6 +436,7 @@ export class SrsService {
   async exercisePriority(
     caller: AuthUser,
     tz?: string,
+    pillar?: Pillar,
   ): Promise<Record<string, { today: string[]; due: string[] }>> {
     const timezone = await this.resolveTimezone(caller, tz);
     const today = localDayKey(Date.now(), timezone);
@@ -429,7 +449,10 @@ export class SrsService {
       .exec();
     if (docs.length === 0) return {};
     const cards = await this.card
-      .find({ _id: { $in: docs.map((d) => d.card) } })
+      .find({
+        _id: { $in: docs.map((d) => d.card) },
+        ...(pillar ? { kind: { $in: pillarToCardKinds(pillar) } } : {}),
+      })
       .select("deck order")
       .sort({ order: 1, _id: 1 })
       .lean()
@@ -503,34 +526,58 @@ export class SrsService {
     return out;
   }
 
-  private async newCardsPerDay(caller: AuthUser): Promise<number> {
-    const u = await this.user.findById(caller.sub, { newCardsPerDay: 1 }).exec();
-    return u?.newCardsPerDay ?? 20;
+  private async newCardsPerDay(caller: AuthUser, pillar: Pillar = "vocab"): Promise<number> {
+    const u = await this.user.findById(caller.sub, { newCardsPerDay: 1, newCardsPerDayByPillar: 1 }).exec();
+    const byPillar = u?.newCardsPerDayByPillar;
+    if (pillar === "grammar") return byPillar?.grammar ?? 10;
+    if (pillar === "kanji") return byPillar?.kanji ?? 15;
+    return byPillar?.vocab ?? u?.newCardsPerDay ?? 20;
   }
 
-  async getSettings(caller: AuthUser): Promise<{ newCardsPerDay: number }> {
-    return { newCardsPerDay: await this.newCardsPerDay(caller) };
+  async getSettings(caller: AuthUser): Promise<{
+    newCardsPerDay: number;
+    newCardsPerDayByPillar: { vocab: number; grammar: number; kanji: number };
+  }> {
+    const u = await this.user.findById(caller.sub, { newCardsPerDay: 1, newCardsPerDayByPillar: 1 }).exec();
+    const vocab = u?.newCardsPerDayByPillar?.vocab ?? u?.newCardsPerDay ?? 20;
+    const grammar = u?.newCardsPerDayByPillar?.grammar ?? 10;
+    const kanji = u?.newCardsPerDayByPillar?.kanji ?? 15;
+    return {
+      newCardsPerDay: vocab,
+      newCardsPerDayByPillar: { vocab, grammar, kanji },
+    };
   }
 
   async updateSettings(
     caller: AuthUser,
-    input: { newCardsPerDay: number },
-  ): Promise<{ newCardsPerDay: number }> {
+    input: { newCardsPerDay?: number; newCardsPerDayByPillar?: { vocab?: number; grammar?: number; kanji?: number } },
+  ): Promise<{
+    newCardsPerDay: number;
+    newCardsPerDayByPillar: { vocab: number; grammar: number; kanji: number };
+  }> {
+    const current = await this.getSettings(caller);
+    const vocab = input.newCardsPerDayByPillar?.vocab ?? input.newCardsPerDay ?? current.newCardsPerDayByPillar.vocab;
+    const grammar = input.newCardsPerDayByPillar?.grammar ?? current.newCardsPerDayByPillar.grammar;
+    const kanji = input.newCardsPerDayByPillar?.kanji ?? current.newCardsPerDayByPillar.kanji;
+    const next = { vocab, grammar, kanji };
     await this.user
-      .updateOne({ _id: caller.sub }, { $set: { newCardsPerDay: input.newCardsPerDay } })
+      .updateOne({ _id: caller.sub }, { $set: { newCardsPerDay: vocab, newCardsPerDayByPillar: next } })
       .exec();
-    return { newCardsPerDay: input.newCardsPerDay };
+    return { newCardsPerDay: vocab, newCardsPerDayByPillar: next };
   }
 
   /**
    * Mastery distribution of the caller's learned cards across every deck
-   * (optionally one deck), grouped by SM-2 interval, for the progress chart.
+   * (optionally one deck and/or one pillar), grouped by SM-2 interval, for the
+   * progress chart. Study sessions are tallied per deck, so a pillar's review
+   * counts come from the decks that hold its card kinds.
    */
   async masteryStats(
     caller: AuthUser,
     deckId?: string,
     range: "week" | "month" | "year" | "all" = "all",
     offset = 0,
+    pillar?: Pillar,
   ): Promise<{
     label: string;
     offset: number;
@@ -599,16 +646,28 @@ export class SrsService {
           .exec()
           .then((ds) => ({ deck: { $in: ds.map((d) => d._id) } }));
     const deckFilter = await deckFilterP;
+    const kindFilter: Record<string, unknown> = pillar ? { kind: { $in: pillarToCardKinds(pillar) } } : {};
+    const cardFilter = { ...deckFilter, ...kindFilter };
 
     // A single deck needs its card ids; "all decks" matches progress by user
-    // alone (index prefix) so no big `$in` list is built.
-    const cardMatch: Record<string, unknown> = deckObjId
-      ? {
-          card: {
-            $in: (await this.card.find(deckFilter, { _id: 1 }).lean().exec()).map((c) => c._id),
-          },
-        }
-      : {};
+    // alone (index prefix) so no big `$in` list is built. A pillar narrows the
+    // learner's own progress ids, not the whole catalogue of that kind.
+    let cardMatch: Record<string, unknown> = {};
+    if (deckObjId) {
+      cardMatch = { card: { $in: (await this.card.find(cardFilter, { _id: 1 }).lean().exec()).map((c) => c._id) } };
+    } else if (pillar) {
+      const mine = await this.progress.find({ user: userId }, { card: 1 }).lean().exec();
+      const ids = await this.card
+        .find({ _id: { $in: mine.map((p) => p.card) }, ...cardFilter }, { _id: 1 })
+        .lean()
+        .exec();
+      cardMatch = { card: { $in: ids.map((c) => c._id) } };
+    }
+    const sessionMatch: Record<string, unknown> = deckObjId
+      ? { deck: deckObjId }
+      : pillar
+        ? { deck: { $in: await this.card.distinct("deck", cardFilter).exec() } }
+        : {};
     const bucketOfField = (field: unknown) => ({
       $dateToString: { format: dayFmt, date: field, timezone },
     });
@@ -666,7 +725,7 @@ export class SrsService {
           },
         ])
         .exec(),
-      this.card.countDocuments(deckFilter).exec(),
+      this.card.countDocuments(cardFilter).exec(),
       bucketKeys.length > 0
         ? this.session
             .find({
@@ -675,16 +734,16 @@ export class SrsService {
                 range === "year"
                   ? { $gte: `${first}-01`, $lte: `${last}-31` }
                   : { $gte: first, $lte: last },
-              ...(deckObjId ? { deck: deckObjId } : {}),
+              ...sessionMatch,
             })
             .lean()
             .exec()
         : Promise.resolve([]),
-      this.newCardsPerDay(caller),
+      this.newCardsPerDay(caller, pillar),
     ]);
 
     const overview =
-      range === "all" ? await this.studyOverview(userId, deckObjId, localDayKey(now, timezone)) : undefined;
+      range === "all" ? await this.studyOverview(userId, sessionMatch, localDayKey(now, timezone)) : undefined;
     for (const ss of sessions) {
       const b = series.get(range === "year" ? ss.day.slice(0, 7) : ss.day);
       if (b) b.reviews += ss.cardsReviewed;
@@ -716,12 +775,12 @@ export class SrsService {
   /** Heatmap of the last 26 weeks + streaks, from the per-day session tallies. */
   private async studyOverview(
     userId: Types.ObjectId,
-    deckId: Types.ObjectId | null,
+    sessionMatch: Record<string, unknown>,
     todayKey: string,
   ): Promise<NonNullable<Awaited<ReturnType<SrsService["masteryStats"]>>["overview"]>> {
     const rows = await this.session
       .aggregate<{ _id: string; n: number }>([
-        { $match: { user: userId, ...(deckId ? { deck: deckId } : {}) } },
+        { $match: { user: userId, ...sessionMatch } },
         { $group: { _id: "$day", n: { $sum: "$cardsReviewed" } } },
       ])
       .exec();

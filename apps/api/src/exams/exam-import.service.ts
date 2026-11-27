@@ -44,6 +44,7 @@ import { listeningMondai, parseListening } from "./import/listening.js";
 import { picturesOfBlock, readLayouts } from "./import/pictures.js";
 import { ExamImageService } from "./exam-image.service.js";
 import { mondaiNumberOf, sheetsOf } from "./import/mondai-table.js";
+import { usualCountOf } from "./jlpt-structure.js";
 import { renderPdfPage } from "../import/parsers/pdf.js";
 import { AI_RETRY_DELAYS_MS, retryRounds } from "./import/retry.js";
 import { applyMarks, enrich, type Junk, type Mark } from "./import/marks.js";
@@ -802,7 +803,12 @@ export class ExamImportService implements OnApplicationBootstrap {
       ? ((await this.drafts.find({ jobId }).select("blockIndex sitting parsed.questions.printedNo").lean().exec()) as unknown as DraftLike[])
       : (rows as unknown as DraftLike[]);
     const filled = fillPrintedNos(all);
+    // A practice book does not follow the paper's counts.
+    const job = await this.jobs.findById(jobId).select("kind").lean().exec();
     for (const r of rows) {
+      const { level, mondai } = r as { level?: string; mondai?: string };
+      const usual = job?.kind === "practice" ? undefined : usualCountOf(level, mondai);
+      if (usual !== undefined) r.expectedCount = usual;
       const qs = (r as unknown as DraftLike).parsed?.questions;
       const f = filled.get(String((r as { _id: unknown })._id));
       if (qs && f) qs.forEach((q, i) => (q.printedNo = f[i]));

@@ -96,6 +96,8 @@ export interface DeckWriteInput {
   title: string;
   summary?: string;
   level?: string;
+  pillar?: "vocab" | "grammar" | "kanji";
+  systemKey?: string;
   category?: string;
   lang?: string;
   /** `DRAFT` | `PUBLISHED` — validated by the DTO's `@IsIn` + the schema. */
@@ -140,6 +142,8 @@ export interface DeckView {
   title: string;
   summary?: string;
   level?: string;
+  pillar?: "vocab" | "grammar" | "kanji";
+  systemKey?: string;
   category?: string;
   lang: string;
   status: string;
@@ -896,6 +900,8 @@ export class FlashcardsService implements OnModuleInit {
       title: doc.title,
       summary: doc.summary,
       level: doc.level,
+      pillar: doc.pillar ?? "vocab",
+      systemKey: doc.systemKey,
       category: doc.category ?? "",
       lang: doc.lang,
       status: doc.status,

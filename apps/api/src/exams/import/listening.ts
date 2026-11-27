@@ -1,3 +1,4 @@
+import { JLPT_STRUCTURE } from "../jlpt-structure.js";
 import { classifyListening, normalizeInstruction, optionCountsOf, type MondaiType } from "../mondai.js";
 import { mondaiNumberOf } from "./mondai-table.js";
 import type { ParsedBlock, ParsedQuestion, ParsedStimulus } from "./structure.js";
@@ -13,53 +14,21 @@ import type { ParsedBlock, ParsedQuestion, ParsedStimulus } from "./structure.js
 
 type ListeningMondai = Extract<MondaiType, `listening-${string}`>;
 
-const T: ListeningMondai = "listening-task";
 const P: ListeningMondai = "listening-point";
-const S: ListeningMondai = "listening-summary";
+const T: ListeningMondai = "listening-task";
 const U: ListeningMondai = "listening-utterance";
-const Q: ListeningMondai = "listening-quick";
-const I: ListeningMondai = "listening-integrated";
 
 /**
- * The official 聴解 layout (jlpt.jp 「問題の構成」): the type of each 問題 number and its
- * usual number of questions. The count only matters for a 問題 that prints nothing
- * (概要理解, 即時応答) — a guide the reviewer can change, as the official table says.
+ * Each level's 聴解 layout, from `JLPT_STRUCTURE`: the type of each 問題 number and its usual
+ * number of questions. The count only matters for a 問題 that prints nothing (概要理解,
+ * 即時応答) — a guide the reviewer can change.
  */
-export const LISTENING_LAYOUT: Record<string, readonly { mondai: ListeningMondai; count: number }[]> = {
-  N1: [
-    { mondai: T, count: 5 },
-    { mondai: P, count: 6 },
-    { mondai: S, count: 5 },
-    { mondai: Q, count: 11 },
-    { mondai: I, count: 3 },
-  ],
-  N2: [
-    { mondai: T, count: 5 },
-    { mondai: P, count: 6 },
-    { mondai: S, count: 5 },
-    { mondai: Q, count: 11 },
-    { mondai: I, count: 3 },
-  ],
-  N3: [
-    { mondai: T, count: 6 },
-    { mondai: P, count: 6 },
-    { mondai: S, count: 3 },
-    { mondai: U, count: 4 },
-    { mondai: Q, count: 9 },
-  ],
-  N4: [
-    { mondai: T, count: 8 },
-    { mondai: P, count: 7 },
-    { mondai: U, count: 5 },
-    { mondai: Q, count: 8 },
-  ],
-  N5: [
-    { mondai: T, count: 7 },
-    { mondai: P, count: 6 },
-    { mondai: U, count: 5 },
-    { mondai: Q, count: 6 },
-  ],
-};
+export const LISTENING_LAYOUT: Record<string, readonly { mondai: ListeningMondai; count: number }[]> = Object.fromEntries(
+  JLPT_STRUCTURE.map((s) => [
+    s.level,
+    s.parts.filter((p) => p.key === "listening").flatMap((p) => p.mondai.map((m) => ({ mondai: m.mondai as ListeningMondai, count: m.count }))),
+  ]),
+);
 
 const layoutOf = (level: string | undefined, no: number | null) =>
   no ? LISTENING_LAYOUT[(level ?? "").trim().toUpperCase()]?.[no - 1] : undefined;
