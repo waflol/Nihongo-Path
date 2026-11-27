@@ -15,7 +15,7 @@
 
 ## Plan Khu Luyện thi JLPT hợp nhất (27/11/2026, đã lưu plan, chưa code)
 
-- Đã chốt và lưu [plans/plan-exam-hub.md](./plans/plan-exam-hub.md) (liên kết chéo `plan-exam-by-source.md`, `ADR-exam-by-source.md`, `plan-three-pillars.md`):
+- Đã chốt và lưu [plans/plan-exam-hub.md](./plans/plan-exam-hub.md) (liên kết chéo `plan-exam-by-source.md`, `ADR-exam-by-source.md`, `plan-three-pillars.md`; ticket `NP-411…414`):
   1. **Hợp nhất `/learn/exam` + `/learn/exams` thành 1 khu Luyện thi JLPT** tại `/learn/exams` (`/learn/exam` redirect sang `/learn/exams?mode=practice`), gắn với **Mức độ muốn thi (`targetLevel`: N5–N1)** đồng bộ giữa `use-exam-level.ts` (`jlpt-exam-level`) và `User.targetLevel` (`GET/PATCH /users/me`).
   2. **Thi thử có tính thời gian (`?mode=mock`):** gồm **Thi theo đề cố định** (giữ nguyên bản in) và **Thi đề xáo trộn** (chỉ lấy từ đề công khai `own | licensed` **cùng đúng 1 cấp `targetLevel` đã chọn**, lắp chuẩn `JLPT_STRUCTURE`, giữ nguyên cụm `stimulus`).
   3. **Luyện tập theo phần (`?mode=practice`):** không giới hạn giờ, chấm ngay từng câu (`POST /exams/attempts/:id/check`), chia **4 kỹ năng (`Từ vựng · Ngữ pháp · Đọc · Nghe`) → các dạng `問題` đúng của cấp đang chọn**, hỗ trợ làm lại câu sai.

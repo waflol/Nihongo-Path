@@ -142,3 +142,12 @@ checked?: string[]             // danh sách qid đã chốt ở chế độ pra
    - Gộp ô trên `/learn`, chuyển hướng `/learn/exam` → `/learn/exams?mode=practice`.
    - Thiết kế lại `exams-console.tsx` (thanh chọn `targetLevel` + 2 tab lớn **Thi thử có tính giờ** / **Luyện tập theo phần**) và màn làm bài luyện từng câu.
    - Kiểm chứng lần lượt: `vitest`, `oxlint`, `tsc`, `eslint` và test trình duyệt desktop + mobile 375 px.
+
+---
+
+## 6. Ticket liên kết
+
+- [NP-411](../issues/NP-411.md) — Mức độ muốn thi (`targetLevel` N5–N1) đồng bộ tài khoản & trình duyệt
+- [NP-412](../issues/NP-412.md) — Bộ trộn đề thi thử từ các đề cùng cấp độ theo cấu trúc JLPT
+- [NP-413](../issues/NP-413.md) — Engine luyện tập theo phần × dạng 問題: chấm từng câu & làm lại câu sai
+- [NP-414](../issues/NP-414.md) — UI Khu Luyện thi JLPT hợp nhất: Thi thử (cố định & xáo trộn) và Luyện tập 4 phần × dạng 問題

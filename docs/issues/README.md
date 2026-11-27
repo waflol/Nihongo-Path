@@ -45,6 +45,10 @@ Mỗi file là một issue (ID `NP-nnn`); nguồn gốc và tiến độ tổng 
 | [NP-407](./NP-407.md) | partial | P4 | Nhập PDF đề JLPT thành bản nháp có người duyệt |
 | [NP-408](./NP-408.md) | wontfix | P4 | Sinh đề JLPT ngẫu nhiên theo khung đề (blueprint) từng level |
 | [NP-409](./NP-409.md) | partial | P4 | UI làm đề JLPT theo phần: bài đọc, câu ★, điểm từng phần |
+| [NP-411](./NP-411.md) | todo | P4 | Mức độ muốn thi (targetLevel N5–N1) đồng bộ tài khoản & trình duyệt |
+| [NP-412](./NP-412.md) | todo | P4 | Bộ trộn đề thi thử từ các đề cùng cấp độ theo cấu trúc JLPT |
+| [NP-413](./NP-413.md) | todo | P4 | Engine luyện tập theo phần × dạng 問題: chấm từng câu & làm lại câu sai |
+| [NP-414](./NP-414.md) | todo | P4 | UI Khu Luyện thi JLPT hợp nhất: Thi thử (cố định & xáo trộn) và Luyện tập 4 phần × dạng 問題 |
 | [NP-501](./NP-501.md) | partial | P5 | Schema + service quota reserve→settle→release, reset theo kỳ/tz (P5-QUOTA-01…05) |
 | [NP-502](./NP-502.md) | partial | P5 | EntitlementGuard/QuotaGuard + chính sách vượt hạn mức (P5-QUOTA-04/06) |
 | [NP-503](./NP-503.md) | done | P5 | Màn cấu hình hạn mức theo gói (P5-ADMIN-04) |

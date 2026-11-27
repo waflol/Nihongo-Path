@@ -1,7 +1,7 @@
 # Danh sách ticket & tiến độ — Nihongo Path
 
 > **Cập nhật:** 27/11/2026. Nguồn: [IMPLEMENTATION_CHECKLIST.md](./IMPLEMENTATION_CHECKLIST.md) (trạng thái từng task),
-> [OPEN_QUESTIONS.md](./OPEN_QUESTIONS.md) (quyết định đang chờ), `git log` đến `5854251`, [HANDOFF.md](./HANDOFF.md).
+> [OPEN_QUESTIONS.md](./OPEN_QUESTIONS.md) (quyết định đang chờ), `git log` đến `bfba124`, [HANDOFF.md](./HANDOFF.md).
 >
 > **Cách đọc trạng thái:** theo quy ước checklist §0.1. `✅` = checklist đã `[x]` có bằng chứng; `🟡` = `[~]` làm dở / chưa kiểm
 > chứng đủ; `⬜` = chưa làm; `⏸` = chờ chủ sản phẩm quyết định; `➕` = đã làm **ngoài** checklist gốc (có commit, chưa có tiêu chí nghiệm thu).
@@ -105,14 +105,18 @@ Plan chi tiết: [plans/plan-fsrs-6.md](./plans/plan-fsrs-6.md). Làm tuần t�
 | NP-115 | FSRS-6 qua `ts-fsrs` trong `@nihongo/shared/srs`, nâng lười thẻ v1/v2, bỏ bản sao trong UI | NP-114 |
 | NP-116 | Tối ưu tham số theo người học (`@open-spaced-repetition/binding`), chỉ áp dụng khi tốt hơn mặc định | NP-115; người dùng đủ ~1.000 lượt ôn |
 
-### P4+ — Ngân hàng đề JLPT & sinh đề ngẫu nhiên (ngoài checklist, lập 19/11)
-Plan chi tiết: [plans/plan-jlpt-question-bank.md](./plans/plan-jlpt-question-bank.md). Checklist: P4-JLPT-05…07 (đã tính trong % ở §1); NP-407 và NP-409 đang dở (§3).
+### P4+ — Đề thi JLPT theo nguồn & Khu Luyện thi hợp nhất (ngoài checklist)
+Plan chi tiết: [plans/plan-exam-by-source.md](./plans/plan-exam-by-source.md) · [plans/plan-exam-hub.md](./plans/plan-exam-hub.md). Checklist: P4-JLPT-05…07 (đã tính trong % ở §1); NP-407 và NP-409 đang dở (§3).
 
 | Ticket | Cụm task | Chặn bởi |
 |---|---|---|
 | NP-407 | Nhập PDF đề → bản nháp `exam_import_drafts` → admin duyệt/xuất bản, chống trùng chéo nguồn | NP-406 ✅ |
 | ~~NP-408~~ | ~~Khung đề theo level + `generateExam`~~ — **không làm** (27/11/2026): bỏ ngân hàng + sinh đề, xem [plan-exam-by-source.md](./plans/plan-exam-by-source.md) và ADR-exam-by-source | — |
 | NP-409 | UI làm đề theo phần (bài đọc, câu ★, điểm từng phần). Đã **bỏ** phần admin phủ ngân hàng / sinh đề thử | NP-407 |
+| NP-411 | Mức độ muốn thi (`targetLevel` N5–N1) đồng bộ tài khoản & trình duyệt ([plan-exam-hub.md](./plans/plan-exam-hub.md)) | — |
+| NP-412 | Bộ trộn đề thi thử từ các đề cùng cấp độ theo cấu trúc JLPT | NP-406 |
+| NP-413 | Engine luyện tập theo phần × dạng 問題: chấm từng câu & làm lại câu sai | NP-407 |
+| NP-414 | UI Khu Luyện thi JLPT hợp nhất: Thi thử (cố định & xáo trộn) và Luyện tập 4 phần × dạng 問題 | NP-411, NP-412, NP-413 |
 
 > NP-406 (GĐ1) xong 19/11 — xem §2.
 
