@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { MiniPopup, MinimizeButton, useMinimizedPopups } from "@/components/progress-popup";
 
 export interface MaziiSyncJob {
   id: string;
@@ -52,6 +53,7 @@ const BASE = "/api/admin/kanji/mazii-sync";
  * this card keeps showing) while the admin moves between pages.
  */
 export function MaziiSyncTracker() {
+  const { isMinimized, setMinimized } = useMinimizedPopups();
   const [job, setJob] = useState<MaziiSyncJob | null>(null);
   const [showLog, setShowLog] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -129,9 +131,23 @@ export function MaziiSyncTracker() {
           ? "Hoàn tất"
           : "Đã hủy";
 
+  const key = `mazii:${job.id}`;
+  if (isMinimized(key)) {
+    return (
+      <MiniPopup
+        title="Cập nhật Hán Việt từ Mazii"
+        glyph={glyph}
+        badge={badge}
+        value={active ? `${pct}%` : subtitle}
+        pct={active ? pct : undefined}
+        onExpand={() => setMinimized(key, false)}
+      />
+    );
+  }
+
   return (
-    <div className="overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--background-1)] shadow-xl" aria-live="polite">
-      <div className="flex items-center gap-3 p-3">
+    <div className="pointer-events-auto overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--background-1)] shadow-xl" aria-live="polite">
+      <div className="flex items-center gap-2 p-3">
         <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-lg font-semibold ${badge}`} aria-hidden="true">
           {glyph}
         </span>
@@ -140,6 +156,7 @@ export function MaziiSyncTracker() {
           <p className="truncate text-xs text-[var(--muted-foreground)]">{subtitle}</p>
         </div>
         {active && <span className="text-lg font-semibold tabular-nums text-[var(--foreground)]">{pct}%</span>}
+        <MinimizeButton onClick={() => setMinimized(key, true)} />
         {!active && (
           <button
             type="button"

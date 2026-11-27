@@ -76,7 +76,8 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         <main className="flex flex-1 flex-col">{children}</main>
         <ClientIpv4Reporter />
         <ServiceWorkerRegister />
-        <div className="fixed bottom-4 right-4 z-50 flex w-80 max-w-[calc(100vw-2rem)] flex-col gap-2">
+        {/* The dock lets clicks through; only the cards / minimized pills catch them. */}
+        <div className="pointer-events-none fixed bottom-4 right-4 z-50 flex w-[22rem] max-w-[calc(100vw-2rem)] flex-col gap-2">
           <ImportJobTracker />
           <ExamImportTracker />
           <MaziiSyncTracker />

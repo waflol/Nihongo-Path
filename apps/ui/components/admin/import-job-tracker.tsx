@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { MiniPopup, MinimizeButton, useMinimizedPopups } from "@/components/progress-popup";
 
 /** A background PDF reading job, as the API reports it. */
 export interface PdfJob {
@@ -75,6 +76,7 @@ function writeSeen(ids: string[]) {
 export function ImportJobTracker() {
   const [jobs, setJobs] = useState<PdfJob[]>([]);
   const [tasks, setTasks] = useState<CheckTask[]>([]);
+  const { isMinimized, setMinimized } = useMinimizedPopups();
   const [signedIn, setSignedIn] = useState(true);
   const notified = useRef<Set<string>>(new Set());
   const [seenIds, setSeenIds] = useState<string[]>(() => readSeen());
@@ -159,22 +161,38 @@ export function ImportJobTracker() {
       {visibleTasks.map((t) => {
         const pct = t.total > 0 ? Math.round((t.done / t.total) * 100) : 0;
         const href = `${window.location.pathname.startsWith("/learn") ? "/learn/import" : "/admin/import"}?task=${t.id}`;
+        const key = `check:${t.id}`;
+        if (isMinimized(key)) {
+          return (
+            <MiniPopup
+              key={t.id}
+              title={t.fileName}
+              glyph={t.status === "error" ? "✕" : t.status === "done" ? "✓" : "検"}
+              value={t.status === "running" ? `${pct}%` : t.status === "done" ? "Hoàn tất" : "Lỗi"}
+              pct={t.status === "running" ? pct : undefined}
+              onExpand={() => setMinimized(key, false)}
+            />
+          );
+        }
         return (
-          <div key={t.id} className="rounded-xl border border-[var(--border)] bg-[var(--background-1)] p-3 text-sm shadow-lg">
+          <div key={t.id} className="pointer-events-auto rounded-xl border border-[var(--border)] bg-[var(--background-1)] p-3 text-sm shadow-lg">
             <div className="flex items-start justify-between gap-2">
               <p className="min-w-0 truncate font-medium text-[var(--foreground)]" title={t.fileName}>
                 {t.fileName}
               </p>
-              {t.status !== "running" && (
-                <button
-                  type="button"
-                  onClick={() => dismiss(t.id)}
-                  aria-label="Đóng"
-                  className="text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
-                >
-                  ✕
-                </button>
-              )}
+              <div className="ml-auto flex shrink-0 items-center gap-1">
+                <MinimizeButton onClick={() => setMinimized(key, true)} />
+                {t.status !== "running" && (
+                  <button
+                    type="button"
+                    onClick={() => dismiss(t.id)}
+                    aria-label="Đóng"
+                    className="text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
             </div>
             {t.status === "running" && (
               <>
@@ -212,26 +230,43 @@ export function ImportJobTracker() {
       {visible.map((j) => {
         const pct = j.total > 0 ? Math.round((j.done / j.total) * 100) : 0;
         const href = `${window.location.pathname.startsWith("/learn") ? "/learn/import" : "/admin/import"}?job=${j.id}`;
+        const key = `pdf:${j.id}`;
+        if (isMinimized(key)) {
+          const reading = j.status === "running" ? pct : j.retry ? Math.round((j.retry.done / j.retry.total) * 100) : undefined;
+          return (
+            <MiniPopup
+              key={j.id}
+              title={j.fileName}
+              glyph={j.status === "error" ? "✕" : reading === undefined ? "✓" : "読"}
+              value={reading !== undefined ? `${reading}%` : j.status === "error" ? "Lỗi" : "Hoàn tất"}
+              pct={reading}
+              onExpand={() => setMinimized(key, false)}
+            />
+          );
+        }
         return (
           <div
             key={j.id}
-            className="rounded-xl border border-[var(--border)] bg-[var(--background-1)] p-3 text-sm shadow-lg"
+            className="pointer-events-auto rounded-xl border border-[var(--border)] bg-[var(--background-1)] p-3 text-sm shadow-lg"
           >
             <div className="flex items-start justify-between gap-2">
               <p className="min-w-0 truncate font-medium text-[var(--foreground)]" title={j.fileName}>
                 {j.fileName}
               </p>
-              {j.status !== "running" && (
-                <button
-                  type="button"
-                  onClick={() => removeJob(j.id)}
-                  aria-label="Xóa"
-                  title="Xóa kết quả đọc này"
-                  className="text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
-                >
-                  ✕
-                </button>
-              )}
+              <div className="ml-auto flex shrink-0 items-center gap-1">
+                <MinimizeButton onClick={() => setMinimized(key, true)} />
+                {j.status !== "running" && (
+                  <button
+                    type="button"
+                    onClick={() => removeJob(j.id)}
+                    aria-label="Xóa"
+                    title="Xóa kết quả đọc này"
+                    className="text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
             </div>
             {j.status === "running" && (
               <>

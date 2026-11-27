@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { MiniPopup, MinimizeButton, useMinimizedPopups } from "@/components/progress-popup";
 
 interface ExamImportJob {
   _id: string;
@@ -59,6 +60,7 @@ function percent(j: ExamImportJob): number {
  */
 export function ExamImportTracker() {
   const [jobs, setJobs] = useState<ExamImportJob[]>([]);
+  const { isMinimized, setMinimized } = useMinimizedPopups();
   const [enabled, setEnabled] = useState(true);
   const [seen, setSeen] = useState<string[]>(() => readSeen());
   const [logFor, setLogFor] = useState<string | null>(null);
@@ -170,9 +172,23 @@ export function ExamImportTracker() {
             : j.numPages > 0
               ? `${j.pagesDone}/${j.numPages} trang`
               : "Đang chuẩn bị…";
+        const key = `exam:${j._id}`;
+        if (isMinimized(key)) {
+          return (
+            <MiniPopup
+              key={j._id}
+              title="Nhập đề JLPT từ PDF"
+              glyph={glyph}
+              badge={badge}
+              value={active ? (j.numPages > 0 ? `${pct}%` : "…") : failed ? "Lỗi" : subtitle}
+              pct={active ? pct : undefined}
+              onExpand={() => setMinimized(key, false)}
+            />
+          );
+        }
         return (
-          <div key={j._id} className="overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--background-1)] shadow-xl">
-            <div className="flex items-center gap-3 p-3">
+          <div key={j._id} className="pointer-events-auto overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--background-1)] shadow-xl">
+            <div className="flex items-center gap-2 p-3">
               <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-lg font-semibold ${badge}`} aria-hidden="true">
                 {glyph}
               </span>
@@ -183,6 +199,7 @@ export function ExamImportTracker() {
                 </p>
               </div>
               {active && <span className="text-lg font-semibold tabular-nums text-[var(--foreground)]">{j.numPages > 0 ? `${pct}%` : "…"}</span>}
+              <MinimizeButton onClick={() => setMinimized(key, true)} />
               {!active && (
                 <button
                   type="button"

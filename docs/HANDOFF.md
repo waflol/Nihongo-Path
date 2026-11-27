@@ -4,6 +4,15 @@
 
 ---
 
+## Popup tiến độ thu nhỏ / phóng to (27/11/2026)
+
+- `components/progress-popup.tsx`: `useMinimizedPopups` (localStorage `progress-popups-minimized`, đồng bộ giữa các tab), `MinimizeButton` (−), `MiniPopup` (viên tròn: ký hiệu + % + vạch tiến độ, bấm để phóng to).
+- Áp cho cả 5 tracker (nhập đề, đọc PDF/kiểm tra file, Mazii, kiểm tra bộ thẻ, tạo ví dụ — thay nút ▲▼ cũ). Nhớ theo từng job, riêng "tạo ví dụ" nhớ chung một khoá.
+- Khung nổi ở `app/layout.tsx`: rộng 22rem, `pointer-events-none` (chỉ thẻ / viên tròn nhận click) — popup mới thêm vào đây phải có `pointer-events-auto`.
+- Đã chạy: tsc (file tracker + layout) sạch, eslint sạch; Chrome headless 1280 + 375 px với API giả, **chỉ popup nhập đề**: thu nhỏ, nhớ sau F5, phóng to, không lỗi console. 4 popup còn lại chưa bấm thử.
+
+---
+
 ## NP-407: hình trong phần 聴解 + bỏ khung "File nghe" ở trang Nhập đề (27/11/2026, chưa commit)
 
 - **Trang Nhập đề** (`exam-import-form.tsx`): bỏ khung "File nghe (聴解)" (tải/gắn theo ObjectId) — file nghe gắn ở màn duyệt, trên từng khối nghe. Route `PUT /api/exam-audio` và API attach vẫn còn (không còn UI dùng).

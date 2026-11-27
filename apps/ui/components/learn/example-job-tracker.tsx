@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useConfirm } from "@/components/learn/use-confirm";
+import { MiniPopup, MinimizeButton, useMinimizedPopups } from "@/components/progress-popup";
 
 interface ExampleJob {
   deckId: string;
@@ -35,7 +36,7 @@ export function ExampleJobTracker() {
   const [jobs, setJobs] = useState<ExampleJob[]>([]);
   const [finished, setFinished] = useState<FinishedJob[]>([]);
   const [signedIn, setSignedIn] = useState(true);
-  const [collapsed, setCollapsed] = useState(false);
+  const { isMinimized, setMinimized } = useMinimizedPopups();
   const { confirm, dialog } = useConfirm();
   const [busyId, setBusyId] = useState<string | null>(null);
   const prev = useRef<Map<string, ExampleJob>>(new Map());
@@ -124,95 +125,84 @@ export function ExampleJobTracker() {
       className="flex flex-col gap-2"
       aria-live="polite"
     >
-      {dialog}
-      {jobs.length > 0 && (
-        <div className="rounded-xl border border-[var(--border)] bg-[var(--background-1)] p-3 text-sm shadow-lg">
+      <div className="pointer-events-auto contents">{dialog}</div>
+      {jobs.length > 0 && isMinimized("examples") && (
+        <MiniPopup title="Đang tạo ví dụ" glyph="✨" value={`${allPct}%`} pct={allPct} onExpand={() => setMinimized("examples", false)} />
+      )}
+      {jobs.length > 0 && !isMinimized("examples") && (
+        <div className="pointer-events-auto rounded-xl border border-[var(--border)] bg-[var(--background-1)] p-3 text-sm shadow-lg">
           <div className="flex items-center justify-between gap-2">
             <p className="font-medium text-[var(--foreground)]">
               ✨ Đang tạo ví dụ{jobs.length > 1 ? ` (${jobs.length} bộ)` : ""}
             </p>
-            <button
-              type="button"
-              onClick={() => setCollapsed((c) => !c)}
-              aria-expanded={!collapsed}
-              aria-label={collapsed ? "Mở rộng" : "Thu gọn"}
-              className="text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
-            >
-              {collapsed ? "▲" : "▼"}
-            </button>
+            <MinimizeButton onClick={() => setMinimized("examples", true)} />
           </div>
-          {collapsed ? (
-            <p className="mt-1 text-xs text-[var(--muted-foreground)]">
-              {done}/{total} ({allPct}%) — chạy nền, bạn có thể sang trang khác
-            </p>
-          ) : (
-            <ul className="mt-2 space-y-3">
-              {jobs.map((j) => {
-                const pct = j.total > 0 ? Math.min(100, Math.round((j.done / j.total) * 100)) : 0;
-                return (
-                  <li key={j.deckId}>
-                    <div className="flex items-baseline justify-between gap-2">
-                      <Link href={hrefOf(j)} className="min-w-0 truncate text-xs font-medium text-[var(--primary)] hover:underline" title={j.title}>
-                        {j.title}
-                      </Link>
-                      <span className="shrink-0 text-xs tabular-nums text-[var(--muted-foreground)]">
-                        {j.done}/{j.total}
-                      </span>
-                    </div>
+          <ul className="mt-2 space-y-3">
+            {jobs.map((j) => {
+              const pct = j.total > 0 ? Math.min(100, Math.round((j.done / j.total) * 100)) : 0;
+              return (
+                <li key={j.deckId}>
+                  <div className="flex items-baseline justify-between gap-2">
+                    <Link href={hrefOf(j)} className="min-w-0 truncate text-xs font-medium text-[var(--primary)] hover:underline" title={j.title}>
+                      {j.title}
+                    </Link>
+                    <span className="shrink-0 text-xs tabular-nums text-[var(--muted-foreground)]">
+                      {j.done}/{j.total}
+                    </span>
+                  </div>
+                  <div
+                    role="progressbar"
+                    aria-valuenow={pct}
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-label={`Tiến trình tạo ví dụ: ${j.title}`}
+                    className="mt-1 h-2 overflow-hidden rounded-full bg-[var(--layer)]"
+                  >
                     <div
-                      role="progressbar"
-                      aria-valuenow={pct}
-                      aria-valuemin={0}
-                      aria-valuemax={100}
-                      aria-label={`Tiến trình tạo ví dụ: ${j.title}`}
-                      className="mt-1 h-2 overflow-hidden rounded-full bg-[var(--layer)]"
-                    >
-                      <div
-                        className={`h-full transition-all ${j.paused ? "bg-[var(--muted-foreground)]" : "bg-[var(--primary)]"}`}
-                        style={{ width: `${Math.max(pct, 3)}%` }}
-                      />
+                      className={`h-full transition-all ${j.paused ? "bg-[var(--muted-foreground)]" : "bg-[var(--primary)]"}`}
+                      style={{ width: `${Math.max(pct, 3)}%` }}
+                    />
+                  </div>
+                  <div className="mt-1 flex items-center justify-between gap-2">
+                    <p className="text-xs text-[var(--muted-foreground)]">
+                      {j.paused ? "Đã tạm dừng" : `${pct}% — chạy nền, bạn có thể sang trang khác`}
+                    </p>
+                    <div className="flex shrink-0 gap-1">
+                      <Link
+                        href={`${hrefOf(j)}/log?field=examples`}
+                        className="rounded-md border border-[var(--border)] px-2 py-0.5 text-xs font-medium text-[var(--primary)] hover:bg-[var(--layer-hover)]"
+                      >
+                        Log
+                      </Link>
+                      <button
+                        type="button"
+                        disabled={busyId === j.deckId}
+                        onClick={() => void control(j.deckId, j.paused ? "resume" : "pause")}
+                        className="rounded-md border border-[var(--border)] px-2 py-0.5 text-xs font-medium text-[var(--foreground)] hover:bg-[var(--layer-hover)] disabled:opacity-60"
+                      >
+                        {j.paused ? "Tiếp tục" : "Tạm dừng"}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={busyId === j.deckId}
+                        onClick={() => void stop(j)}
+                        className="rounded-md border border-[var(--border)] px-2 py-0.5 text-xs font-medium text-red-500 hover:bg-[var(--layer-hover)] disabled:opacity-60"
+                      >
+                        Hủy
+                      </button>
                     </div>
-                    <div className="mt-1 flex items-center justify-between gap-2">
-                      <p className="text-xs text-[var(--muted-foreground)]">
-                        {j.paused ? "Đã tạm dừng" : `${pct}% — chạy nền, bạn có thể sang trang khác`}
-                      </p>
-                      <div className="flex shrink-0 gap-1">
-                        <Link
-                          href={`${hrefOf(j)}/log?field=examples`}
-                          className="rounded-md border border-[var(--border)] px-2 py-0.5 text-xs font-medium text-[var(--primary)] hover:bg-[var(--layer-hover)]"
-                        >
-                          Log
-                        </Link>
-                        <button
-                          type="button"
-                          disabled={busyId === j.deckId}
-                          onClick={() => void control(j.deckId, j.paused ? "resume" : "pause")}
-                          className="rounded-md border border-[var(--border)] px-2 py-0.5 text-xs font-medium text-[var(--foreground)] hover:bg-[var(--layer-hover)] disabled:opacity-60"
-                        >
-                          {j.paused ? "Tiếp tục" : "Tạm dừng"}
-                        </button>
-                        <button
-                          type="button"
-                          disabled={busyId === j.deckId}
-                          onClick={() => void stop(j)}
-                          className="rounded-md border border-[var(--border)] px-2 py-0.5 text-xs font-medium text-red-500 hover:bg-[var(--layer-hover)] disabled:opacity-60"
-                        >
-                          Hủy
-                        </button>
-                      </div>
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
         </div>
       )}
 
       {finished.map((f) => (
         <div
           key={f.deckId}
-          className="flex items-start justify-between gap-2 rounded-xl border border-[var(--border)] bg-[var(--background-1)] p-3 text-sm shadow-lg"
+          className="pointer-events-auto flex items-start justify-between gap-2 rounded-xl border border-[var(--border)] bg-[var(--background-1)] p-3 text-sm shadow-lg"
         >
           <p className="min-w-0 text-xs text-[var(--muted-foreground)]">
             Đã tạo xong ví dụ cho <strong className="text-[var(--foreground)]">{f.title}</strong>.{" "}

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { MiniPopup, MinimizeButton, useMinimizedPopups } from "@/components/progress-popup";
 
 interface RecheckJob {
   deckId: string;
@@ -38,6 +39,7 @@ const POLL_MS = 2000;
  * so the run keeps showing while the user moves between pages.
  */
 export function RecheckTracker() {
+  const { isMinimized, setMinimized } = useMinimizedPopups();
   const [jobs, setJobs] = useState<RecheckJob[]>([]);
   const [hidden, setHidden] = useState<string[]>([]);
   const [openLog, setOpenLog] = useState<string[]>([]);
@@ -131,9 +133,23 @@ export function RecheckTracker() {
         };
         const recent = [...(j.recent ?? [])].reverse();
         const recentFlags = [...(j.recentFlags ?? [])].filter((f) => j.field === "readingBack" || f.field === j.field).reverse();
+        const key = `recheck:${j.deckId}`;
+        if (isMinimized(key)) {
+          return (
+            <MiniPopup
+              key={j.deckId}
+              title={info.title}
+              glyph={glyph}
+              badge={badge}
+              value={active ? (j.total > 0 ? `${pct}%` : "…") : failed ? "Lỗi" : "Hoàn tất"}
+              pct={active ? pct : undefined}
+              onExpand={() => setMinimized(key, false)}
+            />
+          );
+        }
         return (
-          <div key={j.deckId} className="overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--background-1)] shadow-xl">
-            <div className="flex items-center gap-3 p-3">
+          <div key={j.deckId} className="pointer-events-auto overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--background-1)] shadow-xl">
+            <div className="flex items-center gap-2 p-3">
               <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-lg font-semibold ${badge}`} aria-hidden="true">
                 {glyph}
               </span>
@@ -144,6 +160,7 @@ export function RecheckTracker() {
                 </p>
               </div>
               {active && <span className="text-lg font-semibold tabular-nums text-[var(--foreground)]">{j.total > 0 ? `${pct}%` : "…"}</span>}
+              <MinimizeButton onClick={() => setMinimized(key, true)} />
               {!active && (
                 <button type="button" onClick={close} aria-label="Đóng" className="rounded-md px-1.5 py-0.5 text-[var(--muted-foreground)] hover:bg-[var(--layer)] hover:text-[var(--foreground)]">
                   ✕
