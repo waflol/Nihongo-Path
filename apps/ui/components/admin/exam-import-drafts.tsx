@@ -56,8 +56,12 @@ export function ExamImportDrafts({ jobId }: { jobId: string }) {
   const [selected, setSelected] = useState<{ id: string; index: number }>({ id: "", index: 0 });
   /** Small screens show the block list as a drawer. */
   const [listOpen, setListOpen] = useState(false);
-  /** The source PDF page is shown by default; the reviewer's choice holds across blocks. */
-  const [showPage, setShowPage] = useState(true);
+  /**
+   * The source PDF page is shown by default, except on a phone, where an open page hides the desk's
+   * header (globals.css) and with it the way out. The reviewer's choice holds across blocks.
+   * Read once: the blocks only render after a client-side fetch, so the server's value never shows.
+   */
+  const [showPage, setShowPage] = useState(() => typeof window === "undefined" || !window.matchMedia("(max-width: 639px)").matches);
   const editing = useRef(false);
   const rail = useRef<HTMLElement>(null);
 

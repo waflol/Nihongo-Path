@@ -68,7 +68,7 @@ const NAV: NavItem[] = [
   {
     href: "/admin/exams",
     label: "Đề thi",
-    desc: "Soạn đề, ngân hàng câu hỏi 問題",
+    desc: "Đề thi từ file PDF và đề soạn tay",
     icon: (
       <svg {...iconProps}>
         <path d="M9 5h6a1 1 0 0 1 1 1v2h1a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h1V6a1 1 0 0 1 1-1zM9 5v2h6V5M12 12v4m0 0-2-2m2 2 2-2" />
