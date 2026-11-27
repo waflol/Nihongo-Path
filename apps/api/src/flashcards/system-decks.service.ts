@@ -13,8 +13,10 @@ const LEVELS = ["N5", "N4", "N3", "N2", "N1"] as const;
  * - `Ngữ pháp N5`..`Ngữ pháp N1` (`systemKey: "grammar:N5"`..`"grammar:N1"`, `pillar: "grammar"`)
  * - `Kanji N5`..`Kanji N1` (`systemKey: "kanji:N5"`..`"kanji:N1"`, `pillar: "kanji"`)
  *
- * Updating a card preserves its existing `_id` (matched by `(deck, dedupeKey)`)
- * so learner `UserCardProgress` is never lost.
+ * Updating a card preserves its existing `_id` so learner `UserCardProgress` is
+ * never lost. Cards are matched by the content entry they wrap (`kanji` /
+ * `grammar`), not by `dedupeKey`: the startup re-key in `FlashcardsService`
+ * rewrites that key.
  */
 @Injectable()
 export class SystemDecksService implements OnModuleInit {
@@ -79,6 +81,30 @@ export class SystemDecksService implements OnModuleInit {
     return deck._id;
   }
 
+  /**
+   * Where each entry's card upsert should land: the oldest card the deck already
+   * has for it, else a new card keyed `<field>:<entryId>`.
+   */
+  private async cardMatcher(deckId: Types.ObjectId, field: "grammar" | "kanji") {
+    const cards = await this.cardModel
+      .find({ deck: deckId }, { [field]: 1 })
+      .sort({ _id: 1 })
+      .lean();
+    const existing = new Map<string, Types.ObjectId>();
+    for (const c of cards) {
+      const entry = c[field] ? String(c[field]) : "";
+      if (entry && !existing.has(entry)) existing.set(entry, c._id);
+    }
+    return (entryId: unknown) => {
+      const dedupeKey = `${field}:${String(entryId)}`;
+      const _id = existing.get(String(entryId));
+      return {
+        filter: _id ? { _id } : { deck: deckId, dedupeKey },
+        insertKey: { dedupeKey },
+      };
+    };
+  }
+
   async syncGrammarDecks(): Promise<number> {
     let total = 0;
     for (const level of LEVELS) {
@@ -98,8 +124,9 @@ export class SystemDecksService implements OnModuleInit {
 
       if (points.length === 0) continue;
 
+      const match = await this.cardMatcher(deckId, "grammar");
       const ops = points.map((gp, idx) => {
-        const dedupeKey = `grammar:${String(gp._id)}`;
+        const { filter, insertKey } = match(gp._id);
         const meaning = (gp as { summary?: string; meaning?: string }).summary
           || (gp as { meaning?: string }).meaning
           || gp.label;
@@ -108,11 +135,11 @@ export class SystemDecksService implements OnModuleInit {
           : undefined;
         return {
           updateOne: {
-            filter: { deck: deckId, dedupeKey },
+            filter,
             update: {
               $setOnInsert: {
                 deck: deckId,
-                dedupeKey,
+                ...insertKey,
                 kind: "GRAMMAR" as const,
                 origin: "import" as const,
               },
@@ -155,8 +182,9 @@ export class SystemDecksService implements OnModuleInit {
 
       if (kanjis.length === 0) continue;
 
+      const match = await this.cardMatcher(deckId, "kanji");
       const ops = kanjis.map((k, idx) => {
-        const dedupeKey = `kanji:${String(k._id)}`;
+        const { filter, insertKey } = match(k._id);
         const meanings = Array.isArray(k.meanings) && k.meanings.length > 0 ? k.meanings.join(", ") : "";
         const backParts = [k.hanViet ? `[${k.hanViet}]` : "", meanings].filter(Boolean);
         const readingParts = [
@@ -165,11 +193,11 @@ export class SystemDecksService implements OnModuleInit {
         ];
         return {
           updateOne: {
-            filter: { deck: deckId, dedupeKey },
+            filter,
             update: {
               $setOnInsert: {
                 deck: deckId,
-                dedupeKey,
+                ...insertKey,
                 kind: "KANJI" as const,
                 origin: "import" as const,
               },
