@@ -680,7 +680,7 @@ function StudySessionInner({ mode, kind, grammarFilter }: { mode: "learn" | "rev
   function restartWeak() {
     if (!queue) return;
     if (weakCards.length === 0) {
-      setConfirmReset(true);
+      if (isRealDeck(deck)) setConfirmReset(true);
       return;
     }
     const picked = weakCards.map((c) => ({
@@ -792,7 +792,7 @@ function StudySessionInner({ mode, kind, grammarFilter }: { mode: "learn" | "rev
             setFlipped(false);
           }}
           onReset={isRealDeck(deck) ? () => setConfirmReset(true) : undefined}
-          onRestart={restartWeak}
+          onRestart={weakCards.length || isRealDeck(deck) ? restartWeak : undefined}
           restartLabel={weakCards.length === 0 ? "Đặt lại" : "Học lại phiên này"}
         />
       )}
@@ -818,15 +818,15 @@ function StudySessionInner({ mode, kind, grammarFilter }: { mode: "learn" | "rev
             <>
               Không có từ nào đến hạn ôn tập{deck && deck._id !== ALL_DECKS._id ? " trong bộ này" : ""}.
               {queue.nextDueDay ? ` Lần ôn tiếp theo: ${queue.nextDueDay}.` : ""} Học thêm từ mới tại{" "}
-              <Link href={deck && deck._id !== ALL_DECKS._id ? `/learn/study?deck=${deck._id}` : "/learn/decks"} className="font-medium text-[var(--primary)] hover:underline">
-                {deck && deck._id !== ALL_DECKS._id ? "trang học từ mới" : "danh sách bộ thẻ"}
+              <Link href={deck?.family ? `/learn/kanji/study?family=${encodeURIComponent(deck.family)}` : deck && deck._id !== ALL_DECKS._id ? `/learn/study?deck=${deck._id}` : "/learn/decks"} className="font-medium text-[var(--primary)] hover:underline">
+                {deck?.family ? "trang học Kanji mới" : deck && deck._id !== ALL_DECKS._id ? "trang học từ mới" : "danh sách bộ thẻ"}
               </Link>
               .
             </>
           ) : (
             <>
               {kind === "GRAMMAR" ? "Hôm nay bạn đã học đủ số mẫu mới" : `Hôm nay bạn đã học đủ số từ mới (${queue.newToday ?? 0}/${queue.newPerDay ?? 0})`} hoặc bộ này không còn thẻ mới. Ôn lại tại{" "}
-              <Link href={`/learn/review${deck ? `?deck=${deck._id}` : ""}`} className="font-medium text-[var(--primary)] hover:underline">
+              <Link href={deck?.family ? `/learn/kanji/review?family=${encodeURIComponent(deck.family)}` : `/learn/review${deck ? `?deck=${deck._id}` : ""}`} className="font-medium text-[var(--primary)] hover:underline">
                 {kind === "GRAMMAR" ? "Ngữ pháp đã lưu" : "Ôn tập SRS"}
               </Link>
               .
@@ -909,18 +909,20 @@ function StudySessionInner({ mode, kind, grammarFilter }: { mode: "learn" | "rev
                   <path d="M16 3h5v5M4 20 21 3M21 16v5h-5M15 15l6 6M4 4l5 5" />
                 </svg>
               </button>
-              <button
-                type="button"
-                onClick={() => setConfirmReset(true)}
-                disabled={resetting}
-                title="Đặt lại tiến độ học của bộ thẻ này (thẻ vẫn giữ nguyên)"
-                aria-label="Đặt lại"
-                className={`${toolbarBtn(false)} disabled:cursor-not-allowed disabled:opacity-60`}
-              >
-                <svg aria-hidden="true" className="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5" />
-                </svg>
-              </button>
+              {isRealDeck(deck) && (
+                <button
+                  type="button"
+                  onClick={() => setConfirmReset(true)}
+                  disabled={resetting}
+                  title="Đặt lại tiến độ học của bộ thẻ này (thẻ vẫn giữ nguyên)"
+                  aria-label="Đặt lại"
+                  className={`${toolbarBtn(false)} disabled:cursor-not-allowed disabled:opacity-60`}
+                >
+                  <svg aria-hidden="true" className="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5" />
+                  </svg>
+                </button>
+              )}
               <button
                 type="button"
                 onClick={toggleAutoSpeak}

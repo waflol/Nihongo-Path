@@ -24,6 +24,7 @@ import { Vocabulary } from "./schemas/vocabulary.schema.js";
 import { Kanji, type KanjiDocument, type RelatedWord } from "./schemas/kanji.schema.js";
 import type { KanjiBulkDto, KanjiDto, KanjiUpdateDto } from "./dto/kanji.dto.js";
 import type { PageResult } from "./content.service.js";
+import { familyStudyOrder, kanjiFamilies } from "./kanji-families.js";
 
 export interface KanjiListQuery {
   page?: number;
@@ -361,6 +362,25 @@ export class KanjiService implements OnModuleInit {
         };
       })
       .filter((x) => order.includes(x.level) || x.total > 0);
+  }
+
+  /** The families with each member's level and Hán Việt; level "" = not published here. */
+  async families() {
+    const families = kanjiFamilies();
+    const docs = await this.model
+      .find({ status: "PUBLISHED", char: { $in: familyStudyOrder("all") } }, { char: 1, level: 1, hanViet: 1 })
+      .lean()
+      .exec();
+    const byChar = new Map(docs.map((d) => [d.char, d]));
+    return families.map((f) => ({
+      head: f.head,
+      hanViet: f.hanViet,
+      members: f.chars.map((char) => ({
+        char,
+        level: byChar.get(char)?.level ?? "",
+        hanViet: byChar.get(char)?.hanViet ?? "",
+      })),
+    }));
   }
 
   /** On/kun readings (hiragana-able) of up to 60 distinct characters: char → { on, kun }. */

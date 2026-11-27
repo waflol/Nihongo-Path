@@ -44,6 +44,14 @@ export class KanjiController {
     return this.kanji.levels();
   }
 
+  // Before `kanji/:char`.
+  @Get("kanji/families")
+  @IsPublic()
+  @ApiOperation({ summary: "Kanji families (shared component), in A–Z Hán Việt order" })
+  families() {
+    return this.kanji.families();
+  }
+
   // Before `kanji/:char`. On/kun readings of the given characters, to split a word's furigana per kanji.
   @Get("kanji/readings")
   @IsPublic()

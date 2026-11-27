@@ -47,6 +47,7 @@ const TABS: Record<PillarId, TabDef[]> = {
   ],
   kanji: [
     { label: "Danh mục", href: "/learn/kanji", exact: true },
+    { label: "Gia đình", href: "/learn/kanji/families" },
     { label: "Học mới", href: "/learn/kanji/study" },
     { label: "Ôn tập", href: "/learn/kanji/review" },
     { label: "Bài tập", href: "/learn/kanji/practice" },
