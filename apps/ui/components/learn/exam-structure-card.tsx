@@ -21,7 +21,7 @@ export function ExamStructureCard({ levels }: { levels: LevelStructure[] }) {
       className="flex flex-wrap items-center gap-x-4 gap-y-2.5 rounded-2xl border border-[var(--border)] bg-[var(--background-1)] p-3.5"
     >
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-        <h2 className="text-sm font-semibold text-[var(--foreground)]">Cấu trúc đề thi</h2>
+        <h2 className="text-sm font-semibold text-[var(--foreground)]">Cấp muốn thi</h2>
         <div className="[&>div]:mt-0 [&>div]:gap-1.5 [&_button]:px-2.5">
           <LevelSelect value={current.level} onChange={pick} />
         </div>
@@ -39,7 +39,7 @@ export function ExamStructureCard({ levels }: { levels: LevelStructure[] }) {
         ))}
       </ul>
       <Link href={`/learn/exams/structure?level=${current.level}`} className="text-xs font-medium text-[var(--primary)] hover:underline">
-        Chi tiết {current.level} →
+        Cấu trúc đề {current.level} →
       </Link>
     </section>
   );

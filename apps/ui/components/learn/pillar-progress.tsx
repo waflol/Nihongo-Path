@@ -3,8 +3,8 @@ import { ReviewChart } from "@/components/learn/review-chart";
 import type { PillarId } from "@/components/learn/pillar-nav";
 
 /**
- * Progress + activity charts of one pillar, on top of its landing page. Same
- * pairing as /learn: below lg the activity chart sits inside the progress card.
+ * Progress + activity charts of one pillar, on top of its landing page. Below lg
+ * the activity chart sits inside the progress card.
  */
 export function PillarProgress({ pillar, className = "" }: { pillar: PillarId; className?: string }) {
   return (

@@ -4,6 +4,13 @@
 
 ---
 
+## /learn: bỏ khối tiến độ, "Cấp muốn thi" lên đầu (27/11/2026)
+
+- Bỏ biểu đồ cột, khối "Tiến độ ghi nhớ", nút "Ôn N từ hôm nay", nút "Chi tiết" và thanh "x/20 từ mới" dưới lời chào (chỉ còn chuỗi ngày) khỏi `/learn` (xoá `learn-sidebar.tsx`, `due-button.tsx`). Trang từng phần (vocab / grammar / kanji) giữ nguyên đồ thị. Chế độ `dense` của `ProgressPanel` không còn nơi dùng; `/learn` không còn chỗ đặt giới hạn mới/ngày chung.
+- Thẻ cấu trúc đề (đổi tiêu đề thành "Cấp muốn thi") đứng ngay dưới lời chào. Cấp chọn vẫn chỉ lưu localStorage; `targetLevel` trong tài khoản (NP-411) chưa làm.
+
+---
+
 ## Trang bộ thẻ Kanji: Bảng · Nhóm 20 chữ · Gia đình (27/11/2026)
 
 - `/learn/decks/[id]` và `/admin/decks/[id]`: bộ Kanji bỏ chế độ "Thẻ", còn 3 chế độ (mặc định Bảng, nhớ ở localStorage `deck-view-kanji`); bộ từ vựng / ngữ pháp vẫn Thẻ|Bảng. Link `?card=` luôn mở dạng Bảng.
