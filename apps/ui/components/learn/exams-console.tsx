@@ -107,12 +107,20 @@ export function ExamsConsole() {
         <h1 className="text-2xl font-semibold tracking-tight text-[var(--foreground)]">
           Đề thi
         </h1>
-        <Link
-          href="/learn/exam"
-          className="rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs font-medium text-[var(--foreground)] hover:bg-[var(--layer-hover)]"
-        >
-          Bài luyện nhanh
-        </Link>
+        <div className="flex flex-wrap gap-2">
+          <Link
+            href="/learn/exams/structure"
+            className="rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs font-medium text-[var(--foreground)] hover:bg-[var(--layer-hover)]"
+          >
+            Cấu trúc đề thi
+          </Link>
+          <Link
+            href="/learn/exam"
+            className="rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs font-medium text-[var(--foreground)] hover:bg-[var(--layer-hover)]"
+          >
+            Bài luyện nhanh
+          </Link>
+        </div>
       </div>
       <p className="mt-1 text-sm text-[var(--muted-foreground)]">
         Làm đề có thời gian, xáo câu hỏi, chấm điểm và giải thích — điểm được

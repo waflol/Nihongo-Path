@@ -4,6 +4,19 @@
 
 ---
 
+## Trang "Cấu trúc đề thi JLPT" N5–N1 (27/11/2026)
+
+> Commit riêng theo yêu cầu, nhưng **phụ thuộc phần 聴解 chưa commit**: các dạng `listening-*` trong `mondai.ts` và `import/listening.ts` (`LISTENING_LAYOUT`, spec import). Chỉ biên dịch / chạy test được khi phần nghe được commit theo.
+
+- **Dữ liệu (một nguồn):** `apps/api/src/exams/jlpt-structure.ts` → `JLPT_STRUCTURE` (N5…N1): phần thi (`language-reading` N1/N2, `language` + `grammar-reading` N3–N5, `listening`) với `titleJa/titleVi/timeMin`; mỗi phần các 大問 theo thứ tự in (`no` đánh lại từ 1 mỗi phần), `nameJa` (`MONDAI_NAME_JA`), `count` (小問数 目安), `options`, `section`; tổng phút/câu. Nguồn + ngày truy cập ghi trong comment đầu file.
+- **Số liệu:** giờ theo jlpt.jp `testsections.html` (N1 110+55, N2 105+50, N3 30+70+40, N4 25+55+35, N5 20+40+30); số câu theo bảng Guidebook Executive Summary (`guidebook_s_e.pdf`), 聴解 N1 theo thông báo đổi từ 12/2022 (5/6/5/11/3). jlpt.jp đang **bảo trì** lúc làm (cả web.archive.org bị chặn) → đọc qua bản sao của công cụ tìm kiếm; 用法, 長文, 統合理解, 主張理解 suy từ dòng tổng phụ của bảng — **cần đối chiếu lại** với `jlpt.jp/guideline/pdf/n1.pdf … n5.pdf` khi site mở.
+- **Lệch cần xem:** `import/listening.ts` `LISTENING_LAYOUT` để N2 即時応答 11 / 統合理解 3; bảng chính thức ghi **12 / 4** (thông báo 2022 chỉ đổi N1). Spec mới chỉ so **dạng** với `LISTENING_LAYOUT`, không so số câu.
+- **API:** `GET /exams/structure` (mọi người đã đăng nhập) trong `exams.controller.ts`.
+- **UI:** `/learn/exams/structure` (`app/learn/exams/structure/{page,gate}.tsx` — gate đọc API phía máy chủ; `components/learn/exam-structure.tsx`: tab N5…N1, tổng giờ/câu, mỗi phần một bảng 問題 / dạng (JP + nhãn Việt) / số câu / số phương án, nhóm 文字・語彙 / 文法 / 読解 trong phần gộp). `?level=N3` mở thẳng một cấp. Link từ `/learn/exams` ("Cấu trúc đề thi") và `/admin/exams` ("Cấu trúc đề N5–N1").
+- Test: `src/exams/jlpt-structure.spec.ts` (thứ tự khớp `OFFICIAL_MONDAI` + dạng nghe khớp `LISTENING_LAYOUT`, tổng phụ khớp bảng chính thức, giờ); watcher tsc 0 lỗi, route đã map; oxlint sạch (2 cảnh báo cũ ở `exams.controller.ts`). Chưa mở trang trên trình duyệt.
+
+---
+
 ## Bỏ "Góp ý & báo lỗi" (báo lỗi thẻ) — dùng Hộp thư phản hồi (26/11/2026)
 
 User yêu cầu bỏ vì đã có Hộp thư phản hồi. Đã xoá: trang `/admin/reports` + `card-reports-console.tsx` + mục menu trong `admin-shell.tsx`; nút cờ "Báo lỗi thẻ" + `card-report-dialog.tsx` trong phiên ôn (`study-session.tsx`). Banner `?card=` ở `deck-cards-manager.tsx` đổi chữ trung tính. **Giữ nguyên**: API card-report backend + dữ liệu cũ (không còn UI gọi, có thể dọn sau); câu chữ "báo lỗi thẻ" trong `/privacy`, `/terms`, `legal-contact.tsx` chưa sửa. `.next/types/validator.ts` cũ còn trỏ `/admin/reports` → tsc báo lỗi đến khi build/dev lại.

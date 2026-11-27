@@ -39,6 +39,7 @@ import {
 import { EXAM_STATUSES, type ExamStatus } from "./schemas/exam.schema.js";
 import { ExamsService } from "./exams.service.js";
 import { StimuliService } from "./stimuli.service.js";
+import { JLPT_STRUCTURE } from "./jlpt-structure.js";
 import { MONDAI_TYPES, SECTION_KEYS, type MondaiType, type SectionKey } from "./mondai.js";
 import { STIMULUS_KINDS, type StimulusKind } from "./schemas/stimulus.schema.js";
 import { QUESTION_RIGHTS, type QuestionRights } from "../flashcards/schemas/exercise-question.schema.js";
@@ -208,6 +209,12 @@ export class ExamsController {
   @ApiOperation({ summary: "Published exams I can take (?level, ?examType, ?year)" })
   listExams(@Query() query: ExamsQuery) {
     return this.exams.listExams(query);
+  }
+
+  @Get("structure")
+  @ApiOperation({ summary: "The JLPT paper per level N5…N1: timed parts, 大問 in order, usual question counts" })
+  structure() {
+    return JLPT_STRUCTURE;
   }
 
   @Post(":id/start")
