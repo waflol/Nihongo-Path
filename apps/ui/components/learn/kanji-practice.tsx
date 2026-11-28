@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { matchesHanViet } from "@/lib/han-viet";
 
 type KanjiItem = {
   _id: string;
@@ -83,12 +84,12 @@ export function KanjiPractice() {
   const readingOf = (k?: KanjiItem) => {
     if (!k) return "";
     const parts = [...(k.onyomi?.slice(0, 2) ?? []), ...(k.kunyomi?.slice(0, 2) ?? [])];
-    return parts.join(" · ") || k.hanViet || k.char;
+    return parts.join(" · ") || k.hanViet?.toLocaleUpperCase("vi") || k.char;
   };
   const meaningOf = (k?: KanjiItem) => {
     if (!k) return "";
     const m = k.meanings?.slice(0, 2).join(", ") ?? "";
-    return [k.hanViet ? `[${k.hanViet}]` : "", m].filter(Boolean).join(" — ") || k.char;
+    return [k.hanViet?.toLocaleUpperCase("vi"), m].filter(Boolean).join(" — ") || k.char;
   };
 
   const prompt =
@@ -102,7 +103,7 @@ export function KanjiPractice() {
       : mode === "char"
         ? current?.char ?? ""
         : mode === "type"
-          ? (current?.hanViet || current?.meanings?.[0] || "")
+          ? (current?.hanViet || current?.meanings?.[0] || "").toLocaleUpperCase("vi")
           : meaningOf(current);
 
   const options = useMemo(() => {
@@ -114,10 +115,13 @@ export function KanjiPractice() {
     return shuffle([correct, ...distractors], index + 11);
   }, [current, items, index, mode, correct]);
 
+  const isRight = (option: string) =>
+    mode === "type" ? matchesHanViet(option, correct) : option === correct;
+
   function answer(option: string) {
     if (picked) return;
     setPicked(option);
-    const ok = option.trim().toLowerCase() === correct.trim().toLowerCase();
+    const ok = isRight(option);
     setScore((s) => ({ right: s.right + (ok ? 1 : 0), wrong: s.wrong + (ok ? 0 : 1) }));
   }
 
@@ -217,7 +221,7 @@ export function KanjiPractice() {
                 value={typed}
                 onChange={(e) => setTyped(e.target.value)}
                 placeholder="Nhập âm Hán Việt..."
-                className="flex-1 rounded-xl border border-[var(--border)] bg-[var(--background)] px-4 py-3 text-sm"
+                className="flex-1 rounded-xl border border-[var(--border)] bg-[var(--background)] px-4 py-3 text-sm uppercase placeholder:normal-case"
                 disabled={!!picked}
               />
               <button
@@ -254,7 +258,7 @@ export function KanjiPractice() {
           {picked && (
             <div className="mt-6 flex items-center justify-between gap-3">
               <p className="text-sm font-medium">
-                {picked.trim().toLowerCase() === correct.trim().toLowerCase() ? "✓ Chính xác" : `Đáp án: ${correct}`}
+                {isRight(picked) ? "✓ Chính xác" : `Đáp án: ${correct}`}
               </p>
               <button type="button" onClick={next} className="rounded-xl bg-[var(--primary)] px-5 py-3 text-sm font-semibold text-white">
                 Câu tiếp theo →

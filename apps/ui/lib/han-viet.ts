@@ -44,3 +44,26 @@ export function hanViet(text: string): string {
   }
   return out.join(" ");
 }
+
+/** Comparison key of one reading: case, Unicode form and oa/oe/uy tone placement don't matter. */
+function readingKey(input: string): string {
+  return input
+    .normalize("NFC")
+    .toLocaleLowerCase("vi")
+    .trim()
+    .replace(/\s+/g, " ")
+    .replace(/o([àáảãạ])|o([èéẻẽẹ])|u([ỳýỷỹỵ])/g, (m) => {
+      const [first, second] = m.normalize("NFD");
+      const tone = m.normalize("NFD").slice(2);
+      return `${first}${tone}${second}`.normalize("NFC");
+    });
+}
+
+/**
+ * Whether a typed answer matches a kanji's Hán Việt field: any one of its
+ * "/"-separated readings (or the whole field) is accepted. Diacritics count.
+ */
+export function matchesHanViet(typed: string, field: string): boolean {
+  const key = readingKey(typed);
+  return key !== "" && [field, ...field.split(/[/,;|·、]+/)].some((r) => readingKey(r) === key);
+}
