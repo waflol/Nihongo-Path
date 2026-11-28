@@ -4,10 +4,39 @@
 
 ---
 
+## Khu Luyện thi JLPT hợp nhất — NP-411…414 (27/11/2026, **chưa commit**)
+
+Theo [plans/plan-exam-hub.md](./plans/plan-exam-hub.md). Working tree còn **cả thay đổi chưa commit của các phiên trước** (khung Kanji theo mức nhớ, bố cục `/learn`, Hán Việt in hoa) — `app/learn/page.tsx` và file này bị cả hai phía sửa.
+
+- **NP-411:** `User.targetLevel`, `PATCH /users/me` + `PATCH /api/account`, khung chọn ở `/account`, `use-exam-level.ts` (tài khoản thắng localStorage; chọn trong tab thì lưu cả hai). Xoá tài khoản giờ xoá thêm `exam_attempts` và đề sinh riêng.
+- **NP-412:** `exams/mixer.ts` (thuần) + `exam-hub.service.ts`: `GET /exams/mix-availability`, `POST /exams/mix/start`. Chỉ lấy đề công khai cùng cấp, không lấy sách luyện tập; chỉ bắt đầu khi đủ câu mọi 問題 của phần chọn (cụm bài đọc được dư tối đa 2 câu); lượt đang dở cùng cấp + phần thì làm tiếp.
+- **NP-413:** sách luyện tập xuất bản được (một `Exam` mỗi `mondai × 第N回`; `drill.ts` giữ `unitNo`, thiếu số thì đánh tiếp theo thứ tự khối); `attempts/:id/check`, `practice-overview`, `practice/quick`, làm lại câu sai (`start {retryWrongFromAttemptId}`); lịch sử / thống kê tách theo `mode`. `GET /exams` mặc định bỏ bài luyện. Sửa kèm: đề phẳng giờ gửi bài đọc; đề không giờ không còn tự nộp ngay khi mở.
+- **NP-414:** `/learn/exams` (`?mode=&level=`), `exams-console.tsx` + `exam-mock.tsx` + `exam-practice-tree.tsx` + `exam-practice-sitting.tsx`; một ô trên `/learn`; `/learn/exam` chuyển sang chế độ luyện tập; 6 dạng 問題 từ bộ thẻ ở `/learn/vocab/exercises?mode=exam`.
+- **Đã chạy:** vitest `src/exams src/users src/auth src/import src/ai` 513 đạt (1 skip); watcher tsc API 0 lỗi; tsc file UI sạch; eslint còn 3 lỗi `set-state-in-effect` cũ ở `exam-sitting.tsx`; 22 bước đầu-cuối với Mongo thật trên database tạm `np_verify_tmp_p4` (đã xoá hết collection); gọi HTTP endpoint mới; Chrome headless 1280 + 375 px (đăng nhập thật bằng tài khoản tạm đã xoá, **dữ liệu đề giả** ở `/api/exams`), không tràn ngang, console chỉ có 403 của popup admin.
+- **Còn lại:** DB chưa có đề nào (3 lần nhập, mọi bản nháp `reference`, chưa xuất bản). `reference` không công khai được (Q-12) nên người học chưa thấy nội dung cho tới khi có đề `own`/`licensed`. Bài luyện tạo ra ở trạng thái nháp, phải công khai từng bài ở `/admin/exams` (chưa có công khai hàng loạt). Chưa bấm thử: màn duyệt nút "Xuất bản bài luyện", xếp câu ★ khi luyện, nghe 聴解 khi luyện.
+- **Bẫy:** Chrome headless phải mở `http://localhost:3001` — mở `127.0.0.1` thì Next dev chặn HMR và trang không hydrate. Tài khoản Mongo không cho `dropDatabase`, dùng `dropCollection`.
+
+---
+
+## Khung chữ Kanji đổi màu theo mức nhớ (27/11/2026)
+
+- `GET /srs/kanji-mastery` → `{ chữ: mức }` (thẻ KANJI đã học, mọi bộ; lấy lần ôn mới nhất). Công thức chung với đồ thị: `MASTERY_LEVEL_EXPR`; màu ở `lib/mastery.ts`.
+- `kanji-mastery.tsx` (hook + chú thích màu): đổi màu **khung** gồm viền và nền mờ (không đổi màu chữ) ở `/learn/kanji` (Thẻ, Nhóm 20 chữ), Gia đình, và Nhóm 20 chữ / Gia đình trong trang bộ thẻ. Chưa áp cho chế độ Bảng, trang chi tiết chữ, trang admin.
+- Đã chạy: vitest `src/srs` 23 đạt, tsc + eslint file UI sạch.
+
+---
+
 ## /learn: bỏ khối tiến độ, "Cấp muốn thi" lên đầu (27/11/2026)
 
 - Bỏ biểu đồ cột, khối "Tiến độ ghi nhớ", nút "Ôn N từ hôm nay", nút "Chi tiết" và thanh "x/20 từ mới" dưới lời chào (chỉ còn chuỗi ngày) khỏi `/learn` (xoá `learn-sidebar.tsx`, `due-button.tsx`). Trang từng phần (vocab / grammar / kanji) giữ nguyên đồ thị. Chế độ `dense` của `ProgressPanel` không còn nơi dùng; `/learn` không còn chỗ đặt giới hạn mới/ngày chung.
 - Thẻ cấu trúc đề (đổi tiêu đề thành "Cấp muốn thi") đứng ngay dưới lời chào. Cấp chọn vẫn chỉ lưu localStorage; `targetLevel` trong tài khoản (NP-411) chưa làm.
+
+---
+
+## Luyện tập Kanji: Hán Việt in hoa (27/11/2026)
+
+- `kanji-practice.tsx`: đáp án hiện Hán Việt IN HOA, bỏ `[ ]`; "Gõ Hán Việt" nhận không phân biệt hoa thường, chữ nhiều âm gõ một âm là đúng (`matchesHanViet` trong `lib/han-viet.ts`), vẫn bắt buộc đúng dấu.
+- Đã chạy: tsc 2 file sạch, kiểm nhanh `matchesHanViet` bằng script tạm; eslint còn 1 lỗi `set-state-in-effect` có từ trước. Chưa xem trên trình duyệt.
 
 ---
 
