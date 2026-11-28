@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { KanjiGroups } from "./kanji-groups";
+import { MasteryLegend, masteryStyle, useKanjiMastery } from "./kanji-mastery";
 import { splitHanViet, type KanjiItem } from "./kanji-types";
 
 interface DeckCard {
@@ -60,6 +61,7 @@ export function KanjiDeckViews({
   const [cards, setCards] = useState<DeckCard[] | null>(null);
   const [families, setFamilies] = useState<Family[] | null>(null);
   const [error, setError] = useState(false);
+  const mastery = useKanjiMastery();
 
   useEffect(() => {
     const ctrl = new AbortController();
@@ -103,7 +105,17 @@ export function KanjiDeckViews({
       mnemonic: "",
       words: [],
     }));
-    return <KanjiGroups items={items} loading={false} href={(k) => `/learn/kanji/${encodeURIComponent(k.char)}`} />;
+    return (
+      <>
+        <MasteryLegend className="" />
+        <KanjiGroups
+          items={items}
+          loading={false}
+          mastery={mastery}
+          href={(k) => `/learn/kanji/${encodeURIComponent(k.char)}`}
+        />
+      </>
+    );
   }
 
   const inDeck = new Set(cards.map((c) => c.front));
@@ -115,6 +127,7 @@ export function KanjiDeckViews({
       <p className="mb-3 text-sm text-[var(--muted-foreground)]">
         {shown.length} gia đình · xếp A–Z Hán Việt · chữ mờ không có trong danh sách đang xem
       </p>
+      <MasteryLegend className="mb-3" />
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {shown.map((f) => (
           <Link
@@ -123,7 +136,11 @@ export function KanjiDeckViews({
             className="flex items-center gap-3 rounded-2xl border border-[var(--border)] bg-[var(--background-1)] p-3 transition-colors hover:bg-[var(--layer-hover)]"
           >
             <div className="w-14 shrink-0 text-center">
-              <div lang="ja" className="text-3xl font-semibold text-[var(--foreground)]">
+              <div
+                lang="ja"
+                className="rounded-lg border-2 border-transparent text-3xl font-semibold text-[var(--foreground)]"
+                style={masteryStyle(mastery, f.head)}
+              >
                 {f.head}
               </div>
               <div className="text-[10px] font-semibold text-[var(--accent)]">{f.hanViet || "—"}</div>
@@ -134,7 +151,8 @@ export function KanjiDeckViews({
                   <span
                     key={m.char}
                     title={splitHanViet(m.hanViet).join(" · ")}
-                    className={inDeck.has(m.char) ? undefined : "opacity-30"}
+                    className={`inline-block rounded border-2 border-transparent ${inDeck.has(m.char) ? "" : "opacity-30"}`}
+                    style={masteryStyle(mastery, m.char)}
                   >
                     {m.char}
                   </span>

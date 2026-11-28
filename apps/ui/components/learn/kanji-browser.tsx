@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { KanjiGroups } from "./kanji-groups";
+import { MasteryLegend, masteryLabel, masteryStyle, useKanjiMastery } from "./kanji-mastery";
 import { KANJI_LEVELS, splitHanViet, type KanjiPage } from "./kanji-types";
 
 const LIMIT = 60;
@@ -26,6 +27,7 @@ export function KanjiBrowser({
   const [data, setData] = useState<KanjiPage | null>(null);
   const [counts, setCounts] = useState<Record<string, number>>({});
   const [error, setError] = useState(false);
+  const mastery = useKanjiMastery();
 
   useEffect(() => {
     fetch("/api/kanji/levels")
@@ -145,6 +147,8 @@ export function KanjiBrowser({
         />
       </div>
 
+      <MasteryLegend />
+
       {error && <p className="mt-6 text-sm text-red-500">Không tải được danh sách kanji.</p>}
       {data && data.items.length === 0 && (
         <p className="mt-6 text-sm text-[var(--muted-foreground)]">Chưa có kanji nào được xuất bản.</p>
@@ -154,6 +158,7 @@ export function KanjiBrowser({
         <KanjiGroups
           items={data?.items ?? []}
           loading={!data && !error}
+          mastery={mastery}
           href={(k) => `/learn/kanji/${encodeURIComponent(k.char)}`}
         />
       ) : (
@@ -163,7 +168,9 @@ export function KanjiBrowser({
           <Link
             key={k.char}
             href={`/learn/kanji/${encodeURIComponent(k.char)}`}
-            className="rounded-2xl border border-[var(--border)] bg-[var(--background-1)] p-4 text-center transition-colors hover:bg-[var(--layer-hover)]"
+            className="rounded-2xl border-2 border-[var(--border)] bg-[var(--background-1)] p-4 text-center transition-colors hover:bg-[var(--layer-hover)]"
+            style={masteryStyle(mastery, k.char)}
+            title={masteryLabel(mastery, k.char)}
           >
             <div className="text-4xl text-[var(--foreground)]">{k.char}</div>
             <div className="mt-1 text-xs font-semibold uppercase text-[var(--accent)]">

@@ -4,6 +4,7 @@ import { useConfirm } from "@/components/learn/use-confirm";
 import { ReviewChart } from "@/components/learn/review-chart";
 import { capitalize, PILLAR_NOUN, type PillarId } from "@/components/learn/pillar-nav";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { MASTERY_LEVELS } from "@/lib/mastery";
 
 interface Stats {
   total: number;
@@ -38,13 +39,6 @@ function barLabel(key: string, range: Range): string {
   return range === "week" ? `${key.slice(8)}/${key.slice(5, 7)}` : String(Number(key.slice(8)));
 }
 
-const LEVELS: Record<string, { label: string; hint: string; color: string }> = {
-  hard: { label: "Khó nhớ", hint: "Hay quên / vừa quên", color: "#dc2626" },
-  learning: { label: "Đang học", hint: "Giãn cách < 7 ngày", color: "#f59e0b" },
-  young: { label: "Khá nhớ", hint: "7–20 ngày", color: "#3b82f6" },
-  known: { label: "Đã thuộc", hint: "21–59 ngày", color: "#10b981" },
-  mastered: { label: "Thuộc sâu", hint: "≥ 60 ngày", color: "#047857" },
-};
 const UNSEEN_COLOR = "#9ca3af";
 
 /** Daily new-card limit + mastery distribution chart for the learner. */
@@ -156,7 +150,7 @@ export function ProgressPanel({
 
   const segments = stats
     ? [
-        ...stats.levels.map((l) => ({ key: l.key, count: l.count, ...LEVELS[l.key] })),
+        ...stats.levels.map((l) => ({ key: l.key, count: l.count, ...MASTERY_LEVELS[l.key] })),
         { key: "unseen", count: stats.unseen, label: "Chưa học", hint: "Thẻ mới", color: UNSEEN_COLOR },
       ]
     : [];
@@ -450,9 +444,9 @@ export function ProgressPanel({
           { key: "unseen", label: "Chưa học", count: stats.unseen, color: UNSEEN_COLOR },
           ...["hard", "learning", "young", "known", "mastered"].map((k) => ({
             key: k,
-            label: LEVELS[k].label,
+            label: MASTERY_LEVELS[k].label,
             count: lv[k] ?? 0,
-            color: LEVELS[k].color,
+            color: MASTERY_LEVELS[k].color,
           })),
         ];
         const shade = (n: number) =>

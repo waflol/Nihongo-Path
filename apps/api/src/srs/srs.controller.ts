@@ -280,6 +280,12 @@ export class SrsController {
     return this.srs.updateSettings(caller, body);
   }
 
+  @Get("kanji-mastery")
+  @ApiOperation({ summary: "Mastery level of each kanji I have studied" })
+  kanjiMastery(@CurrentUser() caller: AuthUser) {
+    return this.srs.kanjiMastery(caller);
+  }
+
   @Get("stats")
   @ApiOperation({ summary: "Mastery-level distribution of my learned cards" })
   stats(

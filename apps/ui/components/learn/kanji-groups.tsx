@@ -2,12 +2,13 @@
 
 import Link from "next/link";
 import { useMemo } from "react";
+import { masteryLabel, masteryStyle, type KanjiMastery } from "./kanji-mastery";
 import type { KanjiItem } from "./kanji-types";
 
 const GROUP_SIZE = 20;
 
 const tileBase =
-  "relative flex aspect-square items-center justify-center rounded-lg border text-xl font-medium leading-none transition-colors hover:border-[var(--primary)] hover:text-[var(--primary)]";
+  "relative flex aspect-square items-center justify-center rounded-lg border-2 text-xl font-medium leading-none transition-colors hover:border-[var(--primary)] hover:text-[var(--primary)]";
 
 /**
  * Cards of 20 consecutive ranks (5 × 4 tiles), like the app's group picker.
@@ -20,6 +21,7 @@ export function KanjiGroups({
   onOpen,
   href,
   showDraft = false,
+  mastery,
 }: {
   items: KanjiItem[];
   loading: boolean;
@@ -28,6 +30,8 @@ export function KanjiGroups({
   href?: (k: KanjiItem) => string;
   /** Mark drafts and kanji without Hán Việt (admin only). */
   showDraft?: boolean;
+  /** Colour the frame of studied kanji by how well the learner remembers them. */
+  mastery?: KanjiMastery;
 }) {
   const groups = useMemo(() => {
     const map = new Map<number, KanjiItem[]>();
@@ -106,9 +110,11 @@ export function KanjiGroups({
                     ? "border-dashed border-amber-500/60 bg-amber-500/10 text-[var(--foreground)]"
                     : "border-transparent bg-[var(--layer)] text-[var(--foreground)]"
                 } ${selected?.has(item.char) ? "ring-2 ring-[var(--primary)]" : ""}`;
+                const remembered = masteryLabel(mastery, item.char);
+                const style = masteryStyle(mastery, item.char);
                 const title = `#${item.rank || "—"} · ${item.hanViet || "chưa có Hán Việt"}${
                   draft ? " · bản nháp" : ""
-                }`;
+                }${remembered ? ` · ${remembered}` : ""}`;
                 const inner = (
                   <>
                     {item.char}
@@ -121,7 +127,7 @@ export function KanjiGroups({
                   </>
                 );
                 return href ? (
-                  <Link key={item.char} href={href(item)} title={title} lang="ja" className={cls}>
+                  <Link key={item.char} href={href(item)} title={title} lang="ja" className={cls} style={style}>
                     {inner}
                   </Link>
                 ) : (
@@ -132,6 +138,7 @@ export function KanjiGroups({
                     title={title}
                     lang="ja"
                     className={cls}
+                    style={style}
                   >
                     {inner}
                   </button>

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
+import { MasteryLegend, masteryLabel, masteryStyle, useKanjiMastery } from "./kanji-mastery";
 import { KANJI_LEVELS, splitHanViet } from "./kanji-types";
 
 /** A family from `GET /kanji/families`; `level` is "" for a kanji the app does not have. */
@@ -55,6 +56,7 @@ export function KanjiFamilies() {
   const [query, setQuery] = useState("");
   const [families, setFamilies] = useState<Family[] | null>(null);
   const [error, setError] = useState(false);
+  const mastery = useKanjiMastery();
 
   useEffect(() => {
     const ctrl = new AbortController();
@@ -108,7 +110,8 @@ export function KanjiFamilies() {
                 Ôn tập
               </Link>
             </div>
-            <div className="mt-6 grid grid-cols-3 gap-3 sm:grid-cols-4 lg:grid-cols-6">
+            <MasteryLegend className="mt-4" />
+            <div className="mt-3 grid grid-cols-3 gap-3 sm:grid-cols-4 lg:grid-cols-6">
               {family.members.map((m) => {
                 const inner = (
                   <>
@@ -121,12 +124,14 @@ export function KanjiFamilies() {
                     <div className="mt-1 text-[10px] text-[var(--muted-foreground)]">{m.level || "chưa có"}</div>
                   </>
                 );
-                const box = "rounded-2xl border border-[var(--border)] p-4 text-center";
+                const box = "rounded-2xl border-2 border-[var(--border)] p-4 text-center";
                 return m.level ? (
                   <Link
                     key={m.char}
                     href={`/learn/kanji/${encodeURIComponent(m.char)}`}
                     className={`${box} bg-[var(--background-1)] transition-colors hover:bg-[var(--layer-hover)]`}
+                    style={masteryStyle(mastery, m.char)}
+                    title={masteryLabel(mastery, m.char)}
                   >
                     {inner}
                   </Link>
@@ -211,6 +216,8 @@ export function KanjiFamilies() {
         </Link>
       </div>
 
+      <MasteryLegend />
+
       {shown.length === 0 && (
         <p className="mt-6 text-sm text-[var(--muted-foreground)]">Không có gia đình nào khớp bộ lọc.</p>
       )}
@@ -225,14 +232,26 @@ export function KanjiFamilies() {
               className="flex items-center gap-3 rounded-2xl border border-[var(--border)] bg-[var(--background-1)] p-3 transition-colors hover:bg-[var(--layer-hover)]"
             >
               <div className="w-14 shrink-0 text-center">
-                <div lang="ja" className="text-3xl font-semibold text-[var(--foreground)]">
+                <div
+                  lang="ja"
+                  className="rounded-lg border-2 border-transparent text-3xl font-semibold text-[var(--foreground)]"
+                  style={masteryStyle(mastery, f.head)}
+                >
                   {f.head}
                 </div>
                 <div className="text-[10px] font-semibold text-[var(--accent)]">{f.hanViet || "—"}</div>
               </div>
               <div className="min-w-0 border-l border-dashed border-[var(--border)] pl-3">
                 <div lang="ja" className="break-all text-lg tracking-wider text-[var(--foreground)]">
-                  {f.members.map((m) => m.char).join("")}
+                  {f.members.map((m) => (
+                    <span
+                      key={m.char}
+                      className="inline-block rounded border-2 border-transparent"
+                      style={masteryStyle(mastery, m.char)}
+                    >
+                      {m.char}
+                    </span>
+                  ))}
                 </div>
                 <div className="mt-0.5 text-xs text-[var(--muted-foreground)]">
                   {f.members.length} chữ · {levelsOf(f).join(", ")}

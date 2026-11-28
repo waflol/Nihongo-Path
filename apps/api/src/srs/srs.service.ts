@@ -140,6 +140,28 @@ export interface ReviewResult {
   relearn: boolean;
 }
 
+/** SM-2 state → mastery level, shared by the progress chart and the kanji colouring. */
+const MASTERY_LEVEL_EXPR = {
+  $switch: {
+    branches: [
+      {
+        case: {
+          $or: [
+            { $gte: ["$state.lapses", 2] },
+            { $lt: ["$state.ease", 1.8] },
+            { $eq: ["$state.repetitions", 0] },
+          ],
+        },
+        then: "hard",
+      },
+      { case: { $gte: ["$state.intervalDays", 60] }, then: "mastered" },
+      { case: { $gte: ["$state.intervalDays", 21] }, then: "known" },
+      { case: { $gte: ["$state.intervalDays", 7] }, then: "young" },
+    ],
+    default: "learning",
+  },
+};
+
 /**
  * SRS scheduling + review queue (P3-SRS-03/04/05/06).
  *
@@ -636,6 +658,31 @@ export class SrsService {
   }
 
   /**
+   * Mastery level of every kanji the caller has studied, keyed by the character.
+   * A kanji studied in several decks takes its most recently reviewed card.
+   */
+  async kanjiMastery(caller: AuthUser): Promise<Record<string, string>> {
+    const rows = await this.progress
+      .aggregate<{ card: Types.ObjectId; level: string }>([
+        { $match: { user: new Types.ObjectId(caller.sub) } },
+        { $sort: { lastReviewedAtMs: 1 } },
+        { $project: { _id: 0, card: 1, level: MASTERY_LEVEL_EXPR } },
+      ])
+      .exec();
+    const cards = await this.card
+      .find({ _id: { $in: rows.map((r) => r.card) }, kind: "KANJI" }, { front: 1 })
+      .lean()
+      .exec();
+    const chars = new Map(cards.map((c) => [String(c._id), c.front]));
+    const out: Record<string, string> = {};
+    for (const r of rows) {
+      const char = chars.get(String(r.card));
+      if (char) out[char] = r.level;
+    }
+    return out;
+  }
+
+  /**
    * Mastery distribution of the caller's learned cards across every deck
    * (optionally one deck and/or one pillar), grouped by SM-2 interval, for the
    * progress chart. Study sessions are tallied per deck, so a pillar's review
@@ -757,26 +804,7 @@ export class SrsService {
                 { $match: { $expr: inPeriod } },
                 {
                   $group: {
-                    _id: {
-                      $switch: {
-                        branches: [
-                          {
-                            case: {
-                              $or: [
-                                { $gte: ["$state.lapses", 2] },
-                                { $lt: ["$state.ease", 1.8] },
-                                { $eq: ["$state.repetitions", 0] },
-                              ],
-                            },
-                            then: "hard",
-                          },
-                          { case: { $gte: ["$state.intervalDays", 60] }, then: "mastered" },
-                          { case: { $gte: ["$state.intervalDays", 21] }, then: "known" },
-                          { case: { $gte: ["$state.intervalDays", 7] }, then: "young" },
-                        ],
-                        default: "learning",
-                      },
-                    },
+                    _id: MASTERY_LEVEL_EXPR,
                     n: { $sum: 1 },
                   },
                 },
